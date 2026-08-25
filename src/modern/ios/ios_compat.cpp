@@ -1,4 +1,7 @@
 #include "ios_compat.hpp"
+#ifdef TH08_IOS
+#include "ios_touch.hpp"
+#endif
 
 #include <SDL.h>
 #include <SDL_image.h>
@@ -289,6 +292,9 @@ void PumpSdlEvents(MSG *message, bool *hasMessage)
     SDL_Event event;
     if (!SDL_PollEvent(&event))
         return;
+#ifdef TH08_IOS
+    th08::modern::ios::ProcessEvent(event);
+#endif
     memset(message, 0, sizeof(*message));
     message->hwnd = reinterpret_cast<HWND>(g_window);
     if (event.type == SDL_QUIT)

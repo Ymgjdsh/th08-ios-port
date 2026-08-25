@@ -86,28 +86,29 @@ void HandleFingerUp(const SDL_TouchFingerEvent &finger)
 }
 }
 
+void ProcessEvent(const SDL_Event &event)
+{
+    if (event.type == SDL_FINGERDOWN)
+        HandleFingerDown(event.tfinger);
+    else if (event.type == SDL_FINGERMOTION)
+        HandleFingerMotion(event.tfinger);
+    else if (event.type == SDL_FINGERUP)
+        HandleFingerUp(event.tfinger);
+    else if (event.type == SDL_KEYDOWN && event.key.repeat == 0)
+    {
+        if (event.key.keysym.sym == SDLK_ESCAPE) g_state.menuLatch = 1;
+        if (event.key.keysym.sym == SDLK_z) g_state.shotLatch = 1;
+        if (event.key.keysym.sym == SDLK_x) g_state.bombLatch = 1;
+    }
+    else if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_z)
+        g_state.shotLatch = 0;
+}
+
 u16 PollButtons()
 {
     SDL_Event event;
     while (SDL_PollEvent(&event))
-    {
-        if (event.type == SDL_FINGERDOWN)
-            HandleFingerDown(event.tfinger);
-        else if (event.type == SDL_FINGERMOTION)
-            HandleFingerMotion(event.tfinger);
-        else if (event.type == SDL_FINGERUP)
-            HandleFingerUp(event.tfinger);
-        else if (event.type == SDL_KEYDOWN && event.key.repeat == 0)
-        {
-            if (event.key.keysym.sym == SDLK_ESCAPE) g_state.menuLatch = 1;
-            if (event.key.keysym.sym == SDLK_z) g_state.shotLatch = 1;
-            if (event.key.keysym.sym == SDLK_x) g_state.bombLatch = 1;
-        }
-        else if (event.type == SDL_KEYUP)
-        {
-            if (event.key.keysym.sym == SDLK_z) g_state.shotLatch = 0;
-        }
-    }
+        ProcessEvent(event);
 
     u16 result = g_state.buttons;
     if (g_state.shotLatch) result |= TH_BUTTON_SHOOT;
@@ -127,4 +128,3 @@ void ResetTouchState()
 } // namespace ios
 } // namespace modern
 } // namespace th08
-
