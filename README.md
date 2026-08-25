@@ -21,6 +21,9 @@
 | Windows | [Native Windows guide](docs/PLAY_WINDOWS.md) | In progress |
 | macOS | [Native macOS guide](docs/PLAY_MACOS.md) | In progress |
 
+The independent arm64 iOS bring-up is under [`ios/PORTING_STATUS.md`](ios/PORTING_STATUS.md).
+It is intentionally separate from the exact VC7 and validated Linux products.
+
 The Web edition is planned as a future playable target after the native
 desktop ports. It is not available yet.
 
