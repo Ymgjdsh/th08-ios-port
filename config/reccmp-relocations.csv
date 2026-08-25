@@ -1,0 +1,33 @@
+coff_symbol,address,data_hex,addends,evidence,validation
+_DirectSoundCreate8@12,0x00476CE6,ff2518404b00,0x0,PE DSOUND ordinal-11 IAT thunk,address
+_WINNLSEnableIME@8,0x004A3CD0,ff2510424b00,0x0,PE USER32 import thunk for WINNLSEnableIME,address
+__imp__Sleep@4,0x004B4054,ca480c00,0x0,PE KERNEL32 import table entry for Sleep,literal
+__imp__QueryPerformanceFrequency@4,0x004B4084,82490c00,0x0,PE KERNEL32 import table entry for QueryPerformanceFrequency,literal
+__imp__ShowWindow@8,0x004B41C8,ba4b0c00,0x0,PE USER32 import table entry for ShowWindow,literal
+__imp__GetForegroundWindow@0,0x004B41EC,de4c0c00,0x0,PE USER32 import table entry for GetForegroundWindow,literal
+__imp__GetWindowThreadProcessId@8,0x004B41F0,c24c0c00,0x0,PE USER32 import table entry for GetWindowThreadProcessId,literal
+__imp__SetActiveWindow@4,0x004B41F4,9c4c0c00,0x0,PE USER32 import table entry for SetActiveWindow,literal
+__imp__SystemParametersInfoA@16,0x004B420C,2c4c0c00,0x0,PE USER32 import table entry for SystemParametersInfoA,literal
+__imp__ShowCursor@4,0x004B4214,0c4c0c00,0x0,PE USER32 import table entry for ShowCursor,literal
+__imp__SetCursor@4,0x004B4218,004c0c00,0x0,PE USER32 import table entry for SetCursor,literal
+__imp__PeekMessageA@20,0x004B421C,f04b0c00,0x0,PE USER32 import table entry for PeekMessageA,literal
+__imp__TranslateMessage@4,0x004B4220,dc4b0c00,0x0,PE USER32 import table entry for TranslateMessage,literal
+__imp__DispatchMessageA@4,0x004B4224,c84b0c00,0x0,PE USER32 import table entry for DispatchMessageA,literal
+__imp__AttachThreadInput@12,0x004B4228,ae4c0c00,0x0,PE USER32 import table entry for AttachThreadInput,literal
+__imp__MoveWindow@24,0x004B422C,ac4b0c00,0x0,PE USER32 import table entry for MoveWindow,literal
+__imp__DestroyWindow@4,0x004B4230,9c4b0c00,0x0,PE USER32 import table entry for DestroyWindow,literal
+__imp__ReadFile@20,0x004B4058,d2480c00,0x0,PE KERNEL32 import table entry for ReadFile,literal
+__imp__CloseHandle@4,0x004B405C,de480c00,0x0,PE KERNEL32 import table entry for CloseHandle,literal
+__imp__CreateDIBSection@24,0x004B402C,ba4d0c00,0x0,PE GDI32 import table entry for CreateDIBSection,literal
+__imp__CreateCompatibleDC@4,0x004B4030,a44d0c00,0x0,PE GDI32 import table entry for CreateCompatibleDC,literal
+__imp__SelectObject@8,0x004B4034,944d0c00,0x0,PE GDI32 import table entry for SelectObject,literal
+__imp__DeleteDC@4,0x004B4038,884d0c00,0x0,PE GDI32 import table entry for DeleteDC,literal
+__imp__DeleteObject@4,0x004B403C,784d0c00,0x0,PE GDI32 import table entry for DeleteObject,literal
+__imp__WaitForSingleObject@8,0x004B40B4,664a0c00,0x0,PE KERNEL32 import table entry for WaitForSingleObject,literal
+__imp__GlobalFree@4,0x004B40C0,b04a0c00,0x0,PE KERNEL32 import table entry for GlobalFree,literal
+__imp__MsgWaitForMultipleObjects@20,0x004B41D4,424d0c00,0x0,PE USER32 import table entry for MsgWaitForMultipleObjects,literal
+__imp__PostThreadMessageA@16,0x004B41D8,2c4d0c00,0x0,PE USER32 import table entry for PostThreadMessageA,literal
+__imp__KillTimer@8,0x004B41DC,204d0c00,0x0,PE USER32 import table entry for KillTimer,literal
+__imp__CreateFileA@28,0x004B4064,fa480c00,0x0,PE KERNEL32 import table entry for CreateFileA,literal
+__imp__SetFilePointer@16,0x004B40C8,ce4a0c00,0x0,PE KERNEL32 import table entry for SetFilePointer,literal
+_D3DXVec3Normalize@8,0x00476E9F,ff252c874c00,0x0,PE D3DX8 import thunk for D3DXVec3Normalize,address

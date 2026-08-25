@@ -1,0 +1,363 @@
+#pragma once
+
+#include "ScoreDat.hpp"
+#include "Spellcard.hpp"
+#include "Supervisor.hpp"
+#include "ZunMath.hpp"
+#include "ZunResult.hpp"
+#include "diffbuild.hpp"
+#include "inttypes.hpp"
+#include "utils.hpp"
+#include <stddef.h>
+#include <windows.h>
+
+#define EXTRA_UNLOCKED_FLAG ZUN_BIT(14)
+#define SPELL_PRACTICE_UNLOCKED_FLAG ZUN_BIT(15)
+
+#define IS_STAGE_CLEARED(difficulty, stage) (difficulty & ZUN_BIT(stage))
+
+#define ANTITAMPER_RNG_RANGE 100000
+#define ANTITAMPER_RNG_ADD 6543
+
+namespace th08
+{
+
+void __fastcall IncrementTruncate(u32 *value, i32 unused);
+
+struct GameManagerFlags
+{
+    u32 isPracticeMode : 1;
+    u32 isDemoMode : 1;
+    u32 unk2 : 1;
+    u32 isReplay : 1;
+    u32 unk4 : 1;
+    // Observed as a two-bit state at bits 5..6 by GameManager::OnDraw.
+    u32 unk5_6 : 2;
+    u32 unk7 : 1;
+    u32 unk8 : 1;
+    u32 unk9 : 1;
+    u32 unk10 : 1;
+    u32 isGoingToFinalB : 2; // why 2 bits?
+    u32 unk13 : 1;
+    u32 isSpellPractice : 1;
+
+    u32 isExtraUnlocked : 1;
+    u32 isSpellPracticeUnlocked : 1;
+    u32 isExtraUnlockedWithAllTeams : 1;
+};
+
+enum
+{
+    REPLAY_MODE_NORMAL,
+    REPLAY_MODE_SLOWDOWN,
+    REPLAY_MODE_BOSS,
+};
+
+struct GameManager
+{
+    GameManager();
+
+    ZunBool IsWithinPlayfield(f32 x, f32 y, f32 width, f32 height);
+    i32 CalcAntiTamperChecksum();
+    static i32 CalcChecksum(u8 *address, i32 size);
+    void CollectExtend();
+
+    static ChainCallbackResult OnUpdate(GameManager *gameManager);
+    static ChainCallbackResult OnDraw(GameManager *gameManager);
+
+    static ZunResult RegisterChain();
+
+    static ZunResult AddedCallback(GameManager *gameManager);
+    static void __fastcall GameplaySetupThread(void *unused);
+
+    void InitRankParams();
+
+    static void InitializeAntiTamper();
+
+    i32 GetTimeOrbs();
+    i32 GetLastSpellTimeOrbThreshold();
+    i32 GetBombsRemaining();
+    i32 GetDeaths();
+    i32 GetBombsUsed();
+
+    void UpdateAntiTamper()
+    {
+        this->globals->rng1[2] = g_Rng.GetRandomU32InRange(ANTITAMPER_RNG_RANGE) + ANTITAMPER_RNG_ADD;
+        this->globals->rng7[3] = g_Rng.GetRandomU32InRange(ANTITAMPER_RNG_RANGE) + ANTITAMPER_RNG_ADD;
+        this->globals->antiTamperValue = this->globals->rng1[2];
+        this->globals->antiTamperChecksum = CalcAntiTamperChecksum();
+        this->antiTamperExpectedValue = this->globals->antiTamperChecksum + this->globals->rng7[3];
+    }
+
+    void RandomizeAntiTamper();
+
+    ZunBool IsTampered()
+    {
+        // There is zero chance ZUN actually used intptr_t here, but the codegen matches and not making
+        // assumptions about pointer size is always nice
+        return this->globals->antiTamperValue !=
+                   this->globals->rng1[2] + this->globals->rng8[2] * ((intptr_t)&this->globals->antiTamperValue -
+                                                                      (intptr_t)&this->globals->rng1 + 500) ||
+               this->globals->antiTamperChecksum + this->globals->rng7[3] != (i32)this->antiTamperExpectedValue;
+    }
+
+    static ZunResult DeletedCallback(GameManager *gameManager);
+
+    static void CutChain();
+
+    void IncreaseSubrank(int amount);
+    void DecreaseSubrank(int amount);
+    i32 ScaleIntBasedOnRank(i32 upper, i32 lower);
+    f32 ScaleFloatBasedOnRank(f32 upper, f32 lower);
+    void AddToYoukaiGauge(i32 amount, i32 forceUpdate);
+    void SetYoukaiGauge(u16 value);
+
+    ZunBool IsPhantasmUnlocked();
+    ZunBool IsReplayPractice();
+
+    /* I know it's dumb but this is the only way to get it matching */
+    void SetIsReplayWeird(ZunBool value)
+    {
+        ZunBool res = value;
+
+        this->flags.isReplay = res;
+    }
+
+    ZunBool IsPracticeMode()
+    {
+        return this->flags.isPracticeMode;
+    }
+
+    ZunBool IsSpellPractice()
+    {
+        return this->flags.isSpellPractice;
+    }
+    ZunBool IsReplay()
+    {
+        return this->flags.isReplay;
+    }
+    ZunBool IsSpellNumberEqualTo(i32 spellCardNumber)
+    {
+        return this->flags.isSpellPractice ? this->currentSpellCardNumber == spellCardNumber : false;
+    }
+    ZunBool IsSpellNumberInRange(i32 firstSpell, i32 lastSpell)
+    {
+        return this->flags.isSpellPractice
+                   ? this->currentSpellCardNumber >= firstSpell && this->currentSpellCardNumber <= lastSpell
+                   : false;
+    }
+    ZunBool IsDemoMode()
+    {
+        return this->flags.isDemoMode;
+    }
+
+    ZunBool IsSoloHuman()
+    {
+        return this->shotType >= 4 && (this->shotType & 1) == 0;
+    }
+    ZunBool IsSoloYoukai()
+    {
+        return this->shotType >= 4 && (this->shotType & 1) != 0;
+    }
+    i32 GetLives()
+    {
+        return this->globals->livesRemaining;
+    }
+
+    i32 GetYoukaiGauge()
+    {
+        return this->globals->youkaiGauge;
+    }
+
+    ZunBool GaugeIsExtremelyHuman()
+    {
+        return this->globals->youkaiGauge <= this->youkaiGaugeHumanEffectsThreshold;
+    }
+    ZunBool GaugeIsModeratelyHuman()
+    {
+        return this->globals->youkaiGauge <= this->youkaiGaugeHumanTintThreshold;
+    }
+    ZunBool GaugeIsExtremelyYoukai()
+    {
+        return this->globals->youkaiGauge >= this->youkaiGaugeYoukaiEffectsThreshold;
+    }
+    ZunBool GaugeIsModeratelyYoukai()
+    {
+        return this->globals->youkaiGauge >= this->youkaiGaugeYoukaiTintThreshold;
+    }
+
+    u8 GetClockTime()
+    {
+        return this->globals->clockTime;
+    }
+    void AddToClockTime(i8 value)
+    {
+        this->globals->clockTime += value;
+    }
+    void SetClockTime(i32 value);
+
+    ZunBool IsStageClearedWithRetries(i32 stage, i32 character, i32 difficulty);
+    ZunBool IsStageClearedWithoutRetries(i32 stage, i32 character, i32 difficulty);
+
+    ZunBool IsExtraUnlockedForCharacter(i32 character);
+    ZunBool IsExtraUnlocked();
+    ZunBool IsSpellPracticeUnlockedForCharacter(i32 character);
+    ZunBool IsSpellPracticeUnlocked();
+
+    ZunBool IsExtraUnlockedWithAllTeams();
+
+    ZunBool HasSpellCardBeenEncountered(i32 spellCardNumber, i32 shotType)
+    {
+        Catk *catk = &this->catkData[spellCardNumber];
+
+        return catk->inGameHistory.attempts[shotType] > 0 || catk->spellPracticeHistory.attempts[shotType] != 0;
+    }
+
+    ZunBool IsLastWordSpellCardAttempted(i32 spellCardNumber);
+
+    i32 GetPower()
+    {
+        return this->globals->playerPower;
+    }
+
+    i32 GetClockTimeIncrement();
+    void AdvanceToNextStage();
+    void SetLives(i32 lives)
+    {
+        this->globals->livesRemaining = (f32)lives;
+        this->UpdateAntiTamper();
+    }
+    void SetBombCount(i32 bombs)
+    {
+        this->globals->bombsRemaining = (f32)bombs;
+        this->globals->antiTamperValue = this->globals->rng1[2];
+        this->globals->antiTamperChecksum = this->CalcAntiTamperChecksum();
+        this->antiTamperExpectedValue =
+            (f32)(this->globals->antiTamperChecksum + this->globals->rng7[3]);
+    }
+    void SetPower(i32 power)
+    {
+        this->globals->playerPower = (f32)power;
+        this->UpdateAntiTamper();
+    }
+    void AddScore(i32 score);
+    void AddTimeOrbs(i32 amount);
+    void AddToDeaths(i32 amount);
+    void AddToBombsUsed(i32 amount);
+
+    void AddLives(int lives);
+
+    void AddPower(int power)
+    {
+        if (this->IsTampered())
+        {
+            CRASH_GAME();
+        }
+        this->globals->playerPower += power;
+        this->UpdateAntiTamper();
+    }
+
+    void AddToBombCount(int amount)
+    {
+        if (this->IsTampered())
+        {
+            CRASH_GAME();
+        }
+        this->globals->bombsRemaining += amount;
+        this->UpdateAntiTamper();
+    }
+
+    void InitArcadeRegionParams();
+
+    ZunBool IsUnknown()
+    {
+        return this->unk2D;
+    }
+
+    i32 unk0x0;
+    GameConfiguration *cfg;
+    ZunGlobals *globals;
+    Flsp flsp;
+    i8 unk2C;
+    i8 unk2D;
+    /* 2 bytes pad */
+    i32 difficulty;
+    i32 difficultyMask;
+    u32 unk38;
+    i32 unk3c;
+    Catk catkData[SPELLCARD_COUNT_SPELLCARDS];
+    Catk catkData2[SPELLCARD_COUNT_SPELLCARDS];
+    Clrd clrdData[SHOT_ALL + 1];
+    Pscr pscrData[SHOT_ALL];
+    Plst plst;
+    Hscr hscr;
+    i32 unk3DB94;
+    i32 unk3DB98;
+    i32 unk3DB9C;
+    i32 unk3DBA0;
+    i32 unk3DBA4;
+    u8 character;
+    u8 shotType;
+    u8 fullShotType;
+    u8 unk3dbaa;
+    GameManagerFlags flags;
+    i16 currentSpellCardNumber;
+    u8 isInGameMenu;
+    u8 showRetryMenu;
+    u8 currentDemoReplay;
+    u8 replayMode;
+    u8 unk3DBB6;
+    u8 unk3DBB7;
+
+    i32 demoFrameCount;
+    char replayFilename[512];
+    u32 unk3ddbc;
+    u32 unk3ddc0;
+    i32 currentStage;
+    i32 currentStage2;
+    u32 unk3ddcc;
+    u16 unk3DDD0;
+    u16 unk3DDD2;
+    Float2 arcadeRegionTopLeftPos;
+    Float2 arcadeRegionSize;
+    Float2 playerMovementTopLeftPos;
+    Float2 playerMovementAreaSize;
+    f32 antiTamperExpectedValue;
+    i16 youkaiGaugeHumanLimit;
+    i16 youkaiGaugeYoukaiLimit;
+    i16 youkaiGaugeHumanEffectsThreshold;
+    i16 youkaiGaugeYoukaiEffectsThreshold;
+    i16 youkaiGaugeHumanTintThreshold;
+    i16 youkaiGaugeYoukaiTintThreshold;
+
+    i32 unk3de04;
+    u32 unk3de08;
+    u32 unk3de0c;
+    u32 unk3de10;
+    u32 unk3de14;
+    u32 unk3de18;
+    u32 unk3de1c;
+    u32 unk3de20;
+    u32 unk3de24;
+    u32 unk3de28;
+
+    i32 rank;
+    i32 maxRank;
+    i32 minRank;
+    i32 subRank;
+};
+
+C_ASSERT(sizeof(GameManager) == 0x3de3c);
+C_ASSERT(offsetof(GameManager, character) == 0x3DBA8);
+C_ASSERT(offsetof(GameManager, shotType) == 0x3DBA9);
+C_ASSERT(offsetof(GameManager, flags) == 0x3DBAC);
+C_ASSERT(offsetof(GameManager, currentSpellCardNumber) == 0x3DBB0);
+C_ASSERT(offsetof(GameManager, isInGameMenu) == 0x3DBB2);
+C_ASSERT(offsetof(GameManager, showRetryMenu) == 0x3DBB3);
+C_ASSERT(offsetof(GameManager, arcadeRegionTopLeftPos) == 0x3DDD4);
+C_ASSERT(offsetof(GameManager, arcadeRegionSize) == 0x3DDDC);
+C_ASSERT(offsetof(GameManager, playerMovementTopLeftPos) == 0x3DDE4);
+C_ASSERT(offsetof(GameManager, playerMovementAreaSize) == 0x3DDEC);
+
+DIFFABLE_EXTERN(GameManager, g_GameManager);
+}; // Namespace th08

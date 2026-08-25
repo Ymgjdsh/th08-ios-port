@@ -1,0 +1,129 @@
+#pragma once
+#include "Global.hpp"
+#include "AnmManager.hpp"
+#include "ZunResult.hpp"
+#include "diffbuild.hpp"
+#include "inttypes.hpp"
+#include "utils.hpp"
+#include <windows.h>
+
+namespace th08
+{
+struct EclExBarrierRenderState;
+
+struct BackgroundUnkVectors
+{
+    BackgroundUnkVectors();
+
+    Float3 vector0;
+    Float3 vector1;
+    Float3 vector2;
+    Float3 vector3;
+    Float3 vector4;
+    Float3 vector5;
+    f32 unk48;
+};
+C_ASSERT(sizeof(BackgroundUnkVectors) == 0x4c);
+
+struct BackgroundFog
+{
+    f32 nearPlane;
+    f32 farPlane;
+    ZunColor color;
+};
+C_ASSERT(sizeof(BackgroundFog) == 0xc);
+
+struct Background
+{
+    Background();
+
+    static ChainCallbackResult OnUpdate(Background *background);
+    static ChainCallbackResult OnDrawHighPrio(Background *background);
+    static ChainCallbackResult OnDrawLowPrio(Background *background);
+    static ZunResult AddedCallback(Background *background);
+    static ZunResult RegisterChain(i32 param);
+    static ZunResult DeletedCallback(Background *background);
+    static void CutChain();
+    ZunResult LoadStageData(const char *path);
+    ZunResult RenderObjects(i32 mode);
+
+    void SetCamera1();
+    void SetCamera2();
+    void __fastcall FUN_00408d60(i32 index, Float3 *out, const Float3 *start, const Float3 *end,
+                                  const Float3 *control2, const Float3 *control3);
+    void FUN_00409160(D3DCOLOR color);
+    u32 FUN_00409f40();
+    void background_fun_00415ce0();
+    void background_fun_00416ad0();
+
+    EclExBarrierRenderState &EclExBarrierState()
+    {
+        return *reinterpret_cast<EclExBarrierRenderState *>(&this->spellVmCount);
+    }
+
+    void *&EclExUpdateCallback()
+    {
+        return *reinterpret_cast<void **>(&this->onDrawLowPrioCallback);
+    }
+
+    void *stageAnm;
+    AnmVm stageVm0;
+    AnmVm stageVm1;
+    AnmVm stageVm2;
+    AnmLoaded *stageAnmFile;
+    void *stageAnmSecondary;
+    i32 stageVmCount;
+    i32 stageObjectCount;
+    void *stageOffsets;
+    void *stageUnknown804;
+    void *stageUnknown808;
+    ZunTimer timer80c;
+    unknown_fields(0x818, 0xc);
+    Float3 vector824;
+    unknown_fields(0x830, 0x8);
+    ZunTimer timer838;
+    AnmVm textAnmVm;
+    AnmVm *stageEffect;
+    BackgroundFog skyFog;
+    BackgroundFog skyFogInterpInitial;
+    BackgroundFog skyFogInterpFinal;
+    i32 skyFogInterpDuration;
+    ZunTimer timerB14;
+    u8 skyFogNeedsSetup;
+    unknown_fields(0xb21, 0x3);
+    i32 spellBackgroundState;
+    i32 spellBackgroundTimer;
+    unknown_fields(0xb2c, 0x4);
+    i32 spellVmCount;
+    i32 spellVmScriptBase;
+    AnmVm anmVmArray[0x20];
+    AnmVm anmVm5fb8;
+    void (*onDrawLowPrioCallback)();
+    i32 unk6260;
+    BackgroundUnkVectors unk6264;
+    BackgroundUnkVectors unk62b0;
+    BackgroundUnkVectors unk62fc;
+    BackgroundUnkVectors unk6348;
+    BackgroundUnkVectors unk6394;
+    i32 interpolationDuration[5];
+    ZunTimer interpolationTimers[5];
+    i32 interpolationMode[5];
+    Float3 vector6444;
+    unknown_fields(0x6450, 0x4);
+    Float3 vector6454;
+    unknown_fields(0x6460, 0x20);
+    Float3 vectors6480[0x20];
+};
+C_ASSERT(sizeof(Background) == 0x6600);
+C_ASSERT(offsetof(Background, spellVmCount) == 0xB30);
+C_ASSERT(offsetof(Background, onDrawLowPrioCallback) == 0x625C);
+
+DIFFABLE_EXTERN(Background, g_Background);
+DIFFABLE_EXTERN_ARRAY(const char *, 9, g_StageEnemyAnms);
+DIFFABLE_EXTERN_ARRAY(const char *, 17, g_SpellEnemyAnms);
+DIFFABLE_EXTERN_ARRAY(const char *, 9, g_StageEclFiles);
+DIFFABLE_EXTERN_ARRAY(const char *, 9, g_StageSpellEclFiles);
+DIFFABLE_EXTERN_ARRAY(const char *, 17, g_SpellEclFiles);
+DIFFABLE_EXTERN_ARRAY(const char *, 9, g_GuiStageTextAnmPaths);
+DIFFABLE_EXTERN_ARRAY(const char *, 15, g_EffectAnms);
+}; // Namespace th08

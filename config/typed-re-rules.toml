@@ -1,0 +1,131 @@
+schema_version = 1
+target_sha256 = "330fbdbf58a710829d65277b4f312cfbb38d5448b3df523e79350b879213d924"
+
+# Recommendations are compiler-shaping hypotheses only. They never mutate
+# source or tracking state and never substitute for strict function comparison.
+
+[[rules]]
+id = "vc7-explicit-unsigned-narrowing"
+requires = ["movzx"]
+confidence = "instruction_semantics"
+recommendation = "Preserve an unsigned byte/word source or explicit narrowing when a VC7 probe must retain target movzx behavior."
+evidence = "x86 movzx operand width in the hash-attested TH08 target"
+
+[[rules]]
+id = "vc7-explicit-signed-narrowing"
+requires = ["movsx"]
+confidence = "instruction_semantics"
+recommendation = "Preserve a signed byte/word source or explicit narrowing when a VC7 probe must retain target movsx behavior."
+evidence = "x86 movsx operand width in the hash-attested TH08 target"
+
+[[rules]]
+id = "vc7-debug-register-home"
+requires = ["register_home"]
+confidence = "target_observation"
+recommendation = "Treat an ECX home only as evidence that incoming ECX was saved. Use the decorated symbol, ledger ABI, and call sites to distinguish a this receiver from fastcall argument zero; preserve real parameter flow and validate shaping with the canonical comparator."
+evidence = "Exact TH08 corpus: ItemManager::AutoCollectAllItems 0x004413E0 plus fastcall callbacks Gui::AddedCallback 0x00437A2F, ScreenEffect::AddedCallback 0x0045C0E0, and BulletManager::DeletedCallback 0x00433820"
+
+[[rules]]
+id = "vc7-nonfolded-idiv"
+requires = ["idiv"]
+confidence = "probe_hypothesis"
+recommendation = "If a literal division folds away in VC7, probe a semantically real local or field source; accept only an exact comparator result."
+evidence = "VC7 code-generation hypothesis constrained by a target-observed idiv"
+
+[[rules]]
+id = "vc7-explicit-empty-constructor-definition"
+requires = ["implicit_constructor", "missing_function_aux"]
+confidence = "exact_match_corpus"
+recommendation = "When natural implicit member construction already produces the target bytes but the COFF symbol lacks a function-definition auxiliary record, use a declared out-of-line empty constructor so the comparator can track the function without replacing compiler-driven member initialization."
+evidence = "Exact TH08 constructors at 0x00402130, 0x00402150, 0x00402190, and 0x004021D0"
+
+[[rules]]
+id = "vc7-natural-inline-comdat-emission"
+requires = ["missing_inline_comdat", "target_tu_evidence"]
+confidence = "workflow_guardrail"
+recommendation = "Restore a target-proven caller and let its translation unit emit a header-inline COMDAT naturally. Do not add dummy callers, artificial function-pointer references, or noinline annotations solely to create a comparator symbol."
+evidence = "TH08 GameManager inline cluster 0x00406C70-0x00406DD0 and Rng accessor cluster 0x00453BE0-0x00453C20"
+
+[[rules]]
+id = "vc7-preserve-independent-store-order"
+requires = ["store_order_mismatch"]
+confidence = "exact_match_corpus"
+recommendation = "When target and object perform the same independent field assignments in a different order, preserve the target-observed source assignment order before changing types, ABI, or compiler settings."
+evidence = "TH08 ZunTimer::SetCurrent at 0x00406610: current, subFrame, then previous"
+
+[[rules]]
+id = "vc7-structured-memcpy-source-address"
+requires = ["memcpy_setup_order_mismatch"]
+confidence = "exact_match_corpus"
+recommendation = "When an inlined fixed-size structure-tail memcpy differs only in ECX/ESI setup order, prefer the typed address of the first copied field over byte-pointer arithmetic from the enclosing object. Preserve the same extent and validate that the canonical comparator, not instruction count alone, reaches exactness."
+evidence = "TH08 ReplayManager::SaveReplay at 0x004531F0: &replayCopy.unk0x68 reproduces target mov ecx, lea esi, mov edi, rep movsd ordering where (u8 *)&replayCopy + sizeof(ReplayDataHeader) schedules lea esi first"
+
+[[rules]]
+id = "vc7-var-order-identifier-stability"
+requires = ["var_order_identifier_sensitive"]
+confidence = "exact_match_corpus"
+recommendation = "Treat local identifiers governed by the repository VC7 var_order pragma as code-generation inputs. A readability-only rename can change stack allocation even when declaration order, types, and expressions are unchanged; preserve a proven identifier during matching and document its semantic role in a comment instead of renaming it."
+evidence = "TH08 EnemyManager::OnUpdate at 0x0042C660: renaming the proven bounds locals changed the first non-relocation difference from 0x89B back to 0xD6 without changing their types, values, declaration order, or call order"
+
+[[rules]]
+id = "large-dispatcher-source-presence-audit"
+requires = ["jump_table_dispatch", "large_direct_call_surface"]
+confidence = "exact_match_corpus"
+recommendation = "For a large dispatcher, reconcile every primary and nested jump-table slot and compare the target direct-call destination multiset with the built function REL32 multiset. If the COFF auxiliary extent includes compiler tables after the authored code boundary, compare the full associated extent and count authored coverage from code only; keep exact status gated on complete relocation replay through the canonical comparator."
+evidence = "Exact TH08 AnmManager::ExecuteScript at 0x0045EA00: 0x366D authored bytes, 0x1A0 associated bytes across 91+6+7 jump-table entries, 228 identical direct calls, and 371 exact relocations over the full 0x380D extent"
+
+[[rules]]
+id = "ecl-indirect-context-overlay"
+requires = ["ecl_context_indirection"]
+confidence = "target_observation"
+recommendation = "Keep TH08 ECL variable access behind the active context pointer at Enemy+0x2CA0. The default context is Enemy+0x7F8, child contexts use allocation+8, and the paired stack base is selected through Enemy+0x2CA4; do not port TH07 direct Enemy offsets."
+evidence = "TH08 RunEcl 0x004184B0 and four resolver functions 0x0041F420/0x0041FE10/0x00420120/0x00420950"
+
+[[rules]]
+id = "ecl-rvalue-lvalue-asymmetry"
+requires = ["ecl_operand_resolver"]
+confidence = "target_observation"
+recommendation = "Derive rvalue and lvalue tables independently. In TH08, float IDs 0x273A..0x273C read Enemy+0x2D88/+0x2D8C/+0x2D90 but write Enemy+0x2D34/+0x2D38/+0x2D3C; semantic symmetry is not evidence of identical offsets."
+evidence = "TH08 float resolver tables at 0x00420120 and 0x00420950"
+
+[[rules]]
+id = "ecl-opcode-minus-one-dispatch"
+requires = ["ecl_dispatch_table"]
+confidence = "target_observation"
+recommendation = "The RunEcl primary jump table indexes opcode-1. Normalize decompiler case labels back to actual opcodes 1..184, then audit each source case once with scripts/analysis/historical/runecl-audit-dispatch.py."
+evidence = "TH08 RunEcl dispatch at 0x00418623 and 184-slot table at 0x0041ECBE"
+
+[[rules]]
+id = "vc7-large-branch-lexical-nesting"
+requires = ["jump_table_dispatch"]
+confidence = "target_observation_with_probe"
+recommendation = "When a dispatcher target uses one near conditional branch around a very large body but the object emits a short inverse branch plus a near jump, preserve the positive source condition and lexically nest the entire dispatcher body inside it. A goto or early break can be semantically equivalent while forcing the two-branch shape."
+evidence = "TH08 RunEcl 0x004184B0: nesting the complete dispatch under the timer-equality condition changed object +0x106 from 75 05 / E9 to the target-observed single 0F 84 without changing the opcode or resolver call audit"
+
+[[rules]]
+id = "vc7-dispatcher-scratch-home-reuse"
+requires = ["jump_table_dispatch"]
+confidence = "target_observation_with_probe"
+recommendation = "Recover dispatcher scratch storage from target EBP homes across handlers before declaring switch-wide locals. If unrelated scalar or index handlers consistently reuse an existing outer home, reuse that semantic local; if target code performs a table lookup directly and has no stable pointer home, keep the lookup expression direct. Change one proven slot at a time and verify the expected four-byte movement of later homes."
+evidence = "TH08 RunEcl 0x004184B0: target handlers reuse lhsInt at EBP-4 and have no fixed targetEnemy/high object-index-value homes; five single-slot probes moved the saved this home from object EBP-0x158 to target EBP-0x144 in exact four-byte steps"
+
+[[rules]]
+id = "target-absolute-member-addend"
+requires = ["absolute_memory"]
+confidence = "target_observation_with_probe"
+recommendation = "Do not promote an absolute target operand to a standalone global from a read alone. Reconcile write-side and lifetime xrefs against known global objects; when the address is base+member_offset and construction or destruction uses [this+member_offset], express the source through that owner so COFF emits the base DIR32 relocation with the natural addend."
+evidence = "TH08 EnemyManager fields observed at absolute 0x00F54E0C/0x00F54E10 in RunEcl and as g_EnemyManager+0x9DCEEC/+0x9DCEF0 in AddedCallback; the corrected VC7 probe emits g_EnemyManager DIR32 relocations with those addends instead of false zero-addend globals"
+
+[[rules]]
+id = "target-relocation-ledger-ownership"
+requires = ["ledgered_relocation_destination"]
+confidence = "exact_match_corpus"
+recommendation = "Resolve relocation destinations through each CSV's named address column, not a fixed column index. Keep functions, globals, floats, strings, and relocation-only imports or thunks in their owning ledgers; never create a fake function/global row to satisfy replay. Promote exact status only after the isolated COFF extent and every relocation replay to zero differences."
+evidence = "TH08 zwave and AnmManager unlock corpus: header-aware destination lookup exposed 15 already-exact functions totaling 5,259 authored bytes; six attested import/thunk rows remained relocation-only while complete replay verified 146 relocations"
+
+[[rules]]
+id = "compiler-local-tail-authored-coverage"
+requires = ["jump_table_dispatch"]
+confidence = "exact_match_corpus"
+recommendation = "When mapping size ends at the authored return but the isolated COFF auxiliary extent owns adjacent compiler-local tables, keep size equal to authored coverage and set compare_size to the full owned extent. Normalize compiler-local symbols by relocation offset and resolved target, replay every table entry, and never count associated table bytes as authored progress."
+evidence = "Exact TH08 AnmVm accessor corpus at 0x0045E650/0x0045E720/0x0045E810/0x0045E8A0: 615 authored bytes plus 136 associated jump-table bytes; all 751 compared bytes and 44 relocations replay exactly"

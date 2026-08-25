@@ -1,0 +1,226 @@
+#include "EclOperands.hpp"
+
+#include "EclManager.hpp"
+#include "GameManager.hpp"
+#include "Global.hpp"
+#include "ItemManager.hpp"
+#include "Player.hpp"
+#include "Spellcard.hpp"
+
+namespace th08
+{
+namespace EclOperands
+{
+
+// These private overlays expose only behavior and offsets observed in the
+// hash-attested TH08 1.00d target. Their owning subsystem lanes can replace
+// the address-based names once the corresponding public layouts are proven.
+
+
+
+
+// This target cluster was built with inlining disabled.  Helper functions,
+// including __forceinline helpers, therefore become out-of-line COMDAT calls
+// and change both owned function bodies.  The original functions access their
+// private Enemy/ECL layouts directly; these expression macros retain that
+// target-observed shape without introducing a public Enemy ABI.
+#define INT_FIELD(offset) (*(i32 *)(enemy->bytes + (offset)))
+#define FLOAT_FIELD(offset) (*(f32 *)(enemy->bytes + (offset)))
+#define VECTOR_FIELD(offset) (*(Vector3 *)(enemy->bytes + (offset)))
+#define ECL_CONTEXT (*(u8 **)(enemy->bytes + 0x2ca0))
+#define CONTEXT_INT(offset) (*(i32 *)(ECL_CONTEXT + (offset)))
+#define CONTEXT_FLOAT(offset) (*(f32 *)(ECL_CONTEXT + (offset)))
+#define ENEMY_HELPERS ((TargetEnemyHelpersOverlay *)enemy)
+
+
+
+// Observed: 0x0041F420 is __fastcall, with Enemy in ECX and the raw integer
+// operand in EDX. The primary table covers 0x2710 through 0x2774 inclusive.
+// Values 0x275f..0x2762 deliberately share the raw-operand default handler.
+i32 __fastcall ResolveInt(EnemyOverlay *enemy, i32 operand)
+{
+    switch (operand)
+    {
+    case 0x2710: return CONTEXT_INT(0x18);
+    case 0x2711: return CONTEXT_INT(0x1c);
+    case 0x2712: return CONTEXT_INT(0x20);
+    case 0x2713: return CONTEXT_INT(0x24);
+    case 0x2714: return CONTEXT_INT(0x28);
+    case 0x2715: return CONTEXT_INT(0x2c);
+    case 0x2716: return CONTEXT_INT(0x30);
+    case 0x2717: return CONTEXT_INT(0x34);
+    case 0x2718: return INT_FIELD(0x2ca8);
+    case 0x2719: return INT_FIELD(0x2cac);
+    case 0x271a: return INT_FIELD(0x2cb0);
+    case 0x271b: return INT_FIELD(0x2cb4);
+    case 0x271c: return INT_FIELD(0x2cb8);
+    case 0x271d: return INT_FIELD(0x2cbc);
+    case 0x271e: return INT_FIELD(0x2cc0);
+    case 0x271f: return INT_FIELD(0x2cc4);
+
+    // Case-body order follows the target jump-table emission order rather
+    // than numeric selector order.
+    case 0x2745: return CONTEXT_INT(0x70);
+    case 0x2746: return CONTEXT_INT(0x74);
+    case 0x2747: return CONTEXT_INT(0x78);
+    case 0x2748: return CONTEXT_INT(0x7c);
+    case 0x2734: return CONTEXT_INT(0x58);
+    case 0x2735: return CONTEXT_INT(0x5c);
+    case 0x2736: return CONTEXT_INT(0x60);
+    case 0x2737: return CONTEXT_INT(0x64);
+    case 0x2730: return (i32)(g_Rng.GetRandomU32() & 0x7fffffff);
+    case 0x2731: return (i32)g_Rng.GetRandomF32();
+    case 0x2732: return (i32)g_Rng.GetRandomU32();
+    case 0x2733: return (i32)g_Rng.GetRandomF32Signed();
+    case 0x2738: return g_GameManager.difficulty;
+    case 0x2739: return g_GameManager.rank;
+    case 0x2741: return INT_FIELD(0x2e1c);
+    case 0x2743: return INT_FIELD(0x2dfc);
+    case 0x2744: return ::th08::g_GameManager.shotType;
+    case 0x276e: return (i32)CONTEXT_FLOAT(0x68);
+    case 0x276f: return (i32)CONTEXT_FLOAT(0x6c);
+
+    case 0x2720: return (i32)CONTEXT_FLOAT(0x38);
+    case 0x2721: return (i32)CONTEXT_FLOAT(0x3c);
+    case 0x2722: return (i32)CONTEXT_FLOAT(0x40);
+    case 0x2723: return (i32)CONTEXT_FLOAT(0x44);
+    case 0x2724: return (i32)CONTEXT_FLOAT(0x48);
+    case 0x2725: return (i32)CONTEXT_FLOAT(0x4c);
+    case 0x2726: return (i32)CONTEXT_FLOAT(0x50);
+    case 0x2727: return (i32)CONTEXT_FLOAT(0x54);
+    case 0x2728: return (i32)FLOAT_FIELD(0x2cc8);
+    case 0x2729: return (i32)FLOAT_FIELD(0x2ccc);
+    case 0x272a: return (i32)FLOAT_FIELD(0x2cd0);
+    case 0x272b: return (i32)FLOAT_FIELD(0x2cd4);
+    case 0x272c: return (i32)FLOAT_FIELD(0x2cd8);
+    case 0x272d: return (i32)FLOAT_FIELD(0x2cdc);
+    case 0x272e: return (i32)FLOAT_FIELD(0x2ce0);
+    case 0x272f: return (i32)FLOAT_FIELD(0x2ce4);
+    case 0x2749: return (i32)CONTEXT_FLOAT(0x80);
+    case 0x274a: return (i32)CONTEXT_FLOAT(0x84);
+    case 0x274b: return (i32)CONTEXT_FLOAT(0x88);
+    case 0x274c: return (i32)CONTEXT_FLOAT(0x8c);
+    case 0x274d: return EclRunLowProposal::g_EclCallParameters.ints[0];
+    case 0x274e: return EclRunLowProposal::g_EclCallParameters.ints[1];
+    case 0x274f: return EclRunLowProposal::g_EclCallParameters.ints[2];
+    case 0x2750: return EclRunLowProposal::g_EclCallParameters.ints[3];
+    case 0x2751: return (i32)EclRunLowProposal::g_EclCallParameters.floats[0];
+    case 0x2752: return (i32)EclRunLowProposal::g_EclCallParameters.floats[1];
+    case 0x2753: return (i32)EclRunLowProposal::g_EclCallParameters.floats[2];
+    case 0x2754: return (i32)EclRunLowProposal::g_EclCallParameters.floats[3];
+    case 0x273a: return (i32)FLOAT_FIELD(0x2d88);
+    case 0x273b: return (i32)FLOAT_FIELD(0x2d8c);
+    case 0x273c: return (i32)FLOAT_FIELD(0x2d90);
+    case 0x273d: return (i32)(*reinterpret_cast<Vector3 *>(&g_Player.position)).x;
+    case 0x273e: return (i32)(*reinterpret_cast<Vector3 *>(&g_Player.position)).y;
+    case 0x273f: return (i32)(*reinterpret_cast<Vector3 *>(&g_Player.position)).z;
+    case 0x275a: return (i32)FLOAT_FIELD(0x2dd0);
+    case 0x275b: return (i32)FLOAT_FIELD(0x2dd4);
+    case 0x275c: return (i32)FLOAT_FIELD(0x2dd8);
+    case 0x2765: return (i32)FLOAT_FIELD(0x2d64);
+    case 0x2766: return (i32)FLOAT_FIELD(0x2d68);
+    case 0x2767: return (i32)FLOAT_FIELD(0x2d6c);
+    case 0x2768: return INT_FIELD(0x3358);
+    case 0x2769: return INT_FIELD(0x335c);
+    case 0x276a: return INT_FIELD(0x3360);
+    case 0x276b: return INT_FIELD(0x3364);
+    case 0x2755: return (i32)FLOAT_FIELD(0x2d94);
+    case 0x2756: return (i32)FLOAT_FIELD(0x2d98);
+    case 0x2757: return (i32)FLOAT_FIELD(0x2da8);
+    case 0x2758: return (i32)FLOAT_FIELD(0x2dac);
+    case 0x2759: return (i32)FLOAT_FIELD(0x2db0);
+    case 0x275d: return (i32)FLOAT_FIELD(0x2d9c);
+    case 0x275e: return (i32)FLOAT_FIELD(0x2da0);
+    case 0x2763: return INT_FIELD(0x3354);
+    case 0x2764: return *(u8 *)(enemy->bytes + 0x3313);
+    case 0x276c: return INT_FIELD(0x3304);
+    case 0x276d: return INT_FIELD(0x2e08);
+
+    case 0x2770:
+        return ENEMY_HELPERS->HasParentChain()
+                   ? ENEMY_HELPERS->CountParentChain()
+                   : ENEMY_HELPERS->HasAttachedEnemy()
+                         ? (*(TargetEnemyHelpersOverlay **)(enemy->bytes + 0x2da4))->CountParentChain()
+                         : 0;
+    case 0x2740:
+        return (i32)g_Player.FUN_0044c1b0(reinterpret_cast<Float3 *>(&VECTOR_FIELD(0x2d88)));
+    case 0x2742:
+    {
+        Float3 delta = g_Player.position - *reinterpret_cast<Float3 *>(&VECTOR_FIELD(0x2d88));
+        return (i32)D3DXVec3Length(reinterpret_cast<D3DXVECTOR3 *>(&delta));
+    }
+    case 0x2771: return g_Player.IsYoukai();
+    case 0x2772:
+        return g_GameManager.GetTimeOrbs() + g_Spellcard.GetPendingTimeOrbs()
+                       + g_ItemManager.GetTimeOrbCount()
+                   >= g_GameManager.GetLastSpellTimeOrbThreshold()
+               ? 2
+               : 0;
+    case 0x2773:
+        return g_Spellcard.IsActive() ? g_Spellcard.GetActiveState()
+                                                    : g_Spellcard.GetInactiveState();
+    case 0x2774: return g_Spellcard.GetTimerFrames();
+    default: return operand;
+    }
+}
+
+// Observed: 0x0041FE10 is __fastcall for ECX/EDX and callee-cleans the two
+// stack arguments (u16 flags, i32 flagIndex). Its selector table covers
+// 0x2710..0x276d; every unlisted value returns the caller's operand pointer.
+i32 *__fastcall ResolveIntLValue(EnemyOverlay *enemy, i32 *operand, u16 flags, i32 flagIndex)
+{
+    if (flagIndex >= 0 && !(flags & (1 << flagIndex)))
+    {
+        return operand;
+    }
+
+    switch (*operand)
+    {
+    case 0x2710: return &CONTEXT_INT(0x18);
+    case 0x2711: return &CONTEXT_INT(0x1c);
+    case 0x2712: return &CONTEXT_INT(0x20);
+    case 0x2713: return &CONTEXT_INT(0x24);
+    case 0x2714: return &CONTEXT_INT(0x28);
+    case 0x2715: return &CONTEXT_INT(0x2c);
+    case 0x2716: return &CONTEXT_INT(0x30);
+    case 0x2717: return &CONTEXT_INT(0x34);
+    case 0x2718: return &INT_FIELD(0x2ca8);
+    case 0x2719: return &INT_FIELD(0x2cac);
+    case 0x271a: return &INT_FIELD(0x2cb0);
+    case 0x271b: return &INT_FIELD(0x2cb4);
+    case 0x271c: return &INT_FIELD(0x2cb8);
+    case 0x271d: return &INT_FIELD(0x2cbc);
+    case 0x271e: return &INT_FIELD(0x2cc0);
+    case 0x271f: return &INT_FIELD(0x2cc4);
+    case 0x2745: return &CONTEXT_INT(0x70);
+    case 0x2746: return &CONTEXT_INT(0x74);
+    case 0x2747: return &CONTEXT_INT(0x78);
+    case 0x2748: return &CONTEXT_INT(0x7c);
+    case 0x2734: return &CONTEXT_INT(0x58);
+    case 0x2735: return &CONTEXT_INT(0x5c);
+    case 0x2736: return &CONTEXT_INT(0x60);
+    case 0x2737: return &CONTEXT_INT(0x64);
+    case 0x2738: return &g_GameManager.difficulty;
+    case 0x2739: return &g_GameManager.rank;
+    case 0x2741: return &INT_FIELD(0x2e1c);
+    case 0x2743: return &INT_FIELD(0x2dfc);
+    case 0x276c: return &INT_FIELD(0x3304);
+    case 0x276d: return &INT_FIELD(0x2e08);
+    case 0x274d: return &EclRunLowProposal::g_EclCallParameters.ints[0];
+    case 0x274e: return &EclRunLowProposal::g_EclCallParameters.ints[1];
+    case 0x274f: return &EclRunLowProposal::g_EclCallParameters.ints[2];
+    case 0x2750: return &EclRunLowProposal::g_EclCallParameters.ints[3];
+    default: return operand;
+    }
+}
+
+#undef ENEMY_HELPERS
+#undef CONTEXT_FLOAT
+#undef CONTEXT_INT
+#undef ECL_CONTEXT
+#undef VECTOR_FIELD
+#undef FLOAT_FIELD
+#undef INT_FIELD
+
+} // namespace EclOperands
+} // namespace th08
