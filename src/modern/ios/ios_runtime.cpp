@@ -2,6 +2,7 @@
 
 #include <execinfo.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +10,7 @@
 #include <unistd.h>
 #include <windows.h>
 #include <SDL.h>
+#include "ios_touch.hpp"
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPTSTR, int);
 
@@ -67,6 +69,23 @@ namespace
 int g_argumentCount;
 char **g_arguments;
 volatile sig_atomic_t g_reportingCrash;
+#ifdef TH08_IOS
+char g_diagnosticPath[PATH_MAX];
+#endif
+
+void WriteDiagnosticLine(const char *line)
+{
+#ifdef TH08_IOS
+    const char *path = g_diagnosticPath[0] != '\0' ? g_diagnosticPath : "th08-startup.log";
+#else
+    const char *path = "th08-startup.log";
+#endif
+    FILE *file = fopen(path, "ab");
+    if (file == NULL)
+        return;
+    fprintf(file, "%s\n", line != NULL ? line : "<null>");
+    fclose(file);
+}
 
 void WriteCrashLine(int file, const char *line)
 {
@@ -79,7 +98,16 @@ void ReportFatalSignal(int signalNumber, siginfo_t *signalInfo, void *)
         _exit(128 + signalNumber);
     g_reportingCrash = 1;
 
+#ifdef TH08_IOS
+    char crashPath[PATH_MAX];
+    if (g_diagnosticPath[0] != '\0')
+        snprintf(crashPath, sizeof(crashPath), "%s.crash", g_diagnosticPath);
+    else
+        snprintf(crashPath, sizeof(crashPath), "modern-crash.txt");
+    int file = open(crashPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#else
     int file = open("modern-crash.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+#endif
     if (file >= 0)
     {
         char line[160];
@@ -284,9 +312,30 @@ bool ConfigureDataDirectory()
     }
 
 #ifdef TH08_IOS
+    // Keep diagnostics in Documents so they can be extracted through
+    // iTunes/File Sharing or a device file manager when syslog is unavailable.
+    const char *homePath = getenv("HOME");
+    if (homePath != NULL && homePath[0] != '\0')
+    {
+        char documentsPath[PATH_MAX];
+        snprintf(documentsPath, sizeof(documentsPath), "%s/Documents", homePath);
+        mkdir(documentsPath, 0755);
+        snprintf(g_diagnosticPath, sizeof(g_diagnosticPath), "%s/startup.log", documentsPath);
+    }
+    else
+    {
+        char *prefPath = SDL_GetPrefPath("com.th08.sdl2.ios", "th08");
+        if (prefPath != NULL)
+        {
+            snprintf(g_diagnosticPath, sizeof(g_diagnosticPath), "%sstartup.log", prefPath);
+            SDL_free(prefPath);
+        }
+    }
+    WriteDiagnosticLine("configure: begin");
     if (directory != NULL && (directory[0] == '\0' || chdir(directory) != 0))
     {
         fprintf(stderr, "th08-modern: unable to enter data directory: %s\n", directory);
+        WriteDiagnosticLine("configure: explicit data directory failed");
         return false;
     }
     if (directory == NULL)
@@ -298,6 +347,7 @@ bool ConfigureDataDirectory()
             SDL_free(basePath);
         }
     }
+    WriteDiagnosticLine("configure: bundle directory selected");
 #else
     if (directory != NULL && (directory[0] == '\0' || chdir(directory) != 0))
     {
@@ -310,8 +360,10 @@ bool ConfigureDataDirectory()
     if (stat("th08.dat", &info) != 0 || !S_ISREG(info.st_mode))
     {
         fprintf(stderr, "th08-modern: selected directory does not contain th08.dat\n");
+        WriteDiagnosticLine("configure: th08.dat missing");
         return false;
     }
+    WriteDiagnosticLine("configure: data files found");
     unlink("modern-files.txt");
     unlink("modern-crash.txt");
     unlink("modern-render.txt");
@@ -328,9 +380,23 @@ void InstallCrashReporter()
     InstallSignalHandler(SIGBUS);
 }
 
+void LogStartup(const char *phase)
+{
+    WriteDiagnosticLine(phase);
+}
+
 void LogArchiveRequest(const char *path)
 {
+#ifdef TH08_IOS
+    char archivePath[PATH_MAX];
+    if (g_diagnosticPath[0] != '\0')
+        snprintf(archivePath, sizeof(archivePath), "%s-files", g_diagnosticPath);
+    else
+        snprintf(archivePath, sizeof(archivePath), "modern-files.txt");
+    FILE *file = fopen(archivePath, "ab");
+#else
     FILE *file = fopen("modern-files.txt", "ab");
+#endif
     if (file == NULL)
         return;
     fprintf(file, "thread=%08lx path=%s\n", (unsigned long)GetCurrentThreadId(), path != NULL ? path : "<null>");

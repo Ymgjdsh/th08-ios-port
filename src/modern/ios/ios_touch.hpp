@@ -7,6 +7,8 @@ namespace th08
 {
 namespace modern
 {
+void LogStartup(const char *phase);
+
 namespace ios
 {
 

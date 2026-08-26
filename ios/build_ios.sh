@@ -6,6 +6,7 @@ BUILD_DIR=${BUILD_DIR:-"$ROOT_DIR/build-ios"}
 CONFIG=${CONFIG:-Release}
 IOS_VERSION=${IOS_VERSION:-0.1.0}
 IOS_BUILD=${IOS_BUILD:-1}
+IOS_CMAKE_GENERATOR=${IOS_CMAKE_GENERATOR:-Unix\ Makefiles}
 DATA_DIR=${TH08_IOS_DATA_DIR:-}
 DEPS_DIR=${TH08_IOS_DEPS_DIR:-}
 OUTPUT_IPA=${OUTPUT_IPA:-"$BUILD_DIR/th08-ios-${IOS_VERSION}-${IOS_BUILD}.ipa"}
@@ -21,17 +22,29 @@ echo "Data:    ${DATA_DIR:-not bundled}"
 echo "Deps:    ${DEPS_DIR:-FetchContent network source}"
 
 command -v cmake >/dev/null 2>&1 || { echo "error: cmake is required"; exit 2; }
-command -v xcodebuild >/dev/null 2>&1 || { echo "error: Xcode command-line tools are required"; exit 2; }
 command -v xcrun >/dev/null 2>&1 || { echo "error: xcrun is required"; exit 2; }
 SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 test -d "$SDK_PATH" || { echo "error: iPhoneOS SDK not found: $SDK_PATH"; exit 2; }
+
+# CMake cannot change generators in an existing build tree.  Remove only the
+# generated tree when it was configured with a different generator; source
+# files and the build log directory remain untouched.
+if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
+    CACHED_GENERATOR=$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$BUILD_DIR/CMakeCache.txt" | head -n 1)
+    if [ "$CACHED_GENERATOR" != "$IOS_CMAKE_GENERATOR" ]; then
+        echo "Reconfiguring build tree from $CACHED_GENERATOR to $IOS_CMAKE_GENERATOR"
+        rm -rf "$BUILD_DIR/CMakeCache.txt" "$BUILD_DIR/CMakeFiles" \
+            "$BUILD_DIR/Makefile" "$BUILD_DIR/cmake_install.cmake" \
+            "$BUILD_DIR/$CONFIG-iphoneos" "$BUILD_DIR/th08-modern.app" "$BUILD_DIR/th08.app"
+    fi
+fi
 
 DEPS_ARGS=""
 if [ -n "$DEPS_DIR" ]; then
     DEPS_ARGS="-DFETCHCONTENT_SOURCE_DIR_SDL2=$DEPS_DIR/SDL-release-2.30.9 -DFETCHCONTENT_SOURCE_DIR_SDL2_IMAGE=$DEPS_DIR/SDL_image-release-2.8.2 -DFETCHCONTENT_SOURCE_DIR_SDL2_MIXER=$DEPS_DIR/SDL_mixer-release-2.8.0 -DFETCHCONTENT_SOURCE_DIR_SDL2_TTF=$DEPS_DIR/SDL_ttf-release-2.22.0"
 fi
 
-cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G Xcode \
+cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$IOS_CMAKE_GENERATOR" \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_SYSROOT="$SDK_PATH" \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
@@ -40,10 +53,22 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G Xcode \
     -DTH08_IOS_BUILD="$IOS_BUILD" \
     -DTH08_IOS_DATA_DIR="$DATA_DIR" \
     -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+    -DCMAKE_C_COMPILER_WORKS=TRUE \
+    -DCMAKE_CXX_COMPILER_WORKS=TRUE \
+    -DCMAKE_OBJC_COMPILER_WORKS=TRUE \
+    -DCMAKE_OBJCXX_COMPILER_WORKS=TRUE \
     $DEPS_ARGS
 
 cmake --build "$BUILD_DIR" --config "$CONFIG" --target th08-modern
-APP_PATH="$BUILD_DIR/$CONFIG-iphoneos/th08-modern.app"
+APP_PATH=""
+for candidate in \
+    "$BUILD_DIR/$CONFIG-iphoneos/th08-modern.app" \
+    "$BUILD_DIR/$CONFIG-iphoneos/th08.app" \
+    "$BUILD_DIR/th08-modern.app" \
+    "$BUILD_DIR/th08.app"; do
+    if [ -d "$candidate" ]; then APP_PATH="$candidate"; break; fi
+done
+test -n "$APP_PATH" || { echo "error: no iOS app bundle was produced"; exit 3; }
 if [ ! -x "$APP_PATH/th08" ] && [ -x "$APP_PATH/th08-modern" ]; then
     # Xcode names the Mach-O after the CMake target even when OUTPUT_NAME is
     # set.  The Info.plist and IPA contract use the stable `th08` name.
@@ -57,6 +82,25 @@ if [ ! -f "$APP_PATH/Assets.car" ] && [ -d "$ROOT_DIR/ios/Assets.xcassets" ]; th
         --app-icon AppIcon --output-format human-readable-text \
         --output-partial-info-plist "$BUILD_DIR/assetcatalog-info.plist" \
         --compile "$APP_PATH" "$ROOT_DIR/ios/Assets.xcassets"
+fi
+if [ -f "$ROOT_DIR/ios/LaunchScreen.storyboard" ] && [ ! -d "$APP_PATH/LaunchScreen.storyboardc" ]; then
+    xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
+        --platform iphoneos --minimum-deployment-target 14.0 \
+        "$ROOT_DIR/ios/LaunchScreen.storyboard"
+fi
+
+# CMake's non-Xcode generators copy source bundles verbatim.  The compiled
+# products above are what iOS consumes; retaining the source directories only
+# increases the IPA and can leave stale resources beside the current catalog.
+rm -rf "$APP_PATH/Assets.xcassets"
+rm -f "$APP_PATH/LaunchScreen.storyboard"
+
+# Make the bundle metadata independent of Xcode's asset-catalog integration.
+# This is required with the Unix Makefiles generator, which does not merge the
+# partial plist emitted by actool into the app's Info.plist automatically.
+if [ -f "$APP_PATH/Info.plist" ]; then
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconName string AppIcon" "$APP_PATH/Info.plist" 2>/dev/null || \
+        /usr/libexec/PlistBuddy -c "Set :CFBundleIconName AppIcon" "$APP_PATH/Info.plist"
 fi
 
 codesign --force --deep --sign - "$APP_PATH"

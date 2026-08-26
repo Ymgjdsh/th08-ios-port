@@ -20,6 +20,9 @@
 #ifdef TH08_MODERN_PORT
 #include "modern/windows_runtime.hpp"
 #endif
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 #include <d3dx8.h>
 #include <direct.h>
 #include <shlguid.h>
@@ -97,8 +100,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR pCmdLine
 
 #ifdef TH08_MODERN_PORT
     modern::InstallCrashReporter();
+#ifdef TH08_IOS
+    modern::LogStartup("main: crash reporter installed");
+#endif
     if (!modern::ConfigureDataDirectory())
         return EXIT_FAILURE;
+#ifdef TH08_IOS
+    modern::LogStartup("main: data directory configured");
+#endif
 #endif
 
     g_Supervisor.hInstance = hInstance;
@@ -122,6 +131,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR pCmdLine
     {
         goto stop;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("main: config loaded");
+#endif
 
     GameWindow::CalcExecutableChecksum();
     QueryPerformanceFrequency(&g_GameWindow.pcFrequency);
@@ -131,18 +143,30 @@ restart:
     {
         goto stop;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("main: d3d interface ready");
+#endif
 
     if (GameWindow::CreateGameWindow(hInstance))
     {
         goto stop;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("main: window ready");
+#endif
 
     if (GameWindow::InitD3DRendering())
     {
         goto stop;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("main: renderer ready");
+#endif
 
     g_SoundPlayer.InitializeDSound(g_GameWindow.window);
+#ifdef TH08_IOS
+    modern::LogStartup("main: audio initialized");
+#endif
     Controller::GetJoystickCaps();
     Controller::ResetKeyboard();
 
@@ -156,6 +180,9 @@ restart:
     }
 
     renderResult = Supervisor::RegisterChain();
+#ifdef TH08_IOS
+    modern::LogStartup("main: chains registered");
+#endif
 
     if (renderResult != RENDER_RESULT_KEEP_RUNNING)
     {

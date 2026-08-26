@@ -8,6 +8,11 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>th08</string>
     <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleIconName</key><string>AppIcon</string>
+    <key>CFBundleIcons</key>
+    <dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconName</key><string>AppIcon</string><key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array></dict></dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconName</key><string>AppIcon</string><key>CFBundleIconFiles</key><array><string>AppIcon76x76</string></array></dict></dict>
     <key>CFBundleShortVersionString</key><string>@TH08_IOS_VERSION@</string>
     <key>CFBundleVersion</key><string>@TH08_IOS_BUILD@</string>
     <key>LSRequiresIPhoneOS</key><true/>
@@ -18,5 +23,7 @@
     <key>UISupportedInterfaceOrientations~ipad</key>
     <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>
     <key>UIApplicationSupportsIndirectInputEvents</key><true/>
+    <key>UIFileSharingEnabled</key><true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key><true/>
 </dict>
 </plist>
