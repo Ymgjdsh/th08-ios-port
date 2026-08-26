@@ -73,6 +73,53 @@ volatile sig_atomic_t g_reportingCrash;
 char g_diagnosticPath[PATH_MAX];
 #endif
 
+#ifdef TH08_IOS
+void WriteEarlyDiagnostic(const char *line)
+{
+    const char *homePath = getenv("HOME");
+    if (homePath == NULL || homePath[0] == '\0')
+        return;
+
+    char documentsPath[PATH_MAX];
+    snprintf(documentsPath, sizeof(documentsPath), "%s/Documents", homePath);
+    mkdir(documentsPath, 0755);
+
+    char path[PATH_MAX];
+    snprintf(path, sizeof(path), "%s/th08-startup.log", documentsPath);
+    int file = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (file >= 0)
+    {
+        const char *text = line != NULL ? line : "<null>";
+        write(file, text, strlen(text));
+        write(file, "\n", 1);
+        fsync(file);
+        close(file);
+    }
+
+    // Keep a second marker in the location shown by older file managers.
+    char preferencesPath[PATH_MAX];
+    snprintf(preferencesPath, sizeof(preferencesPath), "%s/Library/Preferences", homePath);
+    mkdir(preferencesPath, 0755);
+    snprintf(path, sizeof(path), "%s/th08-startup.log", preferencesPath);
+    file = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (file >= 0)
+    {
+        const char *text = line != NULL ? line : "<null>";
+        write(file, text, strlen(text));
+        write(file, "\n", 1);
+        fsync(file);
+        close(file);
+    }
+}
+
+// This runs before main and before SDL initialization, catching loader/static
+// initialization failures that cannot be handled by the normal signal setup.
+__attribute__((constructor)) static void EarlyStartupMarker()
+{
+    WriteEarlyDiagnostic("constructor: process loaded");
+}
+#endif
+
 void WriteDiagnosticLine(const char *line)
 {
 #ifdef TH08_IOS
