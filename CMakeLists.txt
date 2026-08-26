@@ -92,6 +92,16 @@ elseif(UNIX AND NOT APPLE)
         src/modern/linux/linux_runtime.cpp
     )
     add_executable(th08-modern ${TH08_GAME_SOURCES})
+elseif(APPLE)
+    enable_language(OBJC)
+    enable_language(OBJCXX)
+    list(APPEND TH08_GAME_SOURCES
+        src/modern/ios/ios_compat.cpp
+        src/modern/ios/ios_runtime.cpp
+        src/modern/ios/ios_d3d8_compat.cpp
+        src/modern/ios/ios_d3dx8_compat.cpp
+        src/modern/ios/ios_touch.cpp)
+    add_executable(th08-modern MACOSX_BUNDLE ${TH08_GAME_SOURCES})
 else()
     message(FATAL_ERROR "The modern target currently supports Windows and Linux.")
 endif()
@@ -238,6 +248,10 @@ elseif(APPLE)
     set(SDL_GPU OFF CACHE BOOL "" FORCE)
     set(SDL_RENDER ON CACHE BOOL "" FORCE)
     set(SDL_METAL OFF CACHE BOOL "" FORCE)
+    # The game uses the OpenGL ES compatibility path.  Do not compile SDL's
+    # optional Metal renderer; it is unused and its iOS view-tag code is not
+    # available in the pinned SDL release with Xcode's current SDK headers.
+    set(SDL_RENDER_METAL OFF CACHE BOOL "" FORCE)
     set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
     set(SDL_OPENGLES ON CACHE BOOL "" FORCE)
     set(SDL2IMAGE_VENDORED ON CACHE BOOL "" FORCE)
@@ -250,12 +264,19 @@ elseif(APPLE)
     set(SDL2IMAGE_WEBP OFF CACHE BOOL "" FORCE)
     set(SDL2IMAGE_INSTALL OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_INSTALL OFF CACHE BOOL "" FORCE)
+    set(SDL2MIXER_VENDORED ON CACHE BOOL "" FORCE)
     set(SDL2MIXER_MIDI OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_MOD OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_MP3 OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_FLAC OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_OPUS OFF CACHE BOOL "" FORCE)
     set(SDL2MIXER_WAVE ON CACHE BOOL "" FORCE)
+    set(SDL2MIXER_WAVPACK OFF CACHE BOOL "" FORCE)
+    set(SDL2MIXER_VORBIS STB CACHE STRING "" FORCE)
+    set(SDL2TTF_VENDORED ON CACHE BOOL "" FORCE)
+    set(SDL2TTF_SAMPLES OFF CACHE BOOL "" FORCE)
+    set(SDL2TTF_TESTS OFF CACHE BOOL "" FORCE)
+    set(SDL2TTF_INSTALL OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(SDL2
         GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
         GIT_TAG release-2.30.9)
@@ -265,7 +286,10 @@ elseif(APPLE)
     FetchContent_Declare(SDL2_mixer
         GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
         GIT_TAG release-2.8.0)
-    FetchContent_MakeAvailable(SDL2 SDL2_image SDL2_mixer)
+    FetchContent_Declare(SDL2_ttf
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
+        GIT_TAG release-2.22.0)
+    FetchContent_MakeAvailable(SDL2 SDL2_image SDL2_mixer SDL2_ttf)
     if(TARGET SDL2-static AND NOT TARGET SDL2::SDL2-static)
         add_library(SDL2::SDL2-static ALIAS SDL2-static)
     endif()
@@ -275,16 +299,12 @@ elseif(APPLE)
     if(TARGET SDL2_mixer AND NOT TARGET SDL2_mixer::SDL2_mixer)
         add_library(SDL2_mixer::SDL2_mixer ALIAS SDL2_mixer)
     endif()
+    if(TARGET SDL2_ttf AND NOT TARGET SDL2_ttf::SDL2_ttf)
+        add_library(SDL2_ttf::SDL2_ttf ALIAS SDL2_ttf)
+    endif()
 
-    list(APPEND TH08_GAME_SOURCES
-        src/modern/ios/ios_compat.cpp
-        src/modern/ios/ios_runtime.cpp
-        src/modern/ios/ios_d3d8_compat.cpp
-        src/modern/ios/ios_d3dx8_compat.cpp
-        src/modern/ios/ios_touch.cpp)
     configure_file("${CMAKE_SOURCE_DIR}/ios/Info.plist.in"
         "${CMAKE_BINARY_DIR}/th08-Info.plist" @ONLY)
-    add_executable(th08-modern MACOSX_BUNDLE ${TH08_GAME_SOURCES})
     set_target_properties(th08-modern PROPERTIES
         OUTPUT_NAME "th08"
         MACOSX_BUNDLE TRUE
@@ -308,10 +328,12 @@ elseif(APPLE)
         "-include${CMAKE_SOURCE_DIR}/src/modern/ios/ios_compat.hpp")
     target_include_directories(th08-modern BEFORE PRIVATE
         "${CMAKE_SOURCE_DIR}/src/modern/linux/include"
+        "${CMAKE_SOURCE_DIR}/src/modern/linux"
         "${CMAKE_SOURCE_DIR}/src/modern/ios"
         "${SDL2_SOURCE_DIR}/include")
     target_link_libraries(th08-modern PRIVATE
         SDL2::SDL2-static SDL2_image::SDL2_image SDL2_mixer::SDL2_mixer
+        SDL2_ttf::SDL2_ttf
         "-framework OpenGLES" "-framework UIKit" "-framework Foundation"
         "-framework CoreGraphics" "-framework QuartzCore" "-framework AudioToolbox"
         "-framework AVFoundation" "-framework CoreAudio")

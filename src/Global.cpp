@@ -721,8 +721,8 @@ u8 *Controller::GetControllerState()
         memcpy(&g_ControllerData, dijoystate2.rgbButtons, sizeof(dijoystate2.rgbButtons));
         return g_ControllerData;
     }
-}
 #endif
+}
 
 u16 Controller::GetInput(void)
 {

@@ -1764,7 +1764,7 @@ ZunResult Player::LoadShtFile(PlayerRawShtFile **header, const char *path)
     for (i = 0; i < *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(*header) + 0x2); i++)
     {
         *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(*header) + i * 8 + 0x38) +=
-            reinterpret_cast<u32>(*header);
+            static_cast<u32>(reinterpret_cast<uintptr_t>(*header));
         entry = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(*header) + i * 8 + 0x38);
 
         while (*reinterpret_cast<i16 *>(entry) >= 0)

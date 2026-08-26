@@ -79,7 +79,9 @@ struct EnemyManagerUpdateAnmVm
 
     void SetInterrupt(i32 interrupt);
 };
+#ifndef TH08_IOS
 typedef char EnemyManagerUpdateAnmVmSizeCheck[sizeof(EnemyManagerUpdateAnmVm) == 0x2A4 ? 1 : -1];
+#endif
 
 struct EnemyManagerUpdateTimer
 {
@@ -176,7 +178,9 @@ struct EnemyManagerUpdateTimelineLane
     void *instruction;
     void Run();
 };
+#ifndef TH08_IOS
 typedef char EnemyManagerUpdateTimelineLaneSizeCheck[sizeof(EnemyManagerUpdateTimelineLane) == 0x10 ? 1 : -1];
+#endif
 
 struct EnemyManagerUpdateEclManager
 {

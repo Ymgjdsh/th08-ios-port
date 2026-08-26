@@ -44,13 +44,14 @@ ZunResult EclManager::Load(char *path)
 
     for (index = 0; index < 16; index++)
     {
-        this->eclFile->timelineOffsets[index] += (u32)this->eclFile;
+        this->eclFile->timelineOffsets[index] +=
+            static_cast<u32>(reinterpret_cast<uintptr_t>(this->eclFile));
     }
 
     this->subTable = this->eclFile->subOffsets;
     for (index = 0; index < this->eclFile->subCount; index++)
     {
-        this->subTable[index] += (u32)this->eclFile;
+        this->subTable[index] += static_cast<u32>(reinterpret_cast<uintptr_t>(this->eclFile));
     }
 
     return ZUN_SUCCESS;

@@ -875,7 +875,7 @@ i32 GuiImpl::RunMsg()
 
         reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr =
             reinterpret_cast<u8 *>(
-                reinterpret_cast<i32>(&reinterpret_cast<GuiRawMessageInstruction *>(
+                reinterpret_cast<uintptr_t>(&reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args) +
                 reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->argSize);
@@ -932,13 +932,17 @@ ZunResult GuiImpl::DrawDialogue()
         dialogueBoxHeight = 48.0f;
 
     VertexDiffuseXyzrhw vertices[4];
-    memcpy(&vertices[0].pos, &Float3(g_GameManager.arcadeRegionTopLeftPos.x + 16.0f, 384.0f, 0.0f), sizeof(Float3));
+    Float3 dialoguePos0(g_GameManager.arcadeRegionTopLeftPos.x + 16.0f, 384.0f, 0.0f);
+    Float3 dialoguePos1(g_GameManager.arcadeRegionTopLeftPos.x + 384.0f - 16.0f, 384.0f, 0.0f);
+    Float3 dialoguePos2(g_GameManager.arcadeRegionTopLeftPos.x + 16.0f, 384.0f + dialogueBoxHeight, 0.0f);
+    Float3 dialoguePos3(g_GameManager.arcadeRegionTopLeftPos.x + 384.0f - 16.0f, 384.0f + dialogueBoxHeight, 0.0f);
+    memcpy(&vertices[0].pos, &dialoguePos0, sizeof(Float3));
     memcpy(&vertices[1].pos,
-           &Float3(g_GameManager.arcadeRegionTopLeftPos.x + 384.0f - 16.0f, 384.0f, 0.0f), sizeof(Float3));
+           &dialoguePos1, sizeof(Float3));
     memcpy(&vertices[2].pos,
-           &Float3(g_GameManager.arcadeRegionTopLeftPos.x + 16.0f, 384.0f + dialogueBoxHeight, 0.0f), sizeof(Float3));
+           &dialoguePos2, sizeof(Float3));
     memcpy(&vertices[3].pos,
-           &Float3(g_GameManager.arcadeRegionTopLeftPos.x + 384.0f - 16.0f, 384.0f + dialogueBoxHeight, 0.0f),
+           &dialoguePos3,
            sizeof(Float3));
 
     vertices[0].diffuse = vertices[1].diffuse = 0xd0000000;
@@ -1490,11 +1494,13 @@ void Gui::DrawGameScene()
         }
         if (g_GameManager.GetPower() < 128)
         {
-            g_AsciiManager.AddFormatText(&Float3(488.0f, 136.0f, 0.0f), "%d", g_GameManager.GetPower());
+            Float3 powerPos(488.0f, 136.0f, 0.0f);
+            g_AsciiManager.AddFormatText(&powerPos, "%d", g_GameManager.GetPower());
         }
         else
         {
-            g_AsciiManager.AddFormatText(&Float3(488.0f, 136.0f, 0.0f), "MAX");
+            Float3 powerPos(488.0f, 136.0f, 0.0f);
+            g_AsciiManager.AddFormatText(&powerPos, "MAX");
         }
     }
 
@@ -2340,7 +2346,8 @@ ZunResult Gui::LoadMsg(const char *path)
     *(i32 *)((u8 *)this->impl + 0x21818) = 0;
     for (i32 i = 0; i < *(i32 *)this->impl->msgVm.msgFile; ++i)
     {
-        ((i32 *)this->impl->msgVm.msgFile)[i + 1] += (i32)this->impl->msgVm.msgFile;
+        ((i32 *)this->impl->msgVm.msgFile)[i + 1] +=
+            static_cast<i32>(reinterpret_cast<uintptr_t>(this->impl->msgVm.msgFile));
     }
     return ZUN_SUCCESS;
 }

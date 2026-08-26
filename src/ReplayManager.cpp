@@ -562,13 +562,13 @@ ZunResult ReplayManager::AddedCallbackDemo(ReplayManager *replayManager)
             {
                 replayManager->replayData->header.stageReplayData[stage] =
                     (StageReplayData *)(reinterpret_cast<u8 *>(replayManager->replayData->header.stageReplayData[stage]) +
-                                        reinterpret_cast<i32>(replayManager->replayData));
+                                        reinterpret_cast<uintptr_t>(replayManager->replayData));
             }
             if (replayManager->replayData->header.stageReplayData2[stage] != NULL)
             {
                 replayManager->replayData->header.stageReplayData2[stage] =
                     (StageReplayData *)(reinterpret_cast<u8 *>(replayManager->replayData->header.stageReplayData2[stage]) +
-                                        reinterpret_cast<i32>(replayManager->replayData));
+                                        reinterpret_cast<uintptr_t>(replayManager->replayData));
             }
         }
     }

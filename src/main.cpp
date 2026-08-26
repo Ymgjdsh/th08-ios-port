@@ -737,8 +737,13 @@ ZunBool GameWindow::InitD3DRendering()
     fov = ZUN_PI / 6;
     cameraDistance = halfHeight / (f32)tan(fov / 2.0f);
 
-    D3DXMatrixLookAtLH(&g_Supervisor.viewMatrix, &D3DXVECTOR3(halfWidth, -halfHeight, -cameraDistance),
-                       &D3DXVECTOR3(halfWidth, -halfHeight, 0.0f), &D3DXVECTOR3(0.0f, 1.0f, 0.0f));
+    // Clang rejects taking the address of temporary vectors on iOS. Keep
+    // named values here; this also matches the lifetime expected by the
+    // portable D3DX compatibility layer.
+    D3DXVECTOR3 cameraEye(halfWidth, -halfHeight, -cameraDistance);
+    D3DXVECTOR3 cameraAt(halfWidth, -halfHeight, 0.0f);
+    D3DXVECTOR3 cameraUp(0.0f, 1.0f, 0.0f);
+    D3DXMatrixLookAtLH(&g_Supervisor.viewMatrix, &cameraEye, &cameraAt, &cameraUp);
     D3DXMatrixPerspectiveFovLH(&g_Supervisor.projectionMatrix, fov, aspectRatio, 100.0f, 10000.0f);
     g_Supervisor.d3dDevice->SetTransform(D3DTS_VIEW, &g_Supervisor.viewMatrix);
     g_Supervisor.d3dDevice->SetTransform(D3DTS_PROJECTION, &g_Supervisor.projectionMatrix);

@@ -127,6 +127,18 @@ typedef double GLclampd;
 #ifndef GL_CLAMP
 #define GL_CLAMP GL_CLAMP_TO_EDGE
 #endif
+#ifndef GL_MODELVIEW
+#define GL_MODELVIEW 0x1700
+#endif
+#ifndef GL_PROJECTION
+#define GL_PROJECTION 0x1701
+#endif
+#ifndef GL_MODULATE
+#define GL_MODULATE 0x2100
+#endif
+#ifndef GL_DEPTH_COMPONENT24
+#define GL_DEPTH_COMPONENT24 0x81A6
+#endif
 
 inline void glBegin(GLenum) {}
 inline void glEnd() {}

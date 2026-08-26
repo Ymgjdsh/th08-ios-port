@@ -764,9 +764,10 @@ void Enemy::FUN_0042bcf0()
         *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(this) + 0x3324) &= ~2U;
         g_AsciiManager.FUN_00422bb0(
             *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 0x3313), 2);
+        Float3 hiddenBossPosition(-999.0f, -999.0f, 0.0f);
         g_AsciiManager.SetBossMarkerPosition(
             *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 0x3313),
-            reinterpret_cast<D3DXVECTOR3 *>(&Float3(-999.0f, -999.0f, 0.0f)));
+            reinterpret_cast<D3DXVECTOR3 *>(&hiddenBossPosition));
     }
 
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x53c0) != 0)

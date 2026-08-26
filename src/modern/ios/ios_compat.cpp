@@ -16,7 +16,6 @@
 #include <fontconfig/fontconfig.h>
 #endif
 #include <glob.h>
-#include <iconv.h>
 #include <limits.h>
 #include <math.h>
 #include <map>
@@ -165,26 +164,26 @@ void SetApplicationIcon(SDL_Window *window)
 
 DWORD CurrentThreadIdImpl()
 {
-    return static_cast<DWORD>(pthread_self());
+    return static_cast<DWORD>(reinterpret_cast<uintptr_t>(pthread_self()));
 }
 
 std::string ConvertCp932ToUtf8(const char *text, size_t length)
 {
     if (text == NULL || length == 0) return std::string();
-    iconv_t converter = iconv_open("UTF-8", "CP932");
-    if (converter == reinterpret_cast<iconv_t>(-1)) return std::string(text, length);
+    SDL_iconv_t converter = SDL_iconv_open("UTF-8", "CP932");
+    if (converter == reinterpret_cast<SDL_iconv_t>(-1)) return std::string(text, length);
 
     std::vector<char> output(length * 4 + 8, 0);
-    char *input = const_cast<char *>(text);
+    const char *input = text;
     char *destination = &output[0];
     size_t inputLeft = length;
     size_t outputLeft = output.size() - 1;
-    if (iconv(converter, &input, &inputLeft, &destination, &outputLeft) == static_cast<size_t>(-1))
+    if (SDL_iconv(converter, &input, &inputLeft, &destination, &outputLeft) == static_cast<size_t>(-1))
     {
-        iconv_close(converter);
+        SDL_iconv_close(converter);
         return std::string(text, length);
     }
-    iconv_close(converter);
+    SDL_iconv_close(converter);
     return std::string(&output[0], destination - &output[0]);
 }
 

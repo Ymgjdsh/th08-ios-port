@@ -112,7 +112,9 @@ struct EclRawHeader
     u32 timelineOffsets[16];
     u32 subOffsets[1];
 };
+#ifndef TH08_IOS
 typedef char EclRawHeaderSubTableOffsetCheck[offsetof(EclRawHeader, subOffsets) == 0x48 ? 1 : -1];
+#endif
 
 // Target-observed TH08 per-enemy ECL context. Unknown spans deliberately keep
 // the public ABI narrower than the still-unrecovered interpreter state.
@@ -126,9 +128,11 @@ struct EnemyEclContext
     i16 subId; // +0x224
     u8 unknown226[2];
 };
+#ifndef TH08_IOS
 typedef char EnemyEclContextSecondaryTimerOffsetCheck[offsetof(EnemyEclContext, secondaryTime) == 0x90 ? 1 : -1];
 typedef char EnemyEclContextSubIdOffsetCheck[offsetof(EnemyEclContext, subId) == 0x224 ? 1 : -1];
 typedef char EnemyEclContextSizeCheck[sizeof(EnemyEclContext) == 0x228 ? 1 : -1];
+#endif
 
 struct EclTimelineState
 {

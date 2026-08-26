@@ -725,7 +725,7 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
         }
 
         size = g_Rng.GetRandomU32InRange(0xffff) + 16;
-        gameManager->unk0x0 = reinterpret_cast<i32>(malloc(size));
+        gameManager->unk0x0 = static_cast<i32>(reinterpret_cast<uintptr_t>(malloc(size)));
         newCfg = static_cast<GameConfiguration *>(operator new(sizeof(GameConfiguration)));
         gameManager->cfg = newCfg;
         newGlobals = static_cast<ZunGlobals *>(operator new(sizeof(ZunGlobals)));

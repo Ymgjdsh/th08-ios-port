@@ -221,7 +221,9 @@ typedef struct _D3DPRESENT_PARAMETERS_
     UINT BackBufferCount;
     D3DMULTISAMPLE_TYPE MultiSampleType;
     D3DSWAPEFFECT SwapEffect;
-    HWND hDeviceWindow;
+    /* D3D8 stores this as a 32-bit window handle. Keep the emulated ABI
+       stable on arm64; the iOS backend does not dereference it. */
+    DWORD hDeviceWindow;
     BOOL Windowed;
     BOOL EnableAutoDepthStencil;
     D3DFORMAT AutoDepthStencilFormat;

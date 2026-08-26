@@ -345,6 +345,12 @@ void SetArguments(int argc, char **argv)
 } // namespace modern
 } // namespace th08
 
+// SDL's public header maps `main` to `SDL_main` unless the application opts
+// out.  This target owns the UIKit/SDL bootstrap itself, so the iOS linker
+// must see the real C entry point.
+#ifdef main
+#undef main
+#endif
 int main(int argc, char **argv)
 {
     th08::modern::SetArguments(argc, argv);

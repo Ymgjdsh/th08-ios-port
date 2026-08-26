@@ -1040,6 +1040,15 @@ ZunResult Background::DeletedCallback(Background *background)
         g_ZunMemory.Free(background->stageAnmSecondary);
         background->stageAnmSecondary = NULL;
     }
+#ifdef TH08_IOS
+    // Stage files store 32-bit relative offsets.  Keep the on-disk table
+    // untouched on arm64 and own a native pointer table instead.
+    if (background->stageOffsets != NULL)
+    {
+        g_ZunMemory.Free(background->stageOffsets);
+        background->stageOffsets = NULL;
+    }
+#endif
     return ZUN_SUCCESS;
 }
 
@@ -1072,6 +1081,26 @@ ZunResult Background::LoadStageData(const char *path)
 
     this->stageObjectCount = ((RawStageHeader *)this->stageAnmSecondary)->nbObjects;
     this->stageVmCount = ((RawStageHeader *)this->stageAnmSecondary)->nbFaces;
+#ifdef TH08_IOS
+    {
+        const u8 *stageBase = reinterpret_cast<const u8 *>(this->stageAnmSecondary);
+        const RawStageHeader *stageHeader = reinterpret_cast<const RawStageHeader *>(stageBase);
+        this->stageUnknown804 = const_cast<u8 *>(stageBase + stageHeader->facesOffset);
+        this->stageUnknown808 = const_cast<u8 *>(stageBase + stageHeader->scriptOffset);
+
+        RawStageObject **objects = reinterpret_cast<RawStageObject **>(
+            g_ZunMemory.Alloc(static_cast<size_t>(this->stageObjectCount) * sizeof(*objects), "stage offsets"));
+        this->stageOffsets = objects;
+        const u8 *offsetBytes = stageBase + sizeof(RawStageHeader);
+        for (i = 0; i < this->stageObjectCount; i++)
+        {
+            i32 relativeOffset;
+            memcpy(&relativeOffset, offsetBytes + static_cast<size_t>(i) * sizeof(relativeOffset),
+                   sizeof(relativeOffset));
+            objects[i] = reinterpret_cast<RawStageObject *>(const_cast<u8 *>(stageBase + relativeOffset));
+        }
+    }
+#else
     this->stageUnknown804 =
         (void *)(((RawStageHeader *)this->stageAnmSecondary)->facesOffset + (i32)this->stageAnmSecondary);
     this->stageUnknown808 =
@@ -1087,6 +1116,7 @@ ZunResult Background::LoadStageData(const char *path)
                                    (i32)this->stageAnmSecondary);
         }
     }
+#endif
 
     this->stageAnm = g_ZunMemory.Alloc(this->stageVmCount * sizeof(AnmVm), "bgscroll");
     for (i = 0, vmIdx = 0; i < this->stageObjectCount; i++)
@@ -1629,10 +1659,10 @@ void Background::SetCamera1()
     fov = ZUN_PI / 10.0f;
     cameraDistance = viewportMiddleHeight / (f32)tan(fov / 2.0f);
 
-    D3DXMatrixLookAtLH(&g_Supervisor.viewMatrix,
-                       &D3DXVECTOR3(viewportMiddleWidth, viewportMiddleHeight, cameraDistance),
-                       &D3DXVECTOR3(viewportMiddleWidth, viewportMiddleHeight, 0.0f),
-                       &D3DXVECTOR3(0.0f, -1.0f, 0.0f));
+    D3DXVECTOR3 eye(viewportMiddleWidth, viewportMiddleHeight, cameraDistance);
+    D3DXVECTOR3 at(viewportMiddleWidth, viewportMiddleHeight, 0.0f);
+    D3DXVECTOR3 up(0.0f, -1.0f, 0.0f);
+    D3DXMatrixLookAtLH(&g_Supervisor.viewMatrix, &eye, &at, &up);
     D3DXMatrixPerspectiveFovLH(&g_Supervisor.projectionMatrix, fov, aspectRatio, 1.0f, 10000.0f);
     g_Supervisor.d3dDevice->SetTransform(D3DTS_VIEW, &g_Supervisor.viewMatrix);
     g_Supervisor.d3dDevice->SetTransform(D3DTS_PROJECTION, &g_Supervisor.projectionMatrix);

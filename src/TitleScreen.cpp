@@ -3372,8 +3372,8 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
                 if (this->currentReplay->header.stageReplayData[i] != NULL)
                 {
                     this->currentReplay->header.stageReplayData[i] =
-                        (StageReplayData *)((u32)this->currentReplay +
-                                            (u32)this->currentReplay->header.stageReplayData[i]);
+                        (StageReplayData *)((uintptr_t)this->currentReplay +
+                                            (uintptr_t)this->currentReplay->header.stageReplayData[i]);
                 }
             }
 

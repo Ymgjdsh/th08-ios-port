@@ -119,7 +119,9 @@ struct Interpolator
     i32 unknown28;
     f32 affectedVariable; // +0x2C; 10042..10044 mean position motion
 };
+#ifndef TH08_IOS
 typedef char InterpolatorSizeCheck[sizeof(Interpolator) == 0x30 ? 1 : -1];
+#endif
 
 enum DispatchResult
 {
@@ -653,9 +655,10 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
             g_AsciiManager.FUN_00422bb0(
                 TH08_ECL_AT(ctx, u8, 0x3313), 2);
             reinterpret_cast<Enemy *>(TH08_ECL_CONTEXT_ENEMY(ctx))->FUN_0042a820();
+            D3DXVECTOR3 hiddenBossPosition(-999.0f, -999.0f, 0.0f);
             g_AsciiManager.SetBossMarkerPosition(
                 TH08_ECL_AT(ctx, u8, 0x3313),
-                &D3DXVECTOR3(-999.0f, -999.0f, 0.0f));
+                &hiddenBossPosition);
         }
         break;
 
