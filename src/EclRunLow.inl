@@ -93,7 +93,13 @@ inline LowResult MakeLowResult(LowControl control,
 }
 
 // Target pointer table at 0x00F54CC0, indexed by the ECL enemy selector.
-extern EclOperands::EnemyOverlay *g_EclEnemyTableF54CC0[];
+#if defined(TH08_MODERN_WEB)
+extern EclOperands::EnemyOverlay *(&g_EclEnemyTableF54CC0)[92];
+#elif defined(TH08_MODERN_IOS)
+extern IosPtr32<EclOperands::EnemyOverlay> g_EclEnemyTableF54CC0[92];
+#else
+extern EclOperands::EnemyOverlay *g_EclEnemyTableF54CC0[92];
+#endif
 
 // Observed helper ABIs for opcodes 90..92.  Both constructors receive the
 // parent in ECX and the current instruction in EDX; the list-tail lookup uses
@@ -256,9 +262,14 @@ inline f32 &F32At(EclOperands::EnemyOverlay *enemy, i32 offset)
     return *reinterpret_cast<f32 *>(Bytes(enemy) + offset);
 }
 
-inline void *&PointerAt(EclOperands::EnemyOverlay *enemy, i32 offset)
+inline void *PointerAt(EclOperands::EnemyOverlay *enemy, i32 offset)
 {
-    return *reinterpret_cast<void **>(Bytes(enemy) + offset);
+    return LegacyPointerGet<void>(enemy, offset);
+}
+
+inline void SetPointerAt(EclOperands::EnemyOverlay *enemy, i32 offset, void *value)
+{
+    LegacyPointerSet<void>(enemy, offset, value);
 }
 
 inline i32 &RawInt(EclRawInstruction *instruction, i32 index)
@@ -340,8 +351,12 @@ static EclRawInstruction *__fastcall CompareOperands(
     if (!takeBranch)
         return NULL;
 
+#ifdef TH08_IOS
+    EnemyEclContext *context = IosEclCurrentContext(enemy);
+#else
     EnemyEclContext *context =
         *reinterpret_cast<EnemyEclContext **>(Bytes(enemy) + 0x2CA0);
+#endif
     context->time.current = RawInt(instruction, 2);
     return reinterpret_cast<EclRawInstruction *>(
         reinterpret_cast<u8 *>(instruction) + RawInt(instruction, 3));
@@ -432,7 +447,8 @@ inline void BeginTimedMove(EclOperands::EnemyOverlay *enemy,
 #define I32At(owner, offset) (*reinterpret_cast<i32 *>(Bytes(owner) + (offset)))
 #define I16At(owner, offset) (*reinterpret_cast<i16 *>(Bytes(owner) + (offset)))
 #define F32At(owner, offset) (*reinterpret_cast<f32 *>(Bytes(owner) + (offset)))
-#define PointerAt(owner, offset) (*reinterpret_cast<void **>(Bytes(owner) + (offset)))
+#define PointerAt(owner, offset) LegacyPointerGet<void>((owner), (offset))
+#define SetPointerAt(owner, offset, value) LegacyPointerSet<void>((owner), (offset), (value))
 #define RawInt(insn, index) \
     (*reinterpret_cast<i32 *>((insn)->operands + (index) * 4))
 #define RawFloat(insn, index) \
@@ -688,8 +704,7 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
         TH08_ECL_RUN_LOW_YIELD(LOW_SELECT_NEXT_CONTEXT, 0);
 
     case 54:
-        (*reinterpret_cast<AnmLoaded **>(
-            reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCEEC))
+        EnemyManagerCommonAnm(&g_EnemyManager)
             ->SetAndExecuteScriptIdx(
             reinterpret_cast<AnmVm *>(Bytes(enemy) + 0xC),
             ReadInt(enemy, instruction, 0));
@@ -717,8 +732,7 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
         U32At(enemy, 0x3328) &= ~4U;
         break;
     case 58:
-        (*reinterpret_cast<AnmLoaded **>(
-            reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCEF0))
+        EnemyManagerStageAnm(&g_EnemyManager)
             ->SetAndExecuteScriptIdx(
             reinterpret_cast<AnmVm *>(Bytes(enemy) + 0xC),
             ReadInt(enemy, instruction, 0));
@@ -747,16 +761,14 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
     case 62:
         if (((U32At(enemy, 0x3328) >> 2) & 1U) == 0)
         {
-            (*reinterpret_cast<AnmLoaded **>(
-                reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCEEC))
+            EnemyManagerCommonAnm(&g_EnemyManager)
                 ->SetAndExecuteScriptIdx(
                 reinterpret_cast<AnmVm *>(Bytes(enemy) + 0xC),
                 I16At(enemy, 0x333C));
         }
         else
         {
-            (*reinterpret_cast<AnmLoaded **>(
-                reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCEF0))
+            EnemyManagerStageAnm(&g_EnemyManager)
                 ->SetAndExecuteScriptIdx(
                 reinterpret_cast<AnmVm *>(Bytes(enemy) + 0xC),
                 I16At(enemy, 0x333C));
@@ -991,18 +1003,25 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
 
     case 88:
         lhsInt = ReadInt(enemy, instruction, 0);
+#ifdef TH08_IOS
+        CallSubOnEnemy(
+            g_EclEnemyTableF54CC0[lhsInt],
+            IosEclCurrentContext(g_EclEnemyTableF54CC0[lhsInt])->currentInstr.Get(),
+            RawInt(instruction, 1));
+#else
         CallSubOnEnemy(
             g_EclEnemyTableF54CC0[lhsInt],
             *reinterpret_cast<EclRawInstruction **>(
                 *reinterpret_cast<u8 **>(Bytes(g_EclEnemyTableF54CC0[lhsInt]) + 0x2CA0)),
             RawInt(instruction, 1));
+#endif
         break;
 
     case 89:
         if (g_EclEnemyTableF54CC0[ReadInt(enemy, instruction, 0)])
         {
             // Target resolves operand 0 a second time before the store.
-            I16At(g_EclEnemyTableF54CC0[ReadInt(enemy, instruction, 0)],
+            I16At(EclEnemySlot(ReadInt(enemy, instruction, 0)),
                   0x2D30) = static_cast<i16>(ReadInt(enemy, instruction, 1));
         }
         break;
@@ -1039,10 +1058,10 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
 
             if (PointerAt(child, 0x53C8) == 0)
             {
-                PointerAt(child, 0x53C8) = g_EffectManager.SpawnEffect00425B70(
+                SetPointerAt(child, 0x53C8, g_EffectManager.SpawnEffect00425B70(
                     0x20,
                     reinterpret_cast<D3DXVECTOR3 *>(Bytes(child) + 0x2D34),
-                    1, -1);
+                    1, -1));
                 reinterpret_cast<AnmVmBase *>(
                     PointerAt(child, 0x53C8))
                     ->SetInterrupt(
@@ -1062,9 +1081,9 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
                 }
             }
 
-            PointerAt(child, 0x2DA4) = enemy;
-            PointerAt(tail, 8) = child;
-            PointerAt(child, 4) = tail;
+            EclOperands::SetEnemyOwner(child, enemy);
+            EclOperands::SetEnemyNext(tail, child);
+            EclOperands::SetEnemyPrevious(child, tail);
             ++I32At(enemy, 0x3380);
         }
 
@@ -1097,10 +1116,10 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
 
             if (PointerAt(child, 0x53C8) == 0)
             {
-                PointerAt(child, 0x53C8) = g_EffectManager.SpawnEffect00425B70(
+                SetPointerAt(child, 0x53C8, g_EffectManager.SpawnEffect00425B70(
                     0x20,
                     reinterpret_cast<D3DXVECTOR3 *>(Bytes(child) + 0x2D34),
-                    1, -1);
+                    1, -1));
                 reinterpret_cast<AnmVmBase *>(
                     PointerAt(child, 0x53C8))
                     ->SetInterrupt(
@@ -1120,9 +1139,9 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
                 }
             }
 
-            PointerAt(child, 0x2DA4) = enemy;
-            PointerAt(tail, 8) = child;
-            PointerAt(child, 4) = tail;
+            EclOperands::SetEnemyOwner(child, enemy);
+            EclOperands::SetEnemyNext(tail, child);
+            EclOperands::SetEnemyPrevious(child, tail);
             ++I32At(enemy, 0x3380);
         }
 
@@ -1161,10 +1180,10 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
 
             if (PointerAt(child, 0x53C8) == 0)
             {
-                PointerAt(child, 0x53C8) = g_EffectManager.SpawnEffect00425B70(
+                SetPointerAt(child, 0x53C8, g_EffectManager.SpawnEffect00425B70(
                     0x20,
                     reinterpret_cast<D3DXVECTOR3 *>(Bytes(child) + 0x2D88),
-                    1, -1);
+                    1, -1));
                 reinterpret_cast<AnmVmBase *>(
                     PointerAt(child, 0x53C8))
                     ->SetInterrupt(
@@ -1186,9 +1205,9 @@ inline LowResult Dispatch(EclOperands::EnemyOverlay *enemy,
 
             reinterpret_cast<LinkedChildFlags1 *>(Bytes(child) + 0x3324)->
                 inheritParentPosition = 1;
-            PointerAt(child, 0x2DA4) = enemy;
-            PointerAt(tail, 8) = child;
-            PointerAt(child, 4) = tail;
+            EclOperands::SetEnemyOwner(child, enemy);
+            EclOperands::SetEnemyNext(tail, child);
+            EclOperands::SetEnemyPrevious(child, tail);
             ++I32At(enemy, 0x3380);
         }
 

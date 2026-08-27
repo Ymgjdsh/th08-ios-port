@@ -6,6 +6,9 @@
 #include "ZunMath.hpp"
 #include "i18n.hpp"
 #include "utils.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -261,7 +264,8 @@ ZunBool AnmManager::ExecuteScript(AnmVm *vm)
             break;
         case AnmOpcode_Jmp:
             vm->currentTimeInScript = instruction->intArgs[1];
-            vm->currentInstruction = (AnmRawInstr *)(((u8 *)vm->beginningOfScript) + instruction->intArgs[0]);
+            vm->currentInstruction =
+                (AnmRawInstr *)(((u8 *)vm->GetBeginningOfScript()) + instruction->intArgs[0]);
             continue;
         case AnmOpcode_JmpDec:
             *GET_INT_VAR_PTR(0) -= 1;
@@ -269,7 +273,8 @@ ZunBool AnmManager::ExecuteScript(AnmVm *vm)
             if (GET_INT_VAR(0) > 0)
             {
                 vm->currentTimeInScript = instruction->intArgs[2];
-                vm->currentInstruction = (AnmRawInstr *)(((u8 *)vm->beginningOfScript) + instruction->intArgs[1]);
+                vm->currentInstruction =
+                    (AnmRawInstr *)(((u8 *)vm->GetBeginningOfScript()) + instruction->intArgs[1]);
                 continue;
             }
             break;
@@ -734,7 +739,8 @@ ZunBool AnmManager::ExecuteScript(AnmVm *vm)
             break;
         jump:
             vm->currentTimeInScript = instruction->intArgs[3];
-            vm->currentInstruction = (AnmRawInstr *)(((u8 *)vm->beginningOfScript) + instruction->intArgs[2]);
+            vm->currentInstruction =
+                (AnmRawInstr *)(((u8 *)vm->GetBeginningOfScript()) + instruction->intArgs[2]);
             continue;
         default:
             break;
@@ -2381,10 +2387,30 @@ AnmLoaded *AnmManager::ReadAnmEntries(int anmIdx, const char *filename)
 
     anmLoaded->totalEntries = totalEntries;
 
+#ifdef TH08_IOS
+    anmLoaded->spriteCount = totalSprites;
+    anmLoaded->scriptCount = totalScripts;
+    char anmSummary[224];
+    snprintf(anmSummary, sizeof(anmSummary),
+             "anm: file=%s idx=%d entries=%d sprites=%d scripts=%d loadedSize=%u spriteSize=%u",
+             filename, anmIdx, totalEntries, totalSprites, totalScripts,
+             static_cast<unsigned>(sizeof(AnmLoaded)), static_cast<unsigned>(sizeof(AnmLoadedSprite)));
+    modern::LogStartup(anmSummary);
+#endif
+
     anmLoaded->textures = (AnmEntry *)g_ZunMemory.Alloc(totalEntries * sizeof(AnmEntry));
     memset(anmLoaded->textures, 0, sizeof(AnmEntry) * totalEntries);
     anmLoaded->sprites = (AnmLoadedSprite *)g_ZunMemory.Alloc(totalSprites * sizeof(AnmLoadedSprite));
     anmLoaded->scripts = (AnmRawInstr **)g_ZunMemory.Alloc(totalScripts * sizeof(void *));
+#ifdef TH08_IOS
+    memset(anmLoaded->sprites, 0, totalSprites * sizeof(AnmLoadedSprite));
+    memset(anmLoaded->scripts, 0, totalScripts * sizeof(void *));
+    char anmPointers[224];
+    snprintf(anmPointers, sizeof(anmPointers), "anm: idx=%d owner=%p textures=%p sprites=%p scripts=%p",
+             anmIdx, static_cast<void *>(anmLoaded), static_cast<void *>(anmLoaded->textures),
+             static_cast<void *>(anmLoaded->sprites), static_cast<void *>(anmLoaded->scripts));
+    modern::LogStartup(anmPointers);
+#endif
 
     curEntry = entry;
     totalEntries = 0;

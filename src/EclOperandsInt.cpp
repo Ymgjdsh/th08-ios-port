@@ -27,7 +27,11 @@ namespace EclOperands
 #define INT_FIELD(offset) (*(i32 *)(enemy->bytes + (offset)))
 #define FLOAT_FIELD(offset) (*(f32 *)(enemy->bytes + (offset)))
 #define VECTOR_FIELD(offset) (*(Vector3 *)(enemy->bytes + (offset)))
+#ifdef TH08_IOS
+#define ECL_CONTEXT (reinterpret_cast<u8 *>(IosEclCurrentContext(enemy)))
+#else
 #define ECL_CONTEXT (*(u8 **)(enemy->bytes + 0x2ca0))
+#endif
 #define CONTEXT_INT(offset) (*(i32 *)(ECL_CONTEXT + (offset)))
 #define CONTEXT_FLOAT(offset) (*(f32 *)(ECL_CONTEXT + (offset)))
 #define ENEMY_HELPERS ((TargetEnemyHelpersOverlay *)enemy)
@@ -140,7 +144,7 @@ i32 __fastcall ResolveInt(EnemyOverlay *enemy, i32 operand)
         return ENEMY_HELPERS->HasParentChain()
                    ? ENEMY_HELPERS->CountParentChain()
                    : ENEMY_HELPERS->HasAttachedEnemy()
-                         ? (*(TargetEnemyHelpersOverlay **)(enemy->bytes + 0x2da4))->CountParentChain()
+                         ? reinterpret_cast<TargetEnemyHelpersOverlay *>(EnemyOwner(enemy))->CountParentChain()
                          : 0;
     case 0x2740:
         return (i32)g_Player.FUN_0044c1b0(reinterpret_cast<Float3 *>(&VECTOR_FIELD(0x2d88)));

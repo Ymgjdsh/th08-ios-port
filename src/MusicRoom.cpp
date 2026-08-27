@@ -532,6 +532,13 @@ out:
     for (i = 0; i < musicRoom->numDescriptors; i++)
     {
         musicRoom->musicAnm->SetAndExecuteScriptIdx(&musicRoom->songNameVms[i], 1 + i);
+#ifdef TH08_IOS
+        // The mobile port allows every Music Room entry to be selected and
+        // played even on a fresh save. Hiding the corresponding title behind
+        // question marks makes the touch list impossible to identify.
+        g_AnmManager->DrawTextLeft(&musicRoom->songNameVms[i], 0xc0e0ff, 0x302080,
+                                   musicRoom->trackDescriptors[i].title);
+#else
         if (musicRoom->bgmUnlocked[i])
         {
             g_AnmManager->DrawTextLeft(&musicRoom->songNameVms[i], 0xc0e0ff, 0x302080,
@@ -541,6 +548,7 @@ out:
         {
             g_AnmManager->DrawTextLeft(&musicRoom->songNameVms[i], 0x80a0c0, 0x100040, TH_SONG_NAME_NOT_UNLOCKED);
         }
+#endif
 
         musicRoom->songNameVms[i].pos.x = 93.0f;
         musicRoom->songNameVms[i].pos.y = (((i + 1) * 18) + 104.0f) - 20.0f;

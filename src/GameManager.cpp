@@ -17,9 +17,21 @@
 #include "ScreenEffect.hpp"
 #include "SoundPlayer.hpp"
 #include "Spellcard.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
+
+#if defined(TH08_MODERN_IOS)
+namespace
+{
+u16 g_IosPauseRngSeed;
+i16 g_IosReplayTimingMetric;
+i32 g_IosPerformanceMetric = 320;
+}
+#endif
 
 struct RankParams
 {
@@ -55,9 +67,55 @@ DIFFABLE_STATIC(GameManager, g_GameManager);
 DIFFABLE_STATIC(ChainElem, g_GameManagerCalcChain);
 DIFFABLE_STATIC(ChainElem, g_GameManagerDrawChain);
 
+#ifdef TH08_IOS
+char g_IosBulletAnmPath[] = "etama.anm";
+char g_IosDemoReplayPath[] = "replay/th8_00.rpy";
+char g_IosErrorSpellcard[] = "error: spell card initialization failed\n";
+char g_IosErrorGui[] = "error: 2D initialization failed\n";
+char g_IosErrorEffect[] = "error: effect initialization failed\n";
+char g_IosErrorEnemy[] = "error: enemy initialization failed\n";
+char g_IosErrorBullet[] = "error: bullet initialization failed\n";
+char g_IosErrorBackground[] = "error: background initialization failed\n";
+char g_IosErrorPlayer[] = "error: player initialization failed\n";
+
+static const IosSpellPracticeMusic g_IosSpellPracticeMusic[] = {
+    {1, 1, "th08_00.mid", 0, 0}, {12, 2, "th08_03.mid", 1, 0},
+    {16, 3, "th08_04.mid", 0, 0}, {31, 4, "th08_05.mid", 1, 0},
+    {35, 5, "th08_06.mid", 0, 0}, {53, 6, "th08_07.mid", 1, 0},
+    {76, 8, "th08_09.mid", 1, 0}, {99, 9, "th08_10.mid", 1, 0},
+    {118, 11, "th08_12.mid", 1, 0}, {122, 12, "th08_13.mid", 0, 0},
+    {142, 13, "th08_14.mid", 1, 0}, {146, 15, "th08_13b.mid", 2, 1},
+    {150, 12, "th08_13.mid", 0, 0}, {170, 14, "th08_15.mid", 1, 0},
+    {190, 15, "th08_13b.mid", 2, 1}, {193, 16, "th08_18.mid", 0, 0},
+    {204, 17, "th08_19.mid", 1, 0}, {222, 20, "th08_20.mid", 2, 0},
+    {-1, 0, "", 0, 0},
+};
+
+const IosSpellPracticeMusic *GetIosSpellPracticeMusic(i32 index)
+{
+    if (index < 0 || index >= static_cast<i32>(ARRAY_SIZE(g_IosSpellPracticeMusic)))
+        return NULL;
+    return &g_IosSpellPracticeMusic[index];
+}
+
+const IosSpellPracticeMusic *FindIosSpellPracticeMusic(i32 spellCardNumber)
+{
+    for (i32 index = 0; g_IosSpellPracticeMusic[index].lastSpell >= 0; ++index)
+    {
+        if (spellCardNumber <= g_IosSpellPracticeMusic[index].lastSpell)
+            return &g_IosSpellPracticeMusic[index];
+    }
+    return NULL;
+}
+#endif
+
 void FUN_00438046();
 i32 FUN_0043bbe1();
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i32 &g_GuiMessageStageMode;
+#else
 extern i32 g_GuiMessageStageMode;
+#endif
 
 // FUNCTION: th08 0x439829
 ZunBool GameManager::IsStageClearedWithoutRetries(i32 stage, i32 character, i32 difficulty)
@@ -74,6 +132,11 @@ ZunBool GameManager::IsStageClearedWithRetries(i32 stage, i32 character, i32 dif
 // FUNCTION: th08 0x439916
 i32 FUN_00439916(i32 unused)
 {
+#ifdef TH08_IOS
+    const IosSpellPracticeMusic *music =
+        FindIosSpellPracticeMusic(static_cast<i32>(g_GameManager.currentSpellCardNumber));
+    return music != NULL ? music->alternate : 0;
+#else
     i32 i;
 
     i = 0;
@@ -87,11 +150,17 @@ i32 FUN_00439916(i32 unused)
         i++;
     }
     return 0;
+#endif
 }
 
 // FUNCTION: th08 0x439961
 i32 FUN_00439961(i32 unused)
 {
+#ifdef TH08_IOS
+    const IosSpellPracticeMusic *music =
+        FindIosSpellPracticeMusic(static_cast<i32>(g_GameManager.currentSpellCardNumber));
+    return music != NULL ? music->visible : 0;
+#else
     i32 i;
 
     i = 0;
@@ -105,6 +174,7 @@ i32 FUN_00439961(i32 unused)
         i++;
     }
     return 0;
+#endif
 }
 
 // FUNCTION: th08 0x4399ac
@@ -139,7 +209,7 @@ i32 GameManager::CalcAntiTamperChecksum()
     sum = CalcChecksum((u8 *)&g_GameManager.globals->rng1,
                        (intptr_t)&globals->antiTamperValue - (intptr_t)&globals->rng1);
     sum += CalcChecksum((u8 *)&g_GameManager.globals->rng8, sizeof(g_GameManager.globals->rng8));
-    sum += CalcChecksum((u8 *)g_GameManager.cfg, sizeof(GameConfiguration));
+    sum += CalcChecksum((u8 *)g_GameManager.GetCfg(), sizeof(GameConfiguration));
     sum += CalcChecksum((u8 *)&g_Supervisor.cfg, sizeof(GameConfiguration));
     sum += CalcChecksum((u8 *)&this->hscr, sizeof(Hscr));
 
@@ -388,15 +458,28 @@ ChainCallbackResult GameManager::OnUpdate(GameManager *gameManager)
     {
         FUN_00438046();
         g_AnmManager->ReleaseSurface(8);
+#if !defined(TH08_MODERN_IOS)
         ABS_I32(0x17CEA54) = 0;
+#endif
         if (gameManager->unk3de28 == 1)
         {
             if (!g_GameManager.flags.isSpellPractice)
             {
+                #ifdef TH08_IOS
+                g_Supervisor.PlayMusic(0, reinterpret_cast<char *>(
+                    static_cast<intptr_t>(GetIosStageMusicContext(g_GameManager.currentStage, 0))));
+                #else
                 g_Supervisor.PlayMusic(0, reinterpret_cast<char *>(*reinterpret_cast<u32 *>(0x4C7240 + g_GameManager.currentStage * 0x0c)));
+                #endif
             }
             else
             {
+                #ifdef TH08_IOS
+                const IosSpellPracticeMusic *music =
+                    FindIosSpellPracticeMusic(g_GameManager.currentSpellCardNumber);
+                if (music != NULL)
+                    g_Supervisor.PlayMusic(0, reinterpret_cast<char *>(static_cast<intptr_t>(music->track)));
+                #else
                 musicIdx = 0;
                 while (*reinterpret_cast<i32 *>(0x4C7670 + musicIdx * 0x14) >= 0)
                 {
@@ -407,6 +490,7 @@ ChainCallbackResult GameManager::OnUpdate(GameManager *gameManager)
                     }
                     musicIdx++;
                 }
+                #endif
             }
         }
         gameManager->unk3de28 = 0;
@@ -425,29 +509,45 @@ ChainCallbackResult GameManager::OnUpdate(GameManager *gameManager)
         g_SoundPlayer.QueueCommand(6, 0, "Pause");
         g_SoundPlayer.PlaySoundByIdx(SOUND_PAUSE, 0);
         g_Supervisor.UpdateGameTime();
+#if defined(TH08_MODERN_IOS)
+        g_IosPauseRngSeed = *reinterpret_cast<u16 *>(&g_Rng);
+#else
         *reinterpret_cast<u16 *>(0x164D522) = *reinterpret_cast<u16 *>(&g_Rng);
+#endif
         gameManager->hscr.numPauses++;
         g_GameManager.UpdateAntiTamper();
+#if defined(TH08_MODERN_IOS)
+        *reinterpret_cast<u16 *>(&g_Rng) = g_IosPauseRngSeed;
+#else
         *reinterpret_cast<u16 *>(&g_Rng) = *reinterpret_cast<u16 *>(0x164D522);
+#endif
     }
 
+#if !defined(TH08_MODERN_IOS)
     ABS_I32(0x17CE820) = (i32)gameManager->arcadeRegionTopLeftPos.x;
     ABS_I32(0x17CE824) = (i32)gameManager->arcadeRegionTopLeftPos.y;
     ABS_I32(0x17CE828) = (i32)gameManager->arcadeRegionSize.x;
     ABS_I32(0x17CE82C) = (i32)gameManager->arcadeRegionSize.y;
     ABS_F32(0x17CE830) = 0.0f;
     ABS_F32(0x17CE834) = 1.0f;
+#endif
     anmManager = g_AnmManager;
     anmManager->cameraMode |= AnmCameraMode_Unset;
 
     if (g_GameManager.flags.isReplay && g_GameManager.replayMode == 1 && !g_Gui.IsDialogPresent())
     {
         gameManager->unk3de08++;
-        if ((ABS_I16(0x17CE8F0) < 20 && gameManager->unk3de08 % 3 != 0) ||
-            (ABS_I16(0x17CE8F0) >= 20 && ABS_I16(0x17CE8F0) < 30 && gameManager->unk3de08 % 2 != 0) ||
-            (ABS_I16(0x17CE8F0) >= 30 && ABS_I16(0x17CE8F0) < 40 && gameManager->unk3de08 % 3 == 0) ||
-            (ABS_I16(0x17CE8F0) >= 40 && ABS_I16(0x17CE8F0) < 50 && gameManager->unk3de08 % 6 == 0))
+#if defined(TH08_MODERN_IOS)
+#define TH08_REPLAY_TIMING_METRIC g_IosReplayTimingMetric
+#else
+#define TH08_REPLAY_TIMING_METRIC ABS_I16(0x17CE8F0)
+#endif
+        if ((TH08_REPLAY_TIMING_METRIC < 20 && gameManager->unk3de08 % 3 != 0) ||
+            (TH08_REPLAY_TIMING_METRIC >= 20 && TH08_REPLAY_TIMING_METRIC < 30 && gameManager->unk3de08 % 2 != 0) ||
+            (TH08_REPLAY_TIMING_METRIC >= 30 && TH08_REPLAY_TIMING_METRIC < 40 && gameManager->unk3de08 % 3 == 0) ||
+            (TH08_REPLAY_TIMING_METRIC >= 40 && TH08_REPLAY_TIMING_METRIC < 50 && gameManager->unk3de08 % 6 == 0))
             return CHAIN_CALLBACK_RESULT_BREAK;
+#undef TH08_REPLAY_TIMING_METRIC
     }
 
     if (gameManager->flags.isDemoMode)
@@ -494,7 +594,11 @@ ChainCallbackResult GameManager::OnUpdate(GameManager *gameManager)
         if (gameManager->globals->rng7[antiTamperIdx] < 6543 || gameManager->globals->rng7[antiTamperIdx] > 106543)
             g_GameManager.antiTamperExpectedValue = -9999.0f;
 
+#if defined(TH08_MODERN_IOS)
+    g_Supervisor.d3dDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER, 0, 1.0f, 0);
+#else
     g_Supervisor.d3dDevice->Clear(0, NULL, D3DCLEAR_ZBUFFER, ABS_U32(0x4E4B24), 1.0f, 0);
+#endif
 
     if (gameManager->isInGameMenu == 1 || gameManager->isInGameMenu == 2 || gameManager->showRetryMenu)
         return CHAIN_CALLBACK_RESULT_BREAK;
@@ -538,19 +642,25 @@ ChainCallbackResult GameManager::OnUpdate(GameManager *gameManager)
         if (gameManager->globals->rng8[antiTamperIdx] < 6543 || gameManager->globals->rng8[antiTamperIdx] > 106543)
             g_GameManager.antiTamperExpectedValue = -9999.0f;
 
-    if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(g_GameManager.cfg) + 0x25))
+    if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(g_GameManager.GetCfg()) + 0x25))
     {
         g_GameManager.unk2D = 0;
         gameManager->unk3de08++;
-        if ((ABS_I32(0x160F3C8) >= 320 && gameManager->unk3de08 % 3 == 0) ||
-            (ABS_I32(0x160F3C8) < 320 && ABS_I32(0x160F3C8) >= 224 && gameManager->unk3de08 % 4 == 0) ||
-            (ABS_I32(0x160F3C8) < 224 && ABS_I32(0x160F3C8) >= 128 && gameManager->unk3de08 % 5 == 0))
+#if defined(TH08_MODERN_IOS)
+#define TH08_PERFORMANCE_METRIC g_IosPerformanceMetric
+#else
+#define TH08_PERFORMANCE_METRIC ABS_I32(0x160F3C8)
+#endif
+        if ((TH08_PERFORMANCE_METRIC >= 320 && gameManager->unk3de08 % 3 == 0) ||
+            (TH08_PERFORMANCE_METRIC < 320 && TH08_PERFORMANCE_METRIC >= 224 && gameManager->unk3de08 % 4 == 0) ||
+            (TH08_PERFORMANCE_METRIC < 224 && TH08_PERFORMANCE_METRIC >= 128 && gameManager->unk3de08 % 5 == 0))
         {
             g_GameManager.unk2D = 1;
             return CHAIN_CALLBACK_RESULT_BREAK;
         }
-        if (ABS_I32(0x160F3C8) < 128)
+        if (TH08_PERFORMANCE_METRIC < 128)
             gameManager->unk3de08 = 0;
+#undef TH08_PERFORMANCE_METRIC
     }
 
     g_GameManager.IsTampered();
@@ -663,12 +773,12 @@ ZunResult GameManager::AddedCallback(GameManager *gameManager)
 #define GM_WORD(gm, off) (*reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(gm) + (off)))
 #define GM_I32(gm, off) (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(gm) + (off)))
 #define GM_U32(gm, off) (*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(gm) + (off)))
-#define CFG_BYTE(gm, off) (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>((gm)->cfg) + (off)))
-#define GLOBAL_BYTE(gm, off) (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>((gm)->globals) + (off)))
-#define GLOBAL_WORD(gm, off) (*reinterpret_cast<u16 *>(reinterpret_cast<u8 *>((gm)->globals) + (off)))
-#define GLOBAL_I32(gm, off) (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>((gm)->globals) + (off)))
-#define GLOBAL_U32(gm, off) (*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>((gm)->globals) + (off)))
-#define GLOBAL_F32(gm, off) (*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>((gm)->globals) + (off)))
+#define CFG_BYTE(gm, off) (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>((gm)->GetCfg()) + (off)))
+#define GLOBAL_BYTE(gm, off) (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>((gm)->GetGlobals()) + (off)))
+#define GLOBAL_WORD(gm, off) (*reinterpret_cast<u16 *>(reinterpret_cast<u8 *>((gm)->GetGlobals()) + (off)))
+#define GLOBAL_I32(gm, off) (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>((gm)->GetGlobals()) + (off)))
+#define GLOBAL_U32(gm, off) (*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>((gm)->GetGlobals()) + (off)))
+#define GLOBAL_F32(gm, off) (*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>((gm)->GetGlobals()) + (off)))
 
 struct SetupPlayCountTable
 {
@@ -725,15 +835,29 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
         }
 
         size = g_Rng.GetRandomU32InRange(0xffff) + 16;
-        gameManager->unk0x0 = static_cast<i32>(reinterpret_cast<uintptr_t>(malloc(size)));
+        allocation = malloc(size);
+#ifdef TH08_IOS
+        // The retail executable briefly stored this decoy allocation in a
+        // 32-bit field before freeing it. Keeping the native pointer local is
+        // required on arm64; truncating it makes free() reject the address.
+        gameManager->unk0x0 = 0;
+        modern::LogStartup("gameplay: anti-tamper storage allocated");
+#else
+        gameManager->unk0x0 = reinterpret_cast<i32>(allocation);
+#endif
         newCfg = static_cast<GameConfiguration *>(operator new(sizeof(GameConfiguration)));
         gameManager->cfg = newCfg;
         newGlobals = static_cast<ZunGlobals *>(operator new(sizeof(ZunGlobals)));
         gameManager->globals = newGlobals;
         GameManager::InitializeAntiTamper();
         *gameManager->cfg = g_Supervisor.cfg;
+#ifndef TH08_IOS
         allocation = reinterpret_cast<void *>(gameManager->unk0x0);
+#endif
         free(allocation);
+#ifdef TH08_IOS
+        modern::LogStartup("gameplay: anti-tamper storage released");
+#endif
 
         gameManager->character = 0;
         GLOBAL_WORD(gameManager, 0x22) = 0;
@@ -751,18 +875,22 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
         {
             if (g_Supervisor.subthreadCloseRequestActive)
                 goto thread_done;
+            #ifdef TH08_IOS
+            g_GameErrorContext.Log(g_IosErrorPlayer);
+            #else
             g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B5930));
+            #endif
             goto setup_error;
         }
 
         if (!g_GameManager.flags.isReplay)
         {
             configMode = CFG_BYTE(gameManager, 0x1c);
-            *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_GameManager.globals) + 0x74) =
+            *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_GameManager.GetGlobals()) + 0x74) =
                 static_cast<f32>(configMode);
             g_GameManager.UpdateAntiTamper();
             g_GameManager.SetBombCount(static_cast<i32>(
-                *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.primaryShtFile) + 4)));
+                *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetPrimaryShtFile()) + 4)));
         }
 
         gameManager->InitArcadeRegionParams();
@@ -855,7 +983,11 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
         {
             if (g_Supervisor.subthreadCloseRequestActive)
                 goto thread_done;
+            #ifdef TH08_IOS
+            g_GameErrorContext.Log(g_IosErrorPlayer);
+            #else
             g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B5930));
+            #endif
             goto setup_error;
         }
     }
@@ -931,47 +1063,79 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorBackground);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B5904));
+        #endif
         goto setup_error;
     }
+    #ifdef TH08_IOS
+    if (BulletManager::RegisterChain(g_IosBulletAnmPath))
+    #else
     if (BulletManager::RegisterChain(reinterpret_cast<char *>(0x4B4CA0)))
+    #endif
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorBullet);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B58DC));
+        #endif
         goto setup_error;
     }
     if (EnemyManager::RegisterChain())
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorEnemy);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B58B8));
+        #endif
         goto setup_error;
     }
     if (EffectManager::RegisterChain())
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorEffect);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B588C));
+        #endif
         goto setup_error;
     }
     if (Gui::RegisterChain())
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorGui);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B5864));
+        #endif
         goto setup_error;
     }
     if (Spellcard::RegisterChain())
     {
         if (g_Supervisor.subthreadCloseRequestActive)
             goto thread_done;
+        #ifdef TH08_IOS
+        g_GameErrorContext.Log(g_IosErrorSpellcard);
+        #else
         g_GameErrorContext.Log(reinterpret_cast<char *>(0x4B5834));
+        #endif
         goto setup_error;
     }
 
     if (!g_GameManager.flags.isReplay)
+        #ifdef TH08_IOS
+        ReplayManager::RegisterChain(0, g_IosDemoReplayPath);
+        #else
         ReplayManager::RegisterChain(0, reinterpret_cast<const char *>(0x4B5820));
+        #endif
 
     if (g_GameManager.flags.isSpellPractice)
     {
@@ -1000,6 +1164,12 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
     {
         if (g_GameManager.flags.isSpellPractice)
         {
+            #ifdef TH08_IOS
+            const IosSpellPracticeMusic *music =
+                FindIosSpellPracticeMusic(g_GameManager.currentSpellCardNumber);
+            if (music != NULL)
+                g_Supervisor.LoadMusic(0, const_cast<char *>(music->path));
+            #else
             i = 0;
             while (*reinterpret_cast<i32 *>(0x4C7670 + i * 0x14) >= 0)
             {
@@ -1010,10 +1180,11 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
                 }
                 ++i;
             }
+            #endif
         }
         else
         {
-            u8 *stageData = reinterpret_cast<u8 *>(g_Background.stageAnmSecondary);
+            u8 *stageData = reinterpret_cast<u8 *>(g_Background.GetStageAnmSecondary());
             g_Supervisor.LoadMusic(0, reinterpret_cast<char *>(stageData + 0x290));
             if (*reinterpret_cast<i8 *>(stageData + 0x310) != 0x20)
                 g_Supervisor.LoadMusic(1, reinterpret_cast<char *>(stageData + 0x310));

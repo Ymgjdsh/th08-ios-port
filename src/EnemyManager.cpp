@@ -12,6 +12,11 @@
 #include "GameManager.hpp"
 #include "Player.hpp"
 #include "ReplayManager.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
+
+#include <stdio.h>
 
 namespace th08
 {
@@ -21,6 +26,12 @@ i32 IsResourceReloadEnabled();
 f32 __stdcall FUN_0042eb10(f32 angle1, f32 angle2, f32 factor);
 
 DIFFABLE_STATIC(EnemyManager, g_EnemyManager);
+
+#if defined(TH08_MODERN_IOS)
+Enemy *g_IosEnemyManagerDrawHeads[4] = {};
+AnmLoaded *g_IosEnemyManagerCommonAnm = NULL;
+AnmLoaded *g_IosEnemyManagerStageAnm = NULL;
+#endif
 DIFFABLE_STATIC(u16, g_EnemyDropCounter);
 DIFFABLE_STATIC(u16, g_EnemyDropScheduleIndex);
 DIFFABLE_STATIC_ARRAY_ASSIGN(u8, 32, g_EnemyDropSchedule) = {
@@ -148,6 +159,13 @@ void EnemyManager::Initialize()
     i32 i;
 
     memset(this, 0, 0x9DCF10);
+#if defined(TH08_MODERN_IOS)
+    memset(EclRunLowProposal::g_EclEnemyTableF54CC0, 0,
+           sizeof(EclRunLowProposal::g_EclEnemyTableF54CC0));
+    memset(g_IosEnemyManagerDrawHeads, 0, sizeof(g_IosEnemyManagerDrawHeads));
+    g_IosEnemyManagerCommonAnm = NULL;
+    g_IosEnemyManagerStageAnm = NULL;
+#endif
     for (i = 0; (u32)i < 4; i++)
         *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x9DCEFC + i * 4) = -1;
 
@@ -205,7 +223,14 @@ void EnemyManager::Initialize()
     *reinterpret_cast<i32 *>(enemy + 0x3024) = 7;
     *reinterpret_cast<i32 *>(enemy + 0x3028) = 25;
     *reinterpret_cast<u32 *>(enemy + 0x3350) = 0x44800000;
+#ifdef TH08_IOS
+    // The original executable stored this value immediately before
+    // g_ReplayManager. That fixed Windows address is unmapped on iOS and was
+    // crashing in the global EnemyManager constructor before main().
+    *reinterpret_cast<i32 *>(enemy + 0x2E10) = 0;
+#else
     *reinterpret_cast<i32 *>(enemy + 0x2E10) = *reinterpret_cast<i32 *>(0x18B8A24);
+#endif
 }
 
 // FUNCTION: th08 0x42a210
@@ -234,11 +259,11 @@ void Enemy::FUN_0042a820()
 
     for (i = 0; i < *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x53c0); i++)
     {
-        if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x5360 + i * 4) == NULL)
+        AnmVm *vm = EnemyAuxVm(this, i);
+        if (vm == NULL)
             continue;
-        *reinterpret_cast<u8 *>(
-            reinterpret_cast<u8 *>(*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x5360 + i * 4)) + 0x352) = 1;
-        *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x5360 + i * 4) = NULL;
+        *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(vm) + 0x352) = 1;
+        SetEnemyAuxVm(this, i, NULL);
     }
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x53c0) = 0;
 }
@@ -263,7 +288,7 @@ void EnemyOverlay::FUN_0042adb0(i32 mode)
         Float3 position;
         struct DropLocals { i32 itemCount; i32 i; } dropLocals;
         i32 itemType;
-        enemy = *reinterpret_cast<EnemyOverlay **>(this->bytes + 8);
+        enemy = EnemyNext(this);
         popupColor = j < 2 ? -1 : (j < 6 ? -48 : (j < 10 ? -80 : -128));
 
         while (enemy != NULL)
@@ -272,11 +297,11 @@ void EnemyOverlay::FUN_0042adb0(i32 mode)
                 *reinterpret_cast<Float3 *>(enemy->bytes + 0x2D40) =
                     *reinterpret_cast<Float3 *>(this->bytes + 0x2D34);
 
-            nextEnemy = *reinterpret_cast<EnemyOverlay **>(enemy->bytes + 8);
+            nextEnemy = EnemyNext(enemy);
             *reinterpret_cast<u32 *>(enemy->bytes + 0x3324) |= 0x400;
-            *reinterpret_cast<f32 *>(enemy->bytes + 0x2DA4) = 0.0f;
-            *reinterpret_cast<void **>(enemy->bytes + 8) = NULL;
-            *reinterpret_cast<void **>(enemy->bytes + 4) = NULL;
+            SetEnemyOwner(enemy, NULL);
+            SetEnemyNext(enemy, NULL);
+            SetEnemyPrevious(enemy, NULL);
 
             if (mode != 0)
             {
@@ -377,21 +402,22 @@ void Enemy::FUN_0042b2f0()
 {
     if (reinterpret_cast<EclOperands::TargetEnemyHelpersOverlay *>(this)->HasAttachedEnemy())
     {
-        *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 4) + 8) =
-            *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 8);
-        if (*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 8) != NULL)
+        EclOperands::EnemyOverlay *previous = EclOperands::EnemyPrevious(this);
+        EclOperands::EnemyOverlay *next = EclOperands::EnemyNext(this);
+        if (previous != NULL)
+            EclOperands::SetEnemyNext(previous, next);
+        if (next != NULL)
         {
-            *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 8) + 4) =
-                *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 4);
+            EclOperands::SetEnemyPrevious(next, previous);
         }
-        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x2DA4) = 0;
-        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 8) = NULL;
-        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 4) = NULL;
+        EclOperands::SetEnemyOwner(this, NULL);
+        EclOperands::SetEnemyNext(this, NULL);
+        EclOperands::SetEnemyPrevious(this, NULL);
     }
     else
     {
-        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 4) = NULL;
-        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 8) = NULL;
+        EclOperands::SetEnemyPrevious(this, NULL);
+        EclOperands::SetEnemyNext(this, NULL);
     }
 }
 
@@ -412,26 +438,23 @@ void Enemy::FUN_0042b370(i32 amount)
     if (g_Player.bombState.frameStop != 0)
         return;
 
+    EclOperands::EnemyOverlay *owner = EclOperands::EnemyOwner(this);
+    if (owner == NULL)
+        return;
+
     maxHp = 0;
     for (i = 0; i < 4; ++i)
     {
-        if (maxHp < *reinterpret_cast<i32 *>(
-                        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) +
-                        0x3358 + i * 4))
+        if (maxHp < *reinterpret_cast<i32 *>(owner->bytes + 0x3358 + i * 4))
         {
-            maxHp = *reinterpret_cast<i32 *>(
-                *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) +
-                0x3358 + i * 4);
+            maxHp = *reinterpret_cast<i32 *>(owner->bytes + 0x3358 + i * 4);
         }
     }
 
     damage = amount / 2;
-    if (*reinterpret_cast<ZunTimer *>(
-            *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) + 0x5354) > 0)
+    if (*reinterpret_cast<ZunTimer *>(owner->bytes + 0x5354) > 0)
     {
-        if (((*reinterpret_cast<u32 *>(
-                  *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) + 0x3324) >>
-              1) &
+        if (((*reinterpret_cast<u32 *>(owner->bytes + 0x3324) >> 1) &
              1) != 0)
             damage /= 9;
         else
@@ -441,14 +464,10 @@ void Enemy::FUN_0042b370(i32 amount)
     if (damage == 0)
         return;
 
-    *reinterpret_cast<i32 *>(
-        *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) + 0x2dfc) -= damage;
-    if (*reinterpret_cast<i32 *>(
-            *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) + 0x2dfc) <=
-        maxHp)
+    *reinterpret_cast<i32 *>(owner->bytes + 0x2dfc) -= damage;
+    if (*reinterpret_cast<i32 *>(owner->bytes + 0x2dfc) <= maxHp)
     {
-        *reinterpret_cast<i32 *>(
-            *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x2da4) + 0x2dfc) = maxHp;
+        *reinterpret_cast<i32 *>(owner->bytes + 0x2dfc) = maxHp;
     }
 }
 
@@ -489,10 +508,11 @@ i32 Enemy::FUN_0042b490()
 
             for (work = 0; work < 4; work++)
             {
-                if (*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + work * 4) != NULL)
+                void *context = EnemyEffectContext(this, work);
+                if (context != NULL)
                 {
-                    g_ZunMemory.Free(*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + work * 4));
-                    *reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + work * 4) = NULL;
+                    SetEnemyEffectContext(this, work, NULL);
+                    g_ZunMemory.Free(context);
                 }
             }
 
@@ -706,10 +726,11 @@ i32 Enemy::FUN_0042b930()
 
     for (selectedOrK = 0; selectedOrK < 4; selectedOrK++)
     {
-        if (*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + selectedOrK * 4) != NULL)
+        void *context = EnemyEffectContext(this, selectedOrK);
+        if (context != NULL)
         {
-            g_ZunMemory.Free(*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + selectedOrK * 4));
-            *reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + selectedOrK * 4) = NULL;
+            SetEnemyEffectContext(this, selectedOrK, NULL);
+            g_ZunMemory.Free(context);
         }
     }
 
@@ -736,10 +757,11 @@ void Enemy::FUN_0042bc90()
 {
     for (i32 i = 0; i < 4; i++)
     {
-        if (*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + i * 4) != NULL)
+        void *context = EnemyEffectContext(this, i);
+        if (context != NULL)
         {
-            g_ZunMemory.Free(*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + i * 4));
-            *reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x3384 + i * 4) = NULL;
+            SetEnemyEffectContext(this, i, NULL);
+            g_ZunMemory.Free(context);
         }
     }
 }
@@ -779,10 +801,10 @@ void Enemy::FUN_0042bcf0()
 
     g_ReplayManager->flags |= 0x20;
 
-    if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8) != NULL)
+    if (EnemyDeathVm(this) != NULL)
     {
-        (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8))->SetInterrupt(3);
-        *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8) = NULL;
+        EnemyDeathVm(this)->SetInterrupt(3);
+        SetEnemyDeathVm(this, NULL);
     }
 
     for (i = 0; i < 4; ++i)
@@ -929,8 +951,8 @@ void Enemy::FUN_0042c420()
         if (g_Player.IsYoukai())
         {
             g_EffectManager.SpawnEffect(31, reinterpret_cast<D3DXVECTOR3 *>(&this->vector2d88), 1, 0x80303080);
-            if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8) != NULL)
-                (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8))->SetInterrupt(2);
+            if (EnemyDeathVm(this) != NULL)
+                EnemyDeathVm(this)->SetInterrupt(2);
             g_SoundPlayer.PlaySoundByIdx(static_cast<SoundIdx>(40), 0);
             *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 0x332f) = 0;
         }
@@ -946,8 +968,8 @@ void Enemy::FUN_0042c420()
         if (!g_Player.IsYoukai())
         {
             g_EffectManager.SpawnEffect(30, reinterpret_cast<D3DXVECTOR3 *>(&this->vector2d88), 1, 0x80803030);
-            if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8) != NULL)
-                (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(this) + 0x53c8))->SetInterrupt(1);
+            if (EnemyDeathVm(this) != NULL)
+                EnemyDeathVm(this)->SetInterrupt(1);
             g_SoundPlayer.PlaySoundByIdx(static_cast<SoundIdx>(39), 0);
             *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 0x332f) = 2;
         }
@@ -1014,7 +1036,7 @@ void Enemy::FUN_0042e010()
 
     for (i = 0; i < *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x53c0); ++i)
     {
-        effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x5360 + i * 4);
+        effect = reinterpret_cast<u8 *>(EnemyAuxVm(this, i));
         if (effect == NULL)
             continue;
 
@@ -1067,9 +1089,61 @@ ChainCallbackResult __fastcall EnemyManager::OnDrawImpl(i32 drawGroup, i32 chain
     f32 cosAngle;
     f32 uvSpan;
 
+#ifdef TH08_IOS
+    static u32 iosDrawDiagnosticCount[2];
+    const i32 diagnosticPass = drawGroup >= 2 ? 1 : 0;
+    u32 &drawCall = iosDrawDiagnosticCount[diagnosticPass];
+    const bool logDrawState = drawCall < 8 || (drawCall % 120) == 0;
+    if (logDrawState)
+    {
+        i32 total = 0;
+        Enemy *first = NULL;
+        for (i32 group = drawGroup; group < chainPriority; ++group)
+        {
+            Enemy *cursor = EnemyManagerDrawHeads(this)[group];
+            if (first == NULL)
+                first = cursor;
+            while (cursor != NULL && total < 512)
+            {
+                ++total;
+                cursor = EnemyDrawNext(cursor);
+            }
+        }
+        char message[256];
+        if (first != NULL)
+        {
+            AnmVm *firstVm = reinterpret_cast<AnmVm *>(
+                reinterpret_cast<u8 *>(first) + 0xC);
+            snprintf(message, sizeof(message),
+                     "dynamic-draw: enemies call=%u pass=%d-%d count=%d first=%p active=%u noSprite=%u group=%u visible=%u script=%d sprite=%d loaded=%p",
+                     drawCall,
+                     drawGroup, chainPriority, total, first,
+                     static_cast<unsigned>((*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(first) + 0x3324) & 1) != 0),
+                     static_cast<unsigned>((*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(first) + 0x3324) & 0x10) != 0),
+                     static_cast<unsigned>(*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(first) + 0x332F)),
+                     static_cast<unsigned>(firstVm->visible),
+                     static_cast<int>(firstVm->scriptIndex),
+                     static_cast<int>(firstVm->activeSpriteIndex),
+                     firstVm->loadedSprite.Get());
+        }
+        else
+        {
+            snprintf(message, sizeof(message),
+                     "dynamic-draw: enemies call=%u pass=%d-%d count=0",
+                     drawCall, drawGroup, chainPriority);
+        }
+        modern::LogStartup(message);
+    }
+    ++drawCall;
+#endif
+
     for (i = drawGroup; i < chainPriority; ++i)
     {
+#if defined(TH08_MODERN_IOS)
+        enemy = reinterpret_cast<u8 *>(EnemyManagerDrawHeads(this)[i]);
+#else
         enemy = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x9DCEDC + i * 4);
+#endif
         while (enemy != NULL)
         {
             vm = reinterpret_cast<AnmVm *>(enemy + 0x2B0);
@@ -1276,7 +1350,8 @@ ChainCallbackResult __fastcall EnemyManager::OnDrawImpl(i32 drawGroup, i32 chain
                 }
             }
 
-            enemy = *reinterpret_cast<u8 **>(enemy);
+            enemy = reinterpret_cast<u8 *>(
+                EnemyDrawNext(reinterpret_cast<Enemy *>(enemy)));
         }
     }
 
@@ -1337,16 +1412,15 @@ ZunResult EnemyManager::AddedCallback(EnemyManager *enemyManager)
 
     if (IsResourceReloadEnabled())
     {
-        *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEEC) =
-            g_AnmManager->PreloadAnm(7, "enemy.anm");
-        if (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEEC) == NULL)
+        EnemyManagerCommonAnm(enemyManager) = g_AnmManager->PreloadAnm(7, "enemy.anm");
+        if (EnemyManagerCommonAnm(enemyManager) == NULL)
         {
             return ZUN_ERROR;
         }
     }
     else
     {
-        *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEEC) = g_AnmManager->GetAnm(7);
+        EnemyManagerCommonAnm(enemyManager) = g_AnmManager->GetAnm(7);
     }
 
     if (!IsDisableResourceReload())
@@ -1354,20 +1428,19 @@ ZunResult EnemyManager::AddedCallback(EnemyManager *enemyManager)
         if (((*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(&g_GameManager) + 0x3DBAC) >> 14) & 1) == 0 ||
             *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(&g_GameManager) + 0x3DBB0) < 0xCD)
         {
-            *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEF0) =
+            EnemyManagerStageAnm(enemyManager) =
                 g_AnmManager->PreloadAnm(8, g_StageEnemyAnms[g_GameManager.currentStage]);
-            if (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEF0) == NULL)
+            if (EnemyManagerStageAnm(enemyManager) == NULL)
             {
                 return ZUN_ERROR;
             }
         }
         else
         {
-            *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEF0) =
-                g_AnmManager->PreloadAnm(
+            EnemyManagerStageAnm(enemyManager) = g_AnmManager->PreloadAnm(
                     8, g_SpellEnemyAnms[
                            *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(&g_GameManager) + 0x3DBB0) - 0xCD]);
-            if (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEF0) == NULL)
+            if (EnemyManagerStageAnm(enemyManager) == NULL)
             {
                 return ZUN_ERROR;
             }
@@ -1375,7 +1448,7 @@ ZunResult EnemyManager::AddedCallback(EnemyManager *enemyManager)
     }
     else
     {
-        *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(enemyManager) + 0x9DCEF0) = g_AnmManager->GetAnm(8);
+        EnemyManagerStageAnm(enemyManager) = g_AnmManager->GetAnm(8);
     }
 
     if (!IsDisableResourceReload())
@@ -1553,7 +1626,11 @@ i32 EnemyManager::FUN_0042f1f0()
     i32 i;
     for (i = 0; i < 8; i++)
     {
+#if defined(TH08_MODERN_IOS)
+        if (EclRunLowProposal::g_EclEnemyTableF54CC0[i] != NULL)
+#else
         if (*reinterpret_cast<void **>(reinterpret_cast<u8 *>(this) + 0x9DCDA0 + i * 4) != NULL)
+#endif
             return 1;
     }
     return 0;

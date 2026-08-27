@@ -53,6 +53,29 @@ enum
     REPLAY_MODE_BOSS,
 };
 
+#ifdef TH08_IOS
+struct IosSpellPracticeMusic
+{
+    i32 lastSpell;
+    i32 track;
+    const char *path;
+    i32 visible;
+    i32 alternate;
+};
+
+const IosSpellPracticeMusic *GetIosSpellPracticeMusic(i32 index);
+const IosSpellPracticeMusic *FindIosSpellPracticeMusic(i32 spellCardNumber);
+extern char g_IosBulletAnmPath[];
+extern char g_IosDemoReplayPath[];
+extern char g_IosErrorSpellcard[];
+extern char g_IosErrorGui[];
+extern char g_IosErrorEffect[];
+extern char g_IosErrorEnemy[];
+extern char g_IosErrorBullet[];
+extern char g_IosErrorBackground[];
+extern char g_IosErrorPlayer[];
+#endif
+
 struct GameManager
 {
     GameManager();
@@ -269,14 +292,29 @@ struct GameManager
 
     void InitArcadeRegionParams();
 
+    GameConfiguration *GetCfg() const
+    {
+        return this->cfg;
+    }
+
+    ZunGlobals *GetGlobals() const
+    {
+        return this->globals;
+    }
+
     ZunBool IsUnknown()
     {
         return this->unk2D;
     }
 
     i32 unk0x0;
+#ifdef TH08_IOS
+    IosPtr32<GameConfiguration> cfg;
+    IosPtr32<ZunGlobals> globals;
+#else
     GameConfiguration *cfg;
     ZunGlobals *globals;
+#endif
     Flsp flsp;
     i8 unk2C;
     i8 unk2D;
@@ -358,6 +396,11 @@ C_ASSERT(offsetof(GameManager, arcadeRegionTopLeftPos) == 0x3DDD4);
 C_ASSERT(offsetof(GameManager, arcadeRegionSize) == 0x3DDDC);
 C_ASSERT(offsetof(GameManager, playerMovementTopLeftPos) == 0x3DDE4);
 C_ASSERT(offsetof(GameManager, playerMovementAreaSize) == 0x3DDEC);
+#ifdef TH08_IOS
+typedef char IosGameManagerSizeCheck[(sizeof(GameManager) == 0x3de3c) ? 1 : -1];
+typedef char IosGameManagerFlagsOffsetCheck[(offsetof(GameManager, flags) == 0x3DBAC) ? 1 : -1];
+typedef char IosGameManagerStageOffsetCheck[(offsetof(GameManager, currentStage) == 0x3DDC4) ? 1 : -1];
+#endif
 
 DIFFABLE_EXTERN(GameManager, g_GameManager);
 }; // Namespace th08

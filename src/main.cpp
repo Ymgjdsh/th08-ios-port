@@ -112,23 +112,42 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR pCmdLine
 
     g_Supervisor.hInstance = hInstance;
 
+#ifdef TH08_IOS
+    // UIKit owns the display and process lifecycle. The corresponding Win32
+    // power-policy calls and single-instance mutex do not apply on iOS.
+    modern::LogStartup("main: platform preflight begin");
+#else
     SystemParametersInfoA(SPI_GETSCREENSAVEACTIVE, 0, &g_GameWindow.screenSaveActive, 0);
     SystemParametersInfoA(SPI_GETLOWPOWERACTIVE, 0, &g_GameWindow.lowPowerActive, 0);
     SystemParametersInfoA(SPI_GETPOWEROFFACTIVE, 0, &g_GameWindow.powerOffActive, 0);
     SystemParametersInfoA(SPI_SETSCREENSAVEACTIVE, 0, (LPVOID *)false, SPIF_SENDCHANGE);
     SystemParametersInfoA(SPI_SETLOWPOWERACTIVE, 0, (LPVOID *)false, SPIF_SENDCHANGE);
     SystemParametersInfoA(SPI_SETPOWEROFFACTIVE, 0, (LPVOID *)false, SPIF_SENDCHANGE);
+#endif
 
     g_Supervisor.InitializeCriticalSections();
+#ifdef TH08_IOS
+    modern::LogStartup("main: critical sections initialized");
+#endif
     g_GameErrorContext.Log(TH_ERR_LOGGER_START);
+#ifdef TH08_IOS
+    modern::LogStartup("main: internal logger initialized");
+#else
 
     if (GameWindow::CheckForRunningGameInstance(hInstance) == ZUN_ERROR)
     {
         goto stop;
     }
+#endif
 
+#ifdef TH08_IOS
+    modern::LogStartup("main: config load begin");
+#endif
     if (g_Supervisor.LoadConfig("th08.cfg") != ZUN_SUCCESS)
     {
+#ifdef TH08_IOS
+        modern::LogStartup("main: config load failed");
+#endif
         goto stop;
     }
 #ifdef TH08_IOS
@@ -364,6 +383,32 @@ RenderResult GameWindow::Render()
 
         calcChainResult = g_Chain.RunCalcChain();
         g_SoundPlayer.ProcessQueues();
+
+#ifdef TH08_IOS
+        // The simulator's software OpenGL translation is much slower than a
+        // device GPU. Full-clear automation can advance several exact logic
+        // ticks per rendered frame while preserving every intermediate timer
+        // value and callback order. Shipping launches never set these vars.
+        const char *smokeTest = SDL_getenv("TH08_IOS_SMOKE_TEST");
+        const bool fastCampaign = SDL_getenv("TH08_IOS_SMOKE_FAST") != NULL &&
+            smokeTest != NULL && strcmp(smokeTest, "campaign") == 0;
+        if (fastCampaign && calcChainResult != 0 && calcChainResult != -1)
+        {
+            static bool accelerationLogged;
+            if (!accelerationLogged)
+            {
+                accelerationLogged = true;
+                modern::LogStartup("smoke-campaign: simulator logic acceleration x8");
+            }
+            for (i32 smokeStep = 1;
+                 smokeStep < 8 && calcChainResult != 0 && calcChainResult != -1;
+                 ++smokeStep)
+            {
+                calcChainResult = g_Chain.RunCalcChain();
+                g_SoundPlayer.ProcessQueues();
+            }
+        }
+#endif
 
         if (calcChainResult == 0)
         {
@@ -1030,8 +1075,16 @@ ZunResult GameWindow::CheckForRunningGameInstance(HINSTANCE hInstance)
         return ZUN_ERROR;
     }
 
+#ifdef TH08_IOS
+    // The retail 32-bit layout places lpReserved immediately after the
+    // four-byte cb field.  On 64-bit iOS it starts at offset eight, so the
+    // original byte count writes four bytes past the stack object.
+    memset(&startupInfo, 0, sizeof(startupInfo));
+    startupInfo.cb = sizeof(startupInfo);
+#else
     startupInfo.cb = sizeof(startupInfo);
     memset(&startupInfo.lpReserved, 0, sizeof(startupInfo) - 4); // Fill remaining struct members
+#endif
 
     // GetModuleFileNameA will get the absolute path of the TH08 executable
     // GetConsoleTitleA will always fail(?) because TH08 isn't a console application. consoleTitleBuf is clobbered

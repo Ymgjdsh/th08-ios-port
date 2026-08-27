@@ -11,10 +11,15 @@
 #include "Gui.hpp"
 #include "ItemManager.hpp"
 #include "Player.hpp"
+#include "ReplayManager.hpp"
 #include "SoundPlayer.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 #include <d3dx8math.h>
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 
 namespace th08
@@ -48,7 +53,9 @@ extern AsciiManager g_AsciiManager;
 extern ReplayManager *g_ReplayManager;
 extern ZunMemory g_ZunMemory;
 extern EnemyManager g_EnemyManager;
+#if !defined(TH08_MODERN_WEB) && !defined(TH08_MODERN_IOS)
 extern i8 g_EclScriptedGlobalUpdateFreeze;
+#endif
 
 /*
  * Private target-pinned overlays for EnemyManager::OnUpdate at 0x0042C660.
@@ -74,14 +81,34 @@ struct EnemyManagerUpdateAnmVm
     u8 unknown1FC[0x1E];
     i16 scriptIndex;
     u8 unknown21C[8];
+#ifdef TH08_IOS
+    IosPtr32<AnmLoadedSprite> sprite;
+#else
     EnemyManagerUpdateSprite *sprite;
+#endif
     u8 unknown228[0x7C];
+
+    f32 SpriteHeight() const
+    {
+#ifdef TH08_IOS
+        return sprite->heightPx;
+#else
+        return sprite->height;
+#endif
+    }
+
+    f32 SpriteWidth() const
+    {
+#ifdef TH08_IOS
+        return sprite->widthPx;
+#else
+        return sprite->width;
+#endif
+    }
 
     void SetInterrupt(i32 interrupt);
 };
-#ifndef TH08_IOS
 typedef char EnemyManagerUpdateAnmVmSizeCheck[sizeof(EnemyManagerUpdateAnmVm) == 0x2A4 ? 1 : -1];
-#endif
 
 struct EnemyManagerUpdateTimer
 {
@@ -136,19 +163,38 @@ struct EnemyManagerUpdateEnemy
     i32 &LastDamage() { return *reinterpret_cast<i32 *>(raw + 0x3354); }
     i32 *LifeCallbacks() { return reinterpret_cast<i32 *>(raw + 0x3358); }
     i32 &TimerCallbackThreshold() { return *reinterpret_cast<i32 *>(raw + 0x3378); }
-    void **Effects() { return reinterpret_cast<void **>(raw + 0x3384); }
+    void *Effect(i32 index)
+    {
+        return EnemyEffectContext(reinterpret_cast<Enemy *>(this), index);
+    }
+    void SetEffect(i32 index, void *effect)
+    {
+        SetEnemyEffectContext(reinterpret_cast<Enemy *>(this), index, effect);
+    }
     u8 &TrailFlags() { return *reinterpret_cast<u8 *>(raw + 0x534C); }
     i16 &TrailHistoryCount() { return *reinterpret_cast<i16 *>(raw + 0x534E); }
     i16 &TrailSampleCount() { return *reinterpret_cast<i16 *>(raw + 0x5350); }
     EnemyManagerUpdateTimer *FreezeTimer() { return reinterpret_cast<EnemyManagerUpdateTimer *>(raw + 0x5354); }
-    EnemyManagerUpdateAnmVm *&DeathVm()
+    EnemyManagerUpdateAnmVm *DeathVm()
     {
-        return *reinterpret_cast<EnemyManagerUpdateAnmVm **>(raw + 0x53C8);
+        return reinterpret_cast<EnemyManagerUpdateAnmVm *>(
+            EnemyDeathVm(reinterpret_cast<Enemy *>(this)));
+    }
+    void SetDeathVm(EnemyManagerUpdateAnmVm *vm)
+    {
+        SetEnemyDeathVm(reinterpret_cast<Enemy *>(this),
+                        reinterpret_cast<AnmVm *>(vm));
     }
     i32 &DeathTimeSeconds() { return *reinterpret_cast<i32 *>(raw + 0x53CC); }
-    EnemyManagerUpdateEnemy *&DrawNext()
+    EnemyManagerUpdateEnemy *DrawNext()
     {
-        return *reinterpret_cast<EnemyManagerUpdateEnemy **>(raw);
+        return reinterpret_cast<EnemyManagerUpdateEnemy *>(
+            EnemyDrawNext(reinterpret_cast<Enemy *>(this)));
+    }
+    void SetDrawNext(EnemyManagerUpdateEnemy *next)
+    {
+        SetEnemyDrawNext(reinterpret_cast<Enemy *>(this),
+                         reinterpret_cast<Enemy *>(next));
     }
 
     i32 IsActive() { return (Flags1() & 1) != 0; }
@@ -175,17 +221,19 @@ typedef char EnemyManagerUpdateEnemySizeCheck[sizeof(EnemyManagerUpdateEnemy) ==
 struct EnemyManagerUpdateTimelineLane
 {
     EnemyManagerUpdateTimer timer;
+#ifdef TH08_IOS
+    IosPtr32<void> instruction;
+#else
     void *instruction;
+#endif
     void Run();
 };
-#ifndef TH08_IOS
 typedef char EnemyManagerUpdateTimelineLaneSizeCheck[sizeof(EnemyManagerUpdateTimelineLane) == 0x10 ? 1 : -1];
-#endif
 
 struct EnemyManagerUpdateEclManager
 {
     i32 GetTimelineCount();
-    void *GetTimeline(i32 index);
+    uintptr_t GetTimeline(i32 index);
     i32 RunEcl(EnemyManagerUpdateEnemy *enemy);
     i32 CallEclSub(void *context, i16 subId);
 };
@@ -255,12 +303,6 @@ struct EnemyManagerUpdateAsciiManager
     void SetBossMarkerState(i32 slot, i32 state);
 };
 
-struct EnemyManagerUpdateReplayManager
-{
-    u8 unknown000[0xDA];
-    u16 flags;
-};
-
 struct EnemyManagerUpdateMemory
 {
     void Free(void *ptr);
@@ -279,10 +321,18 @@ struct EnemyManagerUpdateOverlay
         return reinterpret_cast<EnemyManagerUpdateEnemy *>(raw + 0x53D0);
     }
 
+#if defined(TH08_MODERN_IOS)
+    EnemyManagerUpdateEnemy *SpecialEnemy()
+    {
+        return reinterpret_cast<EnemyManagerUpdateEnemy *>(
+            EclRunLowProposal::EclEnemySlot(0));
+    }
+#else
     EnemyManagerUpdateEnemy *&SpecialEnemy()
     {
         return *reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCDA0);
     }
+#endif
 
     i32 &EnemyCount() { return *reinterpret_cast<i32 *>(raw + 0x9DCDC4); }
     EnemyManagerUpdateTimelineLane *TimelineLanes()
@@ -295,7 +345,12 @@ struct EnemyManagerUpdateOverlay
     }
     EnemyManagerUpdateEnemy **DrawHeads()
     {
+#if defined(TH08_MODERN_IOS)
+        return reinterpret_cast<EnemyManagerUpdateEnemy **>(
+            EnemyManagerDrawHeads(reinterpret_cast<EnemyManager *>(this)));
+#else
         return reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCEDC);
+#endif
     }
 
     void PrepareFrame();
@@ -393,6 +448,19 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
     i32 enemyIndex;
     i32 difficultyScale;
     i32 rankAmount;
+    i32 eclResult;
+
+#ifdef TH08_IOS
+    static u32 diagnosticFrame;
+    const u32 currentDiagnosticFrame = diagnosticFrame++;
+    const bool traceFrame = currentDiagnosticFrame < 8;
+    if (traceFrame)
+    {
+        char message[128];
+        snprintf(message, sizeof(message), "enemy-update: frame=%u enter", currentDiagnosticFrame);
+        modern::LogStartup(message);
+    }
+#endif
 
     difficultyScale = 10;
 
@@ -413,7 +481,7 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
 
     if (reinterpret_cast<EnemyManagerUpdateManagerFlagBits *>(
             reinterpret_cast<u8 *>(&g_GameManager) + 0x3DBAC)->damageBoss &&
-        *reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCDA0) != 0)
+        SpecialEnemy() != 0)
     {
         // These target-pinned identifiers preserve VC7's block-local hash
         // order.  The initializer values and argument order carry the actual
@@ -422,25 +490,57 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
         D3DXVECTOR3 upperBounds(192.0f, 224.0f, 0.0f);
         g_Player.FUN_00451670(
             reinterpret_cast<Float3 *>(&upperBounds), reinterpret_cast<Float3 *>(&lowerBounds),
-            reinterpret_cast<i32 *>((*reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCDA0))->raw + 0x2E10),
+            reinterpret_cast<i32 *>(SpecialEnemy()->raw + 0x2E10),
             &bombHit);
     }
 
     reinterpret_cast<EnemyManager *>(this)->FUN_0042c3b0();
 
-    reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCEDC)[3] = 0;
-    reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCEDC)[2] = 0;
-    reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCEDC)[1] = 0;
-    reinterpret_cast<EnemyManagerUpdateEnemy **>(raw + 0x9DCEDC)[0] = 0;
+#ifdef TH08_IOS
+    if (traceFrame)
+        modern::LogStartup("enemy-update: preframe complete");
+#endif
 
+    DrawHeads()[3] = 0;
+    DrawHeads()[2] = 0;
+    DrawHeads()[1] = 0;
+    DrawHeads()[0] = 0;
+
+#ifdef TH08_IOS
+    const i32 timelineCount = g_EclManager.GetTimelineCount();
+    if (traceFrame)
+    {
+        char message[128];
+        snprintf(message, sizeof(message), "enemy-update: timelines=%d", timelineCount);
+        modern::LogStartup(message);
+    }
+#endif
+#ifdef TH08_IOS
+    for (enemyIndex = 0; enemyIndex < timelineCount; ++enemyIndex)
+#else
     for (enemyIndex = 0; enemyIndex < g_EclManager.GetTimelineCount(); ++enemyIndex)
+#endif
     {
         if (reinterpret_cast<EnemyManagerUpdateTimelineLane *>(raw + 0x9DCDD0)[enemyIndex].instruction == 0)
         {
             reinterpret_cast<EnemyManagerUpdateTimelineLane *>(raw + 0x9DCDD0)[enemyIndex].instruction =
                 reinterpret_cast<void *>(g_EclManager.GetTimeline(enemyIndex));
         }
+#ifdef TH08_IOS
+        if (traceFrame)
+        {
+            char message[160];
+            snprintf(message, sizeof(message), "enemy-update: timeline=%d run instruction=%p", enemyIndex,
+                     reinterpret_cast<void *>(
+                         reinterpret_cast<EclTimeline *>(raw + 0x9DCDD0)[enemyIndex].instruction.Get()));
+            modern::LogStartup(message);
+        }
+#endif
         reinterpret_cast<EclTimeline *>(raw + 0x9DCDD0)[enemyIndex].Run();
+#ifdef TH08_IOS
+        if (traceFrame)
+            modern::LogStartup("enemy-update: timeline returned");
+#endif
     }
 
     enemy = reinterpret_cast<EnemyManagerUpdateEnemy *>(raw + 0x53D0);
@@ -455,6 +555,16 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
         }
 
         damageOccurred = 0;
+
+#ifdef TH08_IOS
+        if (traceFrame)
+        {
+            char message[160];
+            snprintf(message, sizeof(message), "enemy-update: active enemy=%d flags=%08x", enemyIndex,
+                     static_cast<unsigned>(*reinterpret_cast<u32 *>(enemy->raw + 0x3324)));
+            modern::LogStartup(message);
+        }
+#endif
 
         if (reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->suppressDeathEffects)
         {
@@ -478,12 +588,35 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             reinterpret_cast<Enemy *>(enemy)->FUN_0042c420();
 
     run_enemy_ecl_after_pause:
-        if (g_EclManager.RunEcl(reinterpret_cast<Enemy *>(enemy)) == -1)
+#ifdef TH08_IOS
+        if (traceFrame)
+            modern::LogStartup("enemy-update: run-ecl");
+#endif
+        eclResult = g_EclManager.RunEcl(reinterpret_cast<Enemy *>(enemy));
+        if (eclResult == -1)
         {
+#ifdef TH08_IOS
+            EnemyManagerUpdateAnmVm *vm = enemy->PrimaryVm();
+            if (vm->sprite != 0)
+            {
+                char message[224];
+                snprintf(message, sizeof(message),
+                         "enemy-update: ecl-ended enemy=%d flags=%08x group=%u script=%d sprite=%p pos=%.1f,%.1f",
+                         enemyIndex, static_cast<unsigned>(enemy->Flags1()),
+                         static_cast<unsigned>(enemy->DrawGroup()),
+                         static_cast<int>(vm->scriptIndex), vm->sprite.Get(),
+                         enemy->Position()->x, enemy->Position()->y);
+                modern::LogStartup(message);
+            }
+#endif
             *reinterpret_cast<u32 *>(enemy->raw + 0x3324) &= ~1U;
             reinterpret_cast<Enemy *>(enemy)->FUN_0042bcf0();
             continue;
         }
+#ifdef TH08_IOS
+        if (traceFrame)
+            modern::LogStartup("enemy-update: run-ecl returned");
+#endif
 
         if (!reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->skipMovement)
         {
@@ -491,14 +624,13 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             reinterpret_cast<Enemy *>(enemy)->FUN_0042deb0();
             reinterpret_cast<Enemy *>(enemy)->ClampPosition();
 
-            if (*reinterpret_cast<void **>(enemy->raw + 0x2DA4) != 0 &&
+            EclOperands::EnemyOverlay *owner = EclOperands::EnemyOwner(enemy);
+            if (owner != NULL &&
                 reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(
                     enemy->raw + 0x3324)->copyFollowVelocity)
             {
                 *reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D40) =
-                    *reinterpret_cast<D3DXVECTOR3 *>(
-                        (*reinterpret_cast<EnemyManagerUpdateEnemy **>(
-                            enemy->raw + 0x2DA4))->raw + 0x2D34);
+                    *reinterpret_cast<D3DXVECTOR3 *>(owner->bytes + 0x2D34);
             }
 
             *reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88) =
@@ -514,11 +646,10 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->z = 0.0f;
         }
 
-        if (*reinterpret_cast<EnemyManagerUpdateAnmVm **>(enemy->raw + 0x53C8) != 0)
+        if (enemy->DeathVm() != 0)
         {
             *reinterpret_cast<D3DXVECTOR3 *>(
-                reinterpret_cast<u8 *>(*reinterpret_cast<EnemyManagerUpdateAnmVm **>(
-                    enemy->raw + 0x53C8)) + 0x2A4) =
+                reinterpret_cast<u8 *>(enemy->DeathVm()) + 0x2A4) =
                 *reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88);
         }
 
@@ -554,8 +685,8 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             g_GameManager.IsWithinPlayfield(
                 (*reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88))[0],
                 (*reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88))[1],
-                reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->width,
-                reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->height))
+                reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteWidth(),
+                reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteHeight()))
         {
             *reinterpret_cast<u32 *>(enemy->raw + 0x3324) |= EMUF1_HAS_BEEN_IN_BOUNDS;
         }
@@ -567,14 +698,14 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                  !g_GameManager.IsWithinPlayfield(
                      reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->x,
                      reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->y,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->width,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->height)) ||
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteWidth(),
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteHeight())) ||
                 (*reinterpret_cast<u8 *>(enemy->raw + 0x534C) &&
                  !g_GameManager.IsWithinPlayfield(
                      reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->x,
                      reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->y,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->width,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->height) &&
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteWidth(),
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteHeight()) &&
                  !g_GameManager.IsWithinPlayfield(
                      reinterpret_cast<D3DXVECTOR3 *>(
                          enemy->raw + 0x3394 + 0x1C *
@@ -582,9 +713,26 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                      reinterpret_cast<D3DXVECTOR3 *>(
                          enemy->raw + 0x3394 + 0x1C *
                          (*reinterpret_cast<i16 *>(enemy->raw + 0x534E) - 1))->y,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->width,
-                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->sprite->height)))
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteWidth(),
+                     reinterpret_cast<EnemyManagerUpdateAnmVm *>(enemy->raw + 0xC)->SpriteHeight())))
             {
+#ifdef TH08_IOS
+                static u32 offscreenDiagnosticCount;
+                if (offscreenDiagnosticCount < 32)
+                {
+                    char message[256];
+                    snprintf(message, sizeof(message),
+                             "enemy-update: offscreen-remove count=%u enemy=%d flags=%08x size=%.1f,%.1f pos=%.1f,%.1f velocity=%.2f,%.2f",
+                             offscreenDiagnosticCount, enemyIndex,
+                             static_cast<unsigned>(enemy->Flags1()),
+                             enemy->PrimaryVm()->SpriteWidth(),
+                             enemy->PrimaryVm()->SpriteHeight(),
+                             enemy->Position()->x, enemy->Position()->y,
+                             enemy->VelocityB()->x, enemy->VelocityB()->y);
+                    modern::LogStartup(message);
+                    ++offscreenDiagnosticCount;
+                }
+#endif
                 *reinterpret_cast<u32 *>(enemy->raw + 0x3324) &= ~1U;
                 reinterpret_cast<Enemy *>(enemy)->FUN_0042bcf0();
                 continue;
@@ -752,7 +900,7 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                     !reinterpret_cast<EclOperands::TargetEnemyHelpersOverlay *>(enemy)->HasAttachedEnemy() &&
                     (g_Player.optionHomingTarget == 0 ||
                      reinterpret_cast<D3DXVECTOR3 *>(
-                         reinterpret_cast<EnemyManagerUpdateEnemy *>(g_Player.optionHomingTarget)->raw + 0x2D34)->y >
+                         reinterpret_cast<EnemyManagerUpdateEnemy *>(g_Player.GetOptionHomingTarget())->raw + 0x2D34)->y >
                          reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88)->y))
                 {
                     g_Player.optionHomingTarget = reinterpret_cast<Enemy *>(enemy);
@@ -785,18 +933,19 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                 reinterpret_cast<i32 *>(enemy->raw + 0x3358)[deathPosition] = -1;
             for (deathPosition = 0; deathPosition < 4; ++deathPosition)
             {
-                if (reinterpret_cast<void **>(enemy->raw + 0x3384)[deathPosition] != 0)
+                void *effect = enemy->Effect(deathPosition);
+                if (effect != 0)
                 {
-                    g_ZunMemory.Free(reinterpret_cast<void **>(enemy->raw + 0x3384)[deathPosition]);
-                    reinterpret_cast<void **>(enemy->raw + 0x3384)[deathPosition] = 0;
+                    g_ZunMemory.Free(effect);
+                    enemy->SetEffect(deathPosition, 0);
                 }
             }
 
             if (reinterpret_cast<EclOperands::TargetEnemyHelpersOverlay *>(enemy)->HasAttachedEnemy())
             {
-                --*reinterpret_cast<i32 *>(
-                    (*reinterpret_cast<EnemyManagerUpdateEnemy **>(
-                        enemy->raw + 0x2DA4))->raw + 0x3380);
+                EclOperands::EnemyOverlay *owner = EclOperands::EnemyOwner(enemy);
+                if (owner != NULL)
+                    --*reinterpret_cast<i32 *>(owner->bytes + 0x3380);
             }
 
             reinterpret_cast<EclOperands::EnemyOverlay *>(enemy)->FUN_0042adb0(1);
@@ -813,18 +962,17 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                 *reinterpret_cast<u32 *>(enemy->raw + 0x3324) &= ~EMUF1_DAMAGEABLE;
                 *reinterpret_cast<u32 *>(enemy->raw + 0x3324) &= ~EMUF1_DEATH_MODE_MASK;
                 g_Gui.SetBossPresent(false);
-                reinterpret_cast<EnemyManagerUpdateReplayManager *>(g_ReplayManager)->flags |= 0x20;
+                g_ReplayManager->flags |= 0x20;
                 if (*reinterpret_cast<i8 *>(enemy->raw + 0x3310) >= 0)
                 {
                     g_EffectManager.SpawnEffect(*reinterpret_cast<i8 *>(enemy->raw + 0x3310), reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88), 1, -1);
                     g_EffectManager.SpawnEffect(*reinterpret_cast<i8 *>(enemy->raw + 0x3310), reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88), 1, -1);
                     g_EffectManager.SpawnEffect(*reinterpret_cast<i8 *>(enemy->raw + 0x3310), reinterpret_cast<D3DXVECTOR3 *>(enemy->raw + 0x2D88), 1, -1);
                 }
-                if (*reinterpret_cast<EnemyManagerUpdateAnmVm **>(enemy->raw + 0x53C8) != 0)
+                if (enemy->DeathVm() != 0)
                 {
-                    reinterpret_cast<AnmVmBase *>(*reinterpret_cast<EnemyManagerUpdateAnmVm **>(
-                        enemy->raw + 0x53C8))->SetInterrupt(3);
-                    *reinterpret_cast<EnemyManagerUpdateAnmVm **>(enemy->raw + 0x53C8) = 0;
+                    reinterpret_cast<AnmVmBase *>(enemy->DeathVm())->SetInterrupt(3);
+                    enemy->SetDeathVm(0);
                 }
                 if (!reinterpret_cast<EnemyManagerUpdatePlayer *>(&g_Player)->playerType)
                 {
@@ -846,11 +994,10 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             case 0:
                 g_GameManager.AddScore(*reinterpret_cast<i32 *>(enemy->raw + 0x2E08));
                 *reinterpret_cast<u32 *>(enemy->raw + 0x3324) &= ~1U;
-                if (*reinterpret_cast<EnemyManagerUpdateAnmVm **>(enemy->raw + 0x53C8) != 0)
+                if (enemy->DeathVm() != 0)
                 {
-                    reinterpret_cast<AnmVmBase *>(*reinterpret_cast<EnemyManagerUpdateAnmVm **>(
-                        enemy->raw + 0x53C8))->SetInterrupt(3);
-                    *reinterpret_cast<EnemyManagerUpdateAnmVm **>(enemy->raw + 0x53C8) = 0;
+                    reinterpret_cast<AnmVmBase *>(enemy->DeathVm())->SetInterrupt(3);
+                    enemy->SetDeathVm(0);
                 }
                 goto common_death_mode;
 
@@ -874,7 +1021,7 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                     }
                 }
                 *reinterpret_cast<i32 *>(enemy->raw + 0x2DFC) = 0;
-                reinterpret_cast<EnemyManagerUpdateReplayManager *>(g_ReplayManager)->flags |= 0x20;
+                g_ReplayManager->flags |= 0x20;
                 break;
             }
 
@@ -987,11 +1134,27 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
         if (!reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->noSprite &&
             reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->active)
         {
-            *reinterpret_cast<EnemyManagerUpdateEnemy **>(enemy->raw) =
-                reinterpret_cast<EnemyManagerUpdateEnemy **>(
-                    raw + 0x9DCEDC)[*reinterpret_cast<u8 *>(enemy->raw + 0x332F)];
-            reinterpret_cast<EnemyManagerUpdateEnemy **>(
-                raw + 0x9DCEDC)[*reinterpret_cast<u8 *>(enemy->raw + 0x332F)] = enemy;
+#ifdef TH08_IOS
+            static u32 drawInsertDiagnosticCount;
+            if (drawInsertDiagnosticCount < 32)
+            {
+                char message[256];
+                snprintf(message, sizeof(message),
+                         "enemy-update: draw-insert count=%u enemy=%d flags=%08x group=%u script=%d sprite=%p pos=%.1f,%.1f oldHead=%p",
+                         drawInsertDiagnosticCount, enemyIndex,
+                         static_cast<unsigned>(enemy->Flags1()),
+                         static_cast<unsigned>(enemy->DrawGroup()),
+                         static_cast<int>(enemy->PrimaryVm()->scriptIndex),
+                         enemy->PrimaryVm()->sprite.Get(),
+                         enemy->Position()->x, enemy->Position()->y,
+                         DrawHeads()[enemy->DrawGroup()]);
+                modern::LogStartup(message);
+                ++drawInsertDiagnosticCount;
+            }
+#endif
+            enemy->SetDrawNext(
+                DrawHeads()[*reinterpret_cast<u8 *>(enemy->raw + 0x332F)]);
+            DrawHeads()[*reinterpret_cast<u8 *>(enemy->raw + 0x332F)] = enemy;
         }
     }
 
@@ -1000,6 +1163,10 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
         return 4;
 
     (*reinterpret_cast<ZunTimer *>(raw + 0x9DCED0))++;
+#ifdef TH08_IOS
+    if (traceFrame)
+        modern::LogStartup("enemy-update: return");
+#endif
     return 1;
 }
 

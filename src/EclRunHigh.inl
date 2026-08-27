@@ -41,8 +41,13 @@
 namespace th08
 {
 extern void *g_EclExInsn[];
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i32 &g_EclGlobal004EA290; // target 0x004EA290
+extern i32 &g_EclGlobal004ECCA8; // target 0x004ECCA8
+#else
 extern i32 g_EclGlobal004EA290; // target 0x004EA290
 extern i32 g_EclGlobal004ECCA8; // target 0x004ECCA8
+#endif
 void __fastcall StartEnemySpell(u8 *enemy, void *instruction);
 void __fastcall EndEnemySpell(u8 *enemy, void *instruction);
 
@@ -108,7 +113,11 @@ typedef void (__fastcall *EclInterpolatorCallback)(Enemy *enemy, Interpolator *e
 
 struct Interpolator
 {
+#ifdef TH08_IOS
+    IosPtr32<void(Enemy *, Interpolator *, f32)> callback;
+#else
     EclInterpolatorCallback callback; // +0x00, target calls with Enemy in ECX and entry in EDX
+#endif
     ZunTimer timer;                 // +0x04
     i32 duration;         // +0x10
     i32 unknown14;        // +0x14
@@ -119,9 +128,7 @@ struct Interpolator
     i32 unknown28;
     f32 affectedVariable; // +0x2C; 10042..10044 mean position motion
 };
-#ifndef TH08_IOS
 typedef char InterpolatorSizeCheck[sizeof(Interpolator) == 0x30 ? 1 : -1];
-#endif
 
 enum DispatchResult
 {
@@ -351,8 +358,30 @@ struct Context
     EclOperands::ResolveFloatLValue( \
         reinterpret_cast<EclOperands::EnemyOverlay *>(TH08_ECL_CONTEXT_ENEMY(ctx)), \
         &TH08_ECL_RAW_F((ctx), (index)), TH08_ECL_CONTEXT_INSTRUCTION(ctx)->operandFlags, (index))
+#ifdef TH08_IOS
+#define TH08_ECL_CURRENT_CONTEXT(ctx) \
+    (reinterpret_cast<u8 *>(IosEclCurrentContext(TH08_ECL_CONTEXT_ENEMY(ctx))))
+#define TH08_ECL_CURRENT_VARIABLES(ctx) \
+    (IosEclCurrentVariables(TH08_ECL_CONTEXT_ENEMY(ctx)))
+#define TH08_ECL_CHILD_CONTEXT(ctx, index) \
+    (IosEclChildContextField(TH08_ECL_CONTEXT_ENEMY(ctx), (index)))
+#define TH08_ECL_CHILD_CONTEXT_PTR(ctx, index) \
+    (IosEclChildContextField(TH08_ECL_CONTEXT_ENEMY(ctx), (index)).Get())
+#define TH08_ECL_OBJECT(ctx, index) \
+    (IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x3280 + (index) * 4).Get())
+#define TH08_ECL_DEATH_VM(ctx) \
+    (IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x53C8).Get())
+#define TH08_ECL_SET_DEATH_VM(ctx, value) \
+    (IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x53C8) = (value))
+#else
 #define TH08_ECL_CURRENT_CONTEXT(ctx) TH08_ECL_AT((ctx), u8 *, 0x2CA0)
+#define TH08_ECL_CURRENT_VARIABLES(ctx) TH08_ECL_AT((ctx), u8 *, 0x2CA4)
+#define TH08_ECL_CHILD_CONTEXT(ctx, index) TH08_ECL_AT((ctx), u8 *, 0x3384 + (index) * 4)
+#define TH08_ECL_CHILD_CONTEXT_PTR(ctx, index) TH08_ECL_CHILD_CONTEXT((ctx), (index))
 #define TH08_ECL_OBJECT(ctx, index) TH08_ECL_AT((ctx), u8 *, 0x3280 + (index) * 4)
+#define TH08_ECL_DEATH_VM(ctx) TH08_ECL_AT((ctx), u8 *, 0x53C8)
+#define TH08_ECL_SET_DEATH_VM(ctx, value) (TH08_ECL_AT((ctx), u8 *, 0x53C8) = (value))
+#endif
 #define TH08_ECL_PRESENTATION_WRITES_ALLOWED() \
     (((((*reinterpret_cast<u32 *>(&g_GameManager.flags)) >> 14) & 1) == 0) || \
      ((((*reinterpret_cast<u32 *>(&g_GameManager.flags)) >> 7) & 3) == 0))
@@ -628,7 +657,13 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
                 ((TH08_ECL_CONTEXT_INSTRUCTION(ctx)->operandFlags & (1U << 2)) ? reinterpret_cast<EclOperands::EnemyOverlay *>(TH08_ECL_CONTEXT_ENEMY(ctx))->ResolveFloat(*reinterpret_cast<f32 *>(&TH08_ECL_RAW_I(ctx, 2))) : *reinterpret_cast<f32 *>(&TH08_ECL_RAW_I(ctx, 2)));
         }
         break;
-    case 163: reinterpret_cast<i32 *>(EclRunLowProposal::g_EclEnemyTableF54CC0)[11] = TH08_ECL_READ_I(ctx, 0); break;
+    case 163:
+#if defined(TH08_MODERN_IOS)
+        EclRunLowProposal::EclEnemySlotInt(11) = TH08_ECL_READ_I(ctx, 0);
+#else
+        reinterpret_cast<i32 *>(EclRunLowProposal::g_EclEnemyTableF54CC0)[11] = TH08_ECL_READ_I(ctx, 0);
+#endif
+        break;
     case 127:
         if (TH08_ECL_READ_I(ctx, 0) >= 0)
         {
@@ -697,12 +732,17 @@ enter_subroutine:
         // Target 0x0041C88A is shared by opcode 125 and the pending-subroutine
         // check at the top of RunEcl's dispatch loop.  Keeping it lexical at
         // this case preserves the target's handler ordering.
+#ifdef TH08_IOS
+        reinterpret_cast<EnemyEclContext *>(TH08_ECL_CURRENT_CONTEXT(ctx))->currentInstr =
+            reinterpret_cast<EclRawInstruction *>((u8 *)instruction + instruction->nextOffset);
+#else
         *(RawInstruction **)TH08_ECL_CURRENT_CONTEXT(ctx) =
             (RawInstruction *)((u8 *)instruction + instruction->nextOffset);
+#endif
 
         if (((TH08_ECL_AT(ctx, u32, 0x3324) >> 26) & 1) == 0)
         {
-            memcpy(TH08_ECL_AT(ctx, u8 *, 0x2CA4) +
+            memcpy(TH08_ECL_CURRENT_VARIABLES(ctx) +
                        TH08_ECL_AT(ctx, i16, 0x2CEA) * 0x228,
                    TH08_ECL_CONTEXT_ENEMY(ctx) + 0x7F8,
                    0x8A * sizeof(i32));
@@ -768,22 +808,24 @@ enter_subroutine:
     case 135:
     {
         lhsInt = TH08_ECL_READ_I(ctx, 0);
-        if (TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4))
-            g_ZunMemory.Free(TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4));
-        TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4) = 0;
+        if (lhsInt < 0 || lhsInt >= 4)
+            break;
+        if (TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt))
+            g_ZunMemory.Free(TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt));
+        TH08_ECL_CHILD_CONTEXT(ctx, lhsInt) = 0;
 
         if (TH08_ECL_READ_I(ctx, 1) >= 0)
         {
-            TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4) =
+            TH08_ECL_CHILD_CONTEXT(ctx, lhsInt) =
                 (u8 *)g_ZunMemory.Alloc(0x24B0, "ECLInt");
-            if (TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4))
+            if (TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt))
             {
-                memset(TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4), 0, 0x24B0);
-                *(i32 *)TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4) = TH08_ECL_READ_I(ctx, 1);
+                memset(TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt), 0, 0x24B0);
+                *(i32 *)TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt) = TH08_ECL_READ_I(ctx, 1);
                 g_EclManager.CallEclSub(
-                    reinterpret_cast<EnemyEclContext *>(TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4) + 8),
-                    *(u16 *)TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4));
-                memcpy(TH08_ECL_AT(ctx, u8 *, 0x3384 + lhsInt * 4) + 0x20,
+                    reinterpret_cast<EnemyEclContext *>(TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt) + 8),
+                    *(u16 *)TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt));
+                memcpy(TH08_ECL_CHILD_CONTEXT_PTR(ctx, lhsInt) + 0x20,
                        TH08_ECL_CURRENT_CONTEXT(ctx) + 0x18, 0x1E * sizeof(i32));
             }
         }
@@ -864,11 +906,22 @@ enter_subroutine:
     case 137:
         if (TH08_ECL_READ_I(ctx, 0) >= 0)
         {
+#ifdef TH08_IOS
+            IosEclPointerField<void>(TH08_ECL_CURRENT_CONTEXT(ctx), 0x10) =
+                g_EclExInsn[TH08_ECL_READ_I(ctx, 0)];
+            IosEclPointerField<RawInstruction>(TH08_ECL_CURRENT_CONTEXT(ctx), 0x14) =
+                TH08_ECL_CONTEXT_INSTRUCTION(ctx);
+#else
             *(void **)(TH08_ECL_CURRENT_CONTEXT(ctx) + 0x10) = g_EclExInsn[TH08_ECL_READ_I(ctx, 0)];
             *(RawInstruction **)(TH08_ECL_CURRENT_CONTEXT(ctx) + 0x14) = TH08_ECL_CONTEXT_INSTRUCTION(ctx);
+#endif
         }
         else
+#ifdef TH08_IOS
+            IosEclPointerField<void>(TH08_ECL_CURRENT_CONTEXT(ctx), 0x10) = 0;
+#else
             *(void **)(TH08_ECL_CURRENT_CONTEXT(ctx) + 0x10) = 0;
+#endif
         break;
     case 146:
         reinterpret_cast<ZunTimer *>(TH08_ECL_CURRENT_CONTEXT(ctx) + 4)->operator+=(TH08_ECL_READ_I(ctx, 0));
@@ -1085,21 +1138,27 @@ enter_subroutine:
 #endif
     case 174:
     {
-        if (TH08_ECL_AT(ctx, u8 *, 0x53C8))
-            *(u8 *)(TH08_ECL_AT(ctx, u8 *, 0x53C8) + 0x350) = 0;
-        TH08_ECL_AT(ctx, u8 *, 0x53C8) =
+        if (TH08_ECL_DEATH_VM(ctx))
+            *(u8 *)(TH08_ECL_DEATH_VM(ctx) + 0x350) = 0;
+        TH08_ECL_SET_DEATH_VM(ctx,
             reinterpret_cast<u8 *>(g_EffectManager.SpawnEffect00425B70(
                 TH08_ECL_READ_I(ctx, 0) + 0x20,
                 reinterpret_cast<D3DXVECTOR3 *>(&TH08_ECL_AT(ctx, Vec3, 0x2D88)),
-                1, -1));
+                1, -1)));
         reinterpret_cast<AnmVmBase *>(
-            TH08_ECL_AT(ctx, u8 *, 0x53C8))->SetInterrupt(g_Player.IsYoukai() ? 2 : 1);
+            TH08_ECL_DEATH_VM(ctx))->SetInterrupt(g_Player.IsYoukai() ? 2 : 1);
         if (TH08_ECL_AT(ctx, u32, 0x2E0C) & 1)
-            *(f32 *)(TH08_ECL_AT(ctx, u8 *, 0x53C8) + 0x14) =
-                -*(f32 *)(TH08_ECL_AT(ctx, u8 *, 0x53C8) + 0x14);
+            *(f32 *)(TH08_ECL_DEATH_VM(ctx) + 0x14) =
+                -*(f32 *)(TH08_ECL_DEATH_VM(ctx) + 0x14);
         break;
     }
-    case 175: reinterpret_cast<i32 *>(EclRunLowProposal::g_EclEnemyTableF54CC0)[91] = TH08_ECL_READ_I(ctx, 0); break;
+    case 175:
+#if defined(TH08_MODERN_IOS)
+        EclRunLowProposal::EclEnemySlotInt(91) = TH08_ECL_READ_I(ctx, 0);
+#else
+        reinterpret_cast<i32 *>(EclRunLowProposal::g_EclEnemyTableF54CC0)[91] = TH08_ECL_READ_I(ctx, 0);
+#endif
+        break;
     case 177: TH08_ECL_AT(ctx, i32, 0x2E04) = TH08_ECL_READ_I(ctx, 0); break;
 #if !defined(TH08_ECL_RUN_HIGH_BODY)
     case 178: TH08_ECL_CONTEXT_API(ctx)->Call004224A0(TH08_ECL_CONTEXT_ENEMY(ctx)); break;

@@ -364,13 +364,22 @@ struct AnmVmBase
     i16 type;
     i16 pendingInterrupt;
     i32 playerBulletHitAnimationType;
+#ifdef TH08_IOS
+    IosPtr32<AnmLoaded> anmFile;
+#else
     AnmLoaded *anmFile;
+#endif
 };
 
 C_ASSERT(sizeof(AnmVmBase) == 0x208);
 
 struct AnmVm : AnmVmBase
 {
+    AnmRawInstr *GetBeginningOfScript() const
+    {
+        return this->beginningOfScript;
+    }
+
     void SetZRotation(f32 z)
     {
         this->rotation.z = z;
@@ -382,11 +391,21 @@ struct AnmVm : AnmVmBase
     i16 anmFileIndex;
     i16 baseSpriteIndex;
     i16 scriptIndex;
+#ifdef TH08_IOS
+    IosPtr32<AnmRawInstr> beginningOfScript;
+    IosPtr32<AnmRawInstr> currentInstruction;
+    IosPtr32<AnmLoadedSprite> loadedSprite;
+#else
     AnmRawInstr *beginningOfScript;
     AnmRawInstr *currentInstruction;
     AnmLoadedSprite *loadedSprite;
+#endif
     ZunTimer interruptReturnTime;
+#ifdef TH08_IOS
+    IosPtr32<AnmRawInstr> interruptReturnInstruction;
+#else
     AnmRawInstr *interruptReturnInstruction;
+#endif
 
     Float3 posInitial;
     Float3 posFinal;
@@ -425,6 +444,10 @@ struct AnmVm : AnmVmBase
 };
 
 C_ASSERT(sizeof(AnmVm) == 0x2a4);
+#ifdef TH08_IOS
+typedef char IosAnmVmBaseSizeCheck[(sizeof(AnmVmBase) == 0x208) ? 1 : -1];
+typedef char IosAnmVmSizeCheck[(sizeof(AnmVm) == 0x2a4) ? 1 : -1];
+#endif
 
 struct AnmLoaded
 {
@@ -435,6 +458,20 @@ struct AnmLoaded
     AnmRawInstr **scripts;
     AnmEntry *textures;
     int numberEntriesToBeLoaded;
+#ifdef TH08_IOS
+    i32 spriteCount;
+    i32 scriptCount;
+
+    bool HasSprite(i32 spriteIdx) const
+    {
+        return spriteIdx >= 0 && spriteIdx < this->spriteCount;
+    }
+
+    bool HasScript(i32 scriptIdx) const
+    {
+        return scriptIdx >= 0 && scriptIdx < this->scriptCount;
+    }
+#endif
 
     void LoadSprite(i32 spriteIdx, AnmLoadedSprite *loadedSprite);
 

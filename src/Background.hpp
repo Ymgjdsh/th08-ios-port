@@ -37,6 +37,31 @@ struct Background
 {
     Background();
 
+    void *GetStageAnm() const
+    {
+        return this->stageAnm;
+    }
+
+    void *GetStageAnmSecondary() const
+    {
+        return this->stageAnmSecondary;
+    }
+
+    void *GetStageOffsets() const
+    {
+        return this->stageOffsets;
+    }
+
+    void *GetStageUnknown804() const
+    {
+        return this->stageUnknown804;
+    }
+
+    void *GetStageUnknown808() const
+    {
+        return this->stageUnknown808;
+    }
+
     static ChainCallbackResult OnUpdate(Background *background);
     static ChainCallbackResult OnDrawHighPrio(Background *background);
     static ChainCallbackResult OnDrawLowPrio(Background *background);
@@ -61,29 +86,55 @@ struct Background
         return *reinterpret_cast<EclExBarrierRenderState *>(&this->spellVmCount);
     }
 
+#ifdef TH08_IOS
+    IosPtr32<void> &EclExUpdateCallback()
+    {
+        return *reinterpret_cast<IosPtr32<void> *>(&this->onDrawLowPrioCallback);
+    }
+#else
     void *&EclExUpdateCallback()
     {
         return *reinterpret_cast<void **>(&this->onDrawLowPrioCallback);
     }
+#endif
 
+#ifdef TH08_IOS
+    IosPtr32<void> stageAnm;
+#else
     void *stageAnm;
+#endif
     AnmVm stageVm0;
     AnmVm stageVm1;
     AnmVm stageVm2;
+#ifdef TH08_IOS
+    IosPtr32<AnmLoaded> stageAnmFile;
+    IosPtr32<void> stageAnmSecondary;
+#else
     AnmLoaded *stageAnmFile;
     void *stageAnmSecondary;
+#endif
     i32 stageVmCount;
     i32 stageObjectCount;
+#ifdef TH08_IOS
+    IosPtr32<void> stageOffsets;
+    IosPtr32<void> stageUnknown804;
+    IosPtr32<void> stageUnknown808;
+#else
     void *stageOffsets;
     void *stageUnknown804;
     void *stageUnknown808;
+#endif
     ZunTimer timer80c;
     unknown_fields(0x818, 0xc);
     Float3 vector824;
     unknown_fields(0x830, 0x8);
     ZunTimer timer838;
     AnmVm textAnmVm;
+#ifdef TH08_IOS
+    IosPtr32<AnmVm> stageEffect;
+#else
     AnmVm *stageEffect;
+#endif
     BackgroundFog skyFog;
     BackgroundFog skyFogInterpInitial;
     BackgroundFog skyFogInterpFinal;
@@ -98,7 +149,11 @@ struct Background
     i32 spellVmScriptBase;
     AnmVm anmVmArray[0x20];
     AnmVm anmVm5fb8;
+#ifdef TH08_IOS
+    IosPtr32<void()> onDrawLowPrioCallback;
+#else
     void (*onDrawLowPrioCallback)();
+#endif
     i32 unk6260;
     BackgroundUnkVectors unk6264;
     BackgroundUnkVectors unk62b0;
@@ -117,6 +172,11 @@ struct Background
 C_ASSERT(sizeof(Background) == 0x6600);
 C_ASSERT(offsetof(Background, spellVmCount) == 0xB30);
 C_ASSERT(offsetof(Background, onDrawLowPrioCallback) == 0x625C);
+#ifdef TH08_IOS
+typedef char IosBackgroundSizeCheck[(sizeof(Background) == 0x6600) ? 1 : -1];
+typedef char IosBackgroundSpellVmOffsetCheck[(offsetof(Background, spellVmCount) == 0xB30) ? 1 : -1];
+typedef char IosBackgroundCallbackOffsetCheck[(offsetof(Background, onDrawLowPrioCallback) == 0x625C) ? 1 : -1];
+#endif
 
 DIFFABLE_EXTERN(Background, g_Background);
 DIFFABLE_EXTERN_ARRAY(const char *, 9, g_StageEnemyAnms);

@@ -298,7 +298,11 @@ void __fastcall ApplyInterpolationOperation(
 
 struct InterpolationSlot
 {
+#ifdef TH08_IOS
+    IosPtr32<void> callback;
+#else
     void *callback;
+#endif
     ZunTimer timer;
     i32 duration;
     i32 callbackIndex;
@@ -364,8 +368,13 @@ void __fastcall InstallInterpolationSlot(
     InterpolationSlot *slot;
     i32 i;
 
+#ifdef TH08_IOS
+    slot = reinterpret_cast<InterpolationSlot *>(
+        reinterpret_cast<u8 *>(IosEclCurrentContext(enemy)) + 0x9c);
+#else
     slot = reinterpret_cast<InterpolationSlot *>(
         *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca0) + 0x9c);
+#endif
     for (i = 0; i < 8; i++, slot++)
     {
         if (slot->callback != NULL &&
@@ -444,9 +453,15 @@ EclRawInstruction *__fastcall CompareOperands(
         goto compare_failure;
 
 compare_success:
+#ifdef TH08_IOS
+        *reinterpret_cast<i32 *>(
+            reinterpret_cast<u8 *>(IosEclCurrentContext(enemy)) + 0x0c) =
+            *reinterpret_cast<i32 *>(instruction->operands + 8);
+#else
         *reinterpret_cast<i32 *>(
             *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca0) + 0x0c) =
             *reinterpret_cast<i32 *>(instruction->operands + 8);
+#endif
         return reinterpret_cast<EclRawInstruction *>(
             reinterpret_cast<u8 *>(instruction) +
             *reinterpret_cast<i32 *>(instruction->operands + 12));
@@ -479,19 +494,39 @@ C_ASSERT(sizeof(EclCallParameterCopy) == 0x20);
 void __fastcall CallSubOnEnemy(
     EclOperands::EnemyOverlay *enemy, EclRawInstruction *instruction, i32 rawSubId)
 {
+#ifdef TH08_IOS
+    EnemyEclContext *currentContext = IosEclCurrentContext(enemy);
+    u8 *currentVariables = IosEclCurrentVariables(enemy);
+    currentContext->currentInstr = reinterpret_cast<EclRawInstruction *>(
+        reinterpret_cast<u8 *>(instruction) + instruction->nextOffset);
+#else
     (*reinterpret_cast<EnemyEclContext **>(DEP_BYTES(enemy) + 0x2ca0))->currentInstr =
         reinterpret_cast<EclRawInstruction *>(
             reinterpret_cast<u8 *>(instruction) + instruction->nextOffset);
+#endif
 
     if (((*reinterpret_cast<u32 *>(DEP_BYTES(enemy) + 0x3324) >> 26) & 1) == 0)
     {
+#ifdef TH08_IOS
+        *reinterpret_cast<EnemyEclContext *>(
+            currentVariables +
+            static_cast<i16>(*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea)) *
+                sizeof(EnemyEclContext)) = *currentContext;
+#else
         *reinterpret_cast<EnemyEclContext *>(
             *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca4) +
             static_cast<i16>(*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea)) *
                 sizeof(EnemyEclContext)) =
             **reinterpret_cast<EnemyEclContext **>(DEP_BYTES(enemy) + 0x2ca0);
+#endif
     }
 
+#ifdef TH08_IOS
+    g_EclManager.CallEclSub(currentContext, static_cast<i16>(rawSubId));
+
+    *reinterpret_cast<EclCallParameterCopy *>(
+        reinterpret_cast<u8 *>(currentContext) + 0x70) = g_EclCallParameters;
+#else
     g_EclManager.CallEclSub(
         *reinterpret_cast<EnemyEclContext **>(DEP_BYTES(enemy) + 0x2ca0),
         static_cast<i16>(rawSubId));
@@ -500,6 +535,7 @@ void __fastcall CallSubOnEnemy(
         reinterpret_cast<u8 *>(
             *reinterpret_cast<EnemyEclContext **>(DEP_BYTES(enemy) + 0x2ca0)) + 0x70) =
         g_EclCallParameters;
+#endif
 
     if (((*reinterpret_cast<u32 *>(DEP_BYTES(enemy) + 0x3324) >> 26) & 1) == 0 &&
         *reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea) < 15)
@@ -514,6 +550,10 @@ int __fastcall PopEclContext(
     EclOperands::EnemyOverlay *enemy, EclRawInstruction *instruction)
 {
     i32 contextIndex;
+#ifdef TH08_IOS
+    EnemyEclContext *currentContext = IosEclCurrentContext(enemy);
+    u8 *currentVariables = IosEclCurrentVariables(enemy);
+#endif
 
     if (((*reinterpret_cast<u32 *>(DEP_BYTES(enemy) + 0x3324) >> 26) & 1) != 0)
         utils::DebugPrint("error : no Stack Ret\r\n");
@@ -521,6 +561,19 @@ int __fastcall PopEclContext(
     --*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea);
     if (*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea) < 0)
     {
+#ifdef TH08_IOS
+        contextIndex = *reinterpret_cast<i32 *>(
+            reinterpret_cast<u8 *>(currentContext) + 0x220) - 1;
+        if (contextIndex >= 0 && contextIndex < 4)
+        {
+            if (IosEclChildContextField(enemy, contextIndex).Get() != NULL)
+                g_ZunMemory.Free(IosEclChildContextField(enemy, contextIndex).Get());
+            IosEclChildContextField(enemy, contextIndex) = NULL;
+        }
+        IosEclPointerField<u8>(enemy, 0x2ca4) = DEP_BYTES(enemy) + 0x0a20;
+        IosEclPointerField<EnemyEclContext>(enemy, 0x2ca0) =
+            reinterpret_cast<EnemyEclContext *>(DEP_BYTES(enemy) + 0x07f8);
+#else
         contextIndex =
             *reinterpret_cast<i32 *>(
                 reinterpret_cast<u8 *>(
@@ -532,16 +585,24 @@ int __fastcall PopEclContext(
         *reinterpret_cast<void **>(DEP_BYTES(enemy) + 0x3384 + contextIndex * 4) = NULL;
         *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca4) = DEP_BYTES(enemy) + 0x0a20;
         *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca0) = DEP_BYTES(enemy) + 0x07f8;
+#endif
         *reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea) =
             *reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2ce8);
         return 1;
     }
 
+#ifdef TH08_IOS
+    *currentContext = *reinterpret_cast<EnemyEclContext *>(
+        currentVariables +
+        static_cast<i16>(*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea)) *
+            sizeof(EnemyEclContext));
+#else
     **reinterpret_cast<EnemyEclContext **>(DEP_BYTES(enemy) + 0x2ca0) =
         *reinterpret_cast<EnemyEclContext *>(
             *reinterpret_cast<u8 **>(DEP_BYTES(enemy) + 0x2ca4) +
             static_cast<i16>(*reinterpret_cast<i16 *>(DEP_BYTES(enemy) + 0x2cea)) *
                 sizeof(EnemyEclContext));
+#endif
     return 0;
 }
 
@@ -557,8 +618,7 @@ void __fastcall SetExtraAnmScript(
     {
         if (((*reinterpret_cast<u32 *>(DEP_BYTES(enemy) + 0x3328) >> 2) & 1) != 0)
         {
-            (*reinterpret_cast<AnmLoaded **>(
-                reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9dcef0))
+            EnemyManagerStageAnm(&g_EnemyManager)
                 ->SetAndExecuteScriptIdx(
                     reinterpret_cast<AnmVm *>(
                         DEP_BYTES(enemy) + 0x2b0 +
@@ -567,8 +627,7 @@ void __fastcall SetExtraAnmScript(
         }
         else
         {
-            (*reinterpret_cast<AnmLoaded **>(
-                reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9dceec))
+            EnemyManagerCommonAnm(&g_EnemyManager)
                 ->SetAndExecuteScriptIdx(
                     reinterpret_cast<AnmVm *>(
                         DEP_BYTES(enemy) + 0x2b0 +
@@ -595,8 +654,8 @@ EclOperands::EnemyOverlay *__fastcall FindLinkedChildTail0041EFC0(
     cursor = parent;
     if (reinterpret_cast<EclOperands::TargetEnemyHelpersOverlay *>(parent)->HasParentChain())
     {
-        while (*reinterpret_cast<EclOperands::EnemyOverlay **>(cursor->bytes + 8) != NULL)
-            cursor = *reinterpret_cast<EclOperands::EnemyOverlay **>(cursor->bytes + 8);
+        while (EclOperands::EnemyNext(cursor) != NULL)
+            cursor = EclOperands::EnemyNext(cursor);
     }
     return cursor;
 }
@@ -623,7 +682,7 @@ EclOperands::EnemyOverlay *__fastcall SpawnChildStandard0041F110(
                 DEP_READ_INT(parent, instruction, 4),
                 DEP_READ_INT(parent, instruction, 5),
                 reinterpret_cast<i32 *>(
-                    *reinterpret_cast<u8 **>(parent->bytes + 0x2ca0) + 0x18)));
+                    LegacyPointerGet<u8>(parent, 0x2ca0) + 0x18)));
     }
     else
     {
@@ -656,7 +715,7 @@ EclOperands::EnemyOverlay *__fastcall SpawnChildAlternate0041F280(
                 DEP_READ_INT(parent, instruction, 4),
                 DEP_READ_INT(parent, instruction, 5),
                 reinterpret_cast<i32 *>(
-                    *reinterpret_cast<u8 **>(parent->bytes + 0x2ca0) + 0x18)));
+                    LegacyPointerGet<u8>(parent, 0x2ca0) + 0x18)));
     }
     else
     {
@@ -851,8 +910,8 @@ void Enemy::FUN_00423150()
             if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 0x332e) != direction)
             {
                 anm = (((*reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(this) + 0x3328) >> 2) & 1) != 0)
-                          ? *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9dcef0)
-                          : *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9dceec);
+                          ? EnemyManagerStageAnm(&g_EnemyManager)
+                          : EnemyManagerCommonAnm(&g_EnemyManager);
 
                 switch (direction)
                 {

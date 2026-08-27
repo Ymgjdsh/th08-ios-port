@@ -7,6 +7,9 @@ CONFIG=${CONFIG:-Release}
 IOS_VERSION=${IOS_VERSION:-0.1.0}
 IOS_BUILD=${IOS_BUILD:-1}
 IOS_CMAKE_GENERATOR=${IOS_CMAKE_GENERATOR:-Unix\ Makefiles}
+IOS_SDK=${IOS_SDK:-iphoneos}
+IOS_ARCH=${IOS_ARCH:-arm64}
+IOS_DEPLOYMENT_TARGET=${IOS_DEPLOYMENT_TARGET:-14.0}
 DATA_DIR=${TH08_IOS_DATA_DIR:-}
 DEPS_DIR=${TH08_IOS_DEPS_DIR:-}
 OUTPUT_IPA=${OUTPUT_IPA:-"$BUILD_DIR/th08-ios-${IOS_VERSION}-${IOS_BUILD}.ipa"}
@@ -23,7 +26,7 @@ echo "Deps:    ${DEPS_DIR:-FetchContent network source}"
 
 command -v cmake >/dev/null 2>&1 || { echo "error: cmake is required"; exit 2; }
 command -v xcrun >/dev/null 2>&1 || { echo "error: xcrun is required"; exit 2; }
-SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
+SDK_PATH=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
 test -d "$SDK_PATH" || { echo "error: iPhoneOS SDK not found: $SDK_PATH"; exit 2; }
 
 # CMake cannot change generators in an existing build tree.  Remove only the
@@ -47,8 +50,8 @@ fi
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$IOS_CMAKE_GENERATOR" \
     -DCMAKE_SYSTEM_NAME=iOS \
     -DCMAKE_OSX_SYSROOT="$SDK_PATH" \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+    -DCMAKE_OSX_ARCHITECTURES="$IOS_ARCH" \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" \
     -DTH08_IOS_VERSION="$IOS_VERSION" \
     -DTH08_IOS_BUILD="$IOS_BUILD" \
     -DTH08_IOS_DATA_DIR="$DATA_DIR" \
@@ -62,31 +65,49 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" -G "$IOS_CMAKE_GENERATOR" \
 cmake --build "$BUILD_DIR" --config "$CONFIG" --target th08-modern
 APP_PATH=""
 for candidate in \
-    "$BUILD_DIR/$CONFIG-iphoneos/th08-modern.app" \
     "$BUILD_DIR/$CONFIG-iphoneos/th08.app" \
-    "$BUILD_DIR/th08-modern.app" \
-    "$BUILD_DIR/th08.app"; do
+    "$BUILD_DIR/$CONFIG-iphoneos/th08-modern.app" \
+    "$BUILD_DIR/th08.app" \
+    "$BUILD_DIR/th08-modern.app"; do
     if [ -d "$candidate" ]; then APP_PATH="$candidate"; break; fi
 done
 test -n "$APP_PATH" || { echo "error: no iOS app bundle was produced"; exit 3; }
-if [ ! -x "$APP_PATH/th08" ] && [ -x "$APP_PATH/th08-modern" ]; then
+if [ -x "$APP_PATH/th08-modern" ]; then
     # Xcode names the Mach-O after the CMake target even when OUTPUT_NAME is
     # set.  The Info.plist and IPA contract use the stable `th08` name.
-    cp "$APP_PATH/th08-modern" "$APP_PATH/th08"
+    cp -f "$APP_PATH/th08-modern" "$APP_PATH/th08"
 fi
 test -x "$APP_PATH/th08" || { echo "error: app was not produced: $APP_PATH"; exit 3; }
 rm -f "$APP_PATH/th08-modern"
 
+# A reused build tree can contain an older app under the alternate target
+# name. Refuse to package it when its plist does not match this invocation.
+ACTUAL_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+    "$APP_PATH/Info.plist" 2>/dev/null || true)
+ACTUAL_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" \
+    "$APP_PATH/Info.plist" 2>/dev/null || true)
+if [ "$ACTUAL_VERSION" != "$IOS_VERSION" ] || [ "$ACTUAL_BUILD" != "$IOS_BUILD" ]; then
+    echo "error: stale app selected: $APP_PATH" >&2
+    echo "error: expected version $IOS_VERSION ($IOS_BUILD), got $ACTUAL_VERSION ($ACTUAL_BUILD)" >&2
+    exit 3
+fi
+
 if [ ! -f "$APP_PATH/Assets.car" ] && [ -d "$ROOT_DIR/ios/Assets.xcassets" ]; then
-    xcrun actool --platform iphoneos --target-device iphone --target-device ipad \
+    xcrun actool --platform "$IOS_SDK" --target-device iphone --target-device ipad \
         --app-icon AppIcon --output-format human-readable-text \
         --output-partial-info-plist "$BUILD_DIR/assetcatalog-info.plist" \
         --compile "$APP_PATH" "$ROOT_DIR/ios/Assets.xcassets"
 fi
 if [ -f "$ROOT_DIR/ios/LaunchScreen.storyboard" ] && [ ! -d "$APP_PATH/LaunchScreen.storyboardc" ]; then
-    xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
-        --platform iphoneos --minimum-deployment-target 14.0 \
-        "$ROOT_DIR/ios/LaunchScreen.storyboard"
+    if [ "$IOS_SDK" = "iphonesimulator" ]; then
+        xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
+            --minimum-deployment-target "$IOS_DEPLOYMENT_TARGET" \
+            "$ROOT_DIR/ios/LaunchScreen.storyboard"
+    else
+        xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
+            --platform iphoneos --minimum-deployment-target "$IOS_DEPLOYMENT_TARGET" \
+            "$ROOT_DIR/ios/LaunchScreen.storyboard"
+    fi
 fi
 
 # CMake's non-Xcode generators copy source bundles verbatim.  The compiled

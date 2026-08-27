@@ -7,9 +7,60 @@
 #include "utils.hpp"
 #include <d3dx8.h>
 #include <windows.h>
+#include <stddef.h>
 
 namespace th08
 {
+
+// TH08's runtime data uses the original 32-bit pointer layout.  The iOS port
+// stores native arm64 pointers as four-byte handles so adjacent retail fields
+// are never overwritten.
+template <typename T>
+inline T *LegacyPointerGet(const void *base, size_t offset)
+{
+#ifdef TH08_IOS
+    return reinterpret_cast<const IosPtr32<T> *>(
+               reinterpret_cast<const u8 *>(base) + offset)->Get();
+#else
+    return *reinterpret_cast<T *const *>(
+        reinterpret_cast<const u8 *>(base) + offset);
+#endif
+}
+
+template <typename T>
+inline void LegacyPointerSet(void *base, size_t offset, T *value)
+{
+#ifdef TH08_IOS
+    *reinterpret_cast<IosPtr32<T> *>(
+        reinterpret_cast<u8 *>(base) + offset) = value;
+#else
+    *reinterpret_cast<T **>(reinterpret_cast<u8 *>(base) + offset) = value;
+#endif
+}
+
+template <typename T>
+inline T LegacyFunctionPointerGet(const void *base, size_t offset)
+{
+#ifdef TH08_IOS
+    const DWORD handle = *reinterpret_cast<const DWORD *>(
+        reinterpret_cast<const u8 *>(base) + offset);
+    return reinterpret_cast<T>(TH08IosLoadPointer(handle));
+#else
+    return *reinterpret_cast<const T *>(
+        reinterpret_cast<const u8 *>(base) + offset);
+#endif
+}
+
+template <typename T>
+inline void LegacyFunctionPointerSet(void *base, size_t offset, T value)
+{
+#ifdef TH08_IOS
+    *reinterpret_cast<DWORD *>(reinterpret_cast<u8 *>(base) + offset) =
+        TH08IosStorePointer(reinterpret_cast<uintptr_t>(value));
+#else
+    *reinterpret_cast<T *>(reinterpret_cast<u8 *>(base) + offset) = value;
+#endif
+}
 
 #define IS_PRESSED(key) (g_CurFrameInput & (key))
 #define WAS_PRESSED(key) (((g_CurFrameInput & (key)) != 0) && (g_CurFrameInput & (key)) != (g_LastFrameInput & (key)))
@@ -235,6 +286,11 @@ class ZunMemory
 
     void Free(void *ptr)
     {
+#ifdef TH08_IOS
+        // Invalidating the four-byte handle first makes stale retail-layout
+        // fields resolve to NULL instead of turning teardown into a double free.
+        TH08IosForgetPointer(reinterpret_cast<uintptr_t>(ptr));
+#endif
         free(ptr);
     }
 

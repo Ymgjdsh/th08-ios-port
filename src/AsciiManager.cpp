@@ -16,7 +16,17 @@ namespace th08
 {
 
 // Placeholder for the unledgered global AnmLoaded* observed at 0x00577eb4.
+#if defined(TH08_MODERN_IOS)
+// ARM64 cannot reuse the retail pointer slot inside EffectManager: widening
+// Effect/AnmVm pointers changes the native object layout.  Keep this portable
+// owner as an ordinary writable pointer instead.
+AnmLoaded *g_AsciiManagerDemoAnm0577EB4;
+#elif defined(TH08_MODERN_WEB)
+AnmLoaded *&g_AsciiManagerDemoAnm0577EB4 =
+    *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(&g_EffectManager) + 0x8B054);
+#else
 DIFFABLE_STATIC(AnmLoaded *, g_AsciiManagerDemoAnm0577EB4);
+#endif
 
 namespace EclOperands
 {
@@ -29,7 +39,11 @@ struct Vector3
     Vector3 operator-(const Vector3 &other) const;
     f32 Length() const;
 };
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+Vector3 &g_TargetPlayerPosition017D61AC = reinterpret_cast<Vector3 &>(g_Player.position);
+#else
 Vector3 g_TargetPlayerPosition017D61AC;
+#endif
 } // namespace EclOperands
 
 DIFFABLE_STATIC(ChainElem, g_AsciiManagerDrawChainLowPrio);
@@ -84,6 +98,38 @@ DIFFABLE_STATIC(ChainElem, g_AsciiManagerDrawChainHighPrio);
 #define ARCADE_TOP 16
 #define ARCADE_WIDTH 384
 #define ARCADE_HEIGHT 448
+
+static AnmLoaded *ResolveAsciiMenuAnm()
+{
+#ifdef TH08_IOS
+    return g_AnmManager != NULL ? g_AnmManager->GetAnm(1) : NULL;
+#else
+    return g_AsciiManager.asciiAnm;
+#endif
+}
+
+static AnmLoaded *ResolveCaptureMenuAnm()
+{
+#ifdef TH08_IOS
+    return g_AnmManager != NULL ? g_AnmManager->GetAnm(3) : NULL;
+#else
+    return g_AsciiManager.captureAnm;
+#endif
+}
+
+static AnmLoaded *ResolveTimesMenuAnm()
+{
+#ifdef TH08_IOS
+    return g_AnmManager != NULL ? g_AnmManager->GetAnm(14) : NULL;
+#else
+    return g_Gui.timesAnm;
+#endif
+}
+
+static bool MenuAnmIsReady(AnmLoaded *anm)
+{
+    return anm != NULL && anm->rawData != NULL && anm->scripts != NULL;
+}
 
 enum
 {
@@ -778,6 +824,8 @@ void AsciiManager::CreateFamiliarPopup(Float3 *position, i32 number, i32 param3,
 i32 PauseMenu::OnUpdate()
 {
     i32 i;
+    AnmLoaded *asciiAnm = ResolveAsciiMenuAnm();
+    AnmLoaded *captureAnm = ResolveCaptureMenuAnm();
 
     if (WAS_PRESSED(TH_BUTTON_MENU) && this->curState != PAUSE_MENU_STATE_CLOSING)
     {
@@ -834,9 +882,17 @@ i32 PauseMenu::OnUpdate()
     switch (this->curState)
     {
     case PAUSE_MENU_STATE_INIT:
+        if (!MenuAnmIsReady(asciiAnm) || (g_Supervisor.flags.unk1 && !MenuAnmIsReady(captureAnm)))
+        {
+            fprintf(stderr,
+                    "th08-ios: pause menu ANM unavailable (ascii=%p capture=%p)\n",
+                    asciiAnm, captureAnm);
+            g_GameManager.isInGameMenu = FALSE;
+            return 0;
+        }
         for (i = 0; i < ARRAY_SIZE(this->menuSprites); i++)
         {
-            g_AsciiManager.asciiAnm->SetAndExecuteScriptIdx(&this->menuSprites[i], i + ASCII_SCRIPT_PAUSE);
+            asciiAnm->SetAndExecuteScriptIdx(&this->menuSprites[i], i + ASCII_SCRIPT_PAUSE);
         }
 
         for (i = 0; i < 4; i++)
@@ -846,11 +902,11 @@ i32 PauseMenu::OnUpdate()
 
         if (g_GameManager.IsSpellPractice() && g_GameManager.currentSpellCardNumber >= SPELLCARD_LAST_WORD_START)
         {
-            g_AsciiManager.asciiAnm->SetSprite(&this->menuSprites[PAUSE_SPRITE_DIFFICULTY], 288);
+            asciiAnm->SetSprite(&this->menuSprites[PAUSE_SPRITE_DIFFICULTY], 288);
         }
         else
         {
-            g_AsciiManager.asciiAnm->SetSprite(&this->menuSprites[PAUSE_SPRITE_DIFFICULTY], g_GameManager.difficulty + 283);
+            asciiAnm->SetSprite(&this->menuSprites[PAUSE_SPRITE_DIFFICULTY], g_GameManager.difficulty + 283);
         }
 
         if (!g_GameManager.IsPracticeMode())
@@ -873,7 +929,7 @@ i32 PauseMenu::OnUpdate()
 
         if (g_Supervisor.flags.unk1)
         {
-            g_AsciiManager.captureAnm->SetAndExecuteScriptIdx(&this->menuBackground, CAPTURE_SCRIPT_MENU_BACKGROUND);
+            captureAnm->SetAndExecuteScriptIdx(&this->menuBackground, CAPTURE_SCRIPT_MENU_BACKGROUND);
 
             // Seemingly intentionally the width and height are switched?
             if (g_AnmManager->SetTextureCaptureParams(3,
@@ -1244,6 +1300,9 @@ void PauseMenu::OnDraw()
 i32 RetryMenu::OnUpdate()
 {
     i32 i;
+    AnmLoaded *asciiAnm = ResolveAsciiMenuAnm();
+    AnmLoaded *captureAnm = ResolveCaptureMenuAnm();
+    AnmLoaded *timesAnm = ResolveTimesMenuAnm();
 
     if (g_GameManager.IsPracticeMode() && !g_GameManager.flags.isSpellPractice)
     {
@@ -1266,6 +1325,17 @@ i32 RetryMenu::OnUpdate()
     case RETRY_MENU_STATE_INIT:
         if (this->numFrames == 0)
         {
+            if (!MenuAnmIsReady(asciiAnm) || !MenuAnmIsReady(timesAnm) ||
+                (g_Supervisor.flags.unk1 && !MenuAnmIsReady(captureAnm)))
+            {
+                fprintf(stderr,
+                        "th08-ios: retry menu ANM unavailable (ascii=%p capture=%p times=%p)\n",
+                        asciiAnm, captureAnm, timesAnm);
+                g_GameManager.showRetryMenu = FALSE;
+                g_GameManager.globals->displayScore = g_GameManager.globals->score;
+                g_Supervisor.curState = SupervisorState_ResultScreenFromGame;
+                return 1;
+            }
             if (!g_GameManager.IsSpellPractice() && g_GameManager.difficulty < EXTRA
                 && ((i8)g_GameManager.GetClockTime() >= 11 || g_GameManager.currentStage == STAGE6B))
             {
@@ -1296,16 +1366,16 @@ i32 RetryMenu::OnUpdate()
 
             for (i = 0; i < RETRY_SPRITE_CLOCKTIME; i++)
             {
-                g_AsciiManager.asciiAnm->SetAndExecuteScriptIdx(&this->menuSprites[i], i + ASCII_SCRIPT_RETRY);
+                asciiAnm->SetAndExecuteScriptIdx(&this->menuSprites[i], i + ASCII_SCRIPT_RETRY);
                 this->menuSprites[i].pendingInterrupt = ASCII_INTERRUPT_SHOW;
             }
 
-            g_Gui.timesAnm->SetAndExecuteScriptIdx(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], 1);
-            g_Gui.timesAnm->SetSprite(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], (i8)g_GameManager.GetClockTime());
+            timesAnm->SetAndExecuteScriptIdx(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], 1);
+            timesAnm->SetSprite(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], (i8)g_GameManager.GetClockTime());
 
             if (g_Supervisor.flags.unk1)
             {
-                g_AsciiManager.captureAnm->SetAndExecuteScriptIdx(&this->menuBackground, 0);
+                captureAnm->SetAndExecuteScriptIdx(&this->menuBackground, 0);
 
                 // Seemingly intentionally the width and height are switched?
                 if (g_AnmManager->SetTextureCaptureParams(3,
@@ -1459,7 +1529,7 @@ selected_no:
         if (this->numFrames == 15)
         {
             g_GameManager.AddToClockTime(1);
-            g_Gui.timesAnm->SetSprite(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], (i8)g_GameManager.GetClockTime());
+            timesAnm->SetSprite(&this->menuSprites[RETRY_SPRITE_CLOCKTIME], (i8)g_GameManager.GetClockTime());
         }
         if (this->numFrames == 60)
         {
@@ -1495,7 +1565,9 @@ selected_no:
 
             g_GameManager.SetLives(g_GameManager.cfg->lifeCount);
 
-            g_GameManager.SetBombCount(reinterpret_cast<PauseRetryShtFileView *>(g_Player.primaryShtFile)->bombCount);
+            g_GameManager.SetBombCount(
+                reinterpret_cast<PauseRetryShtFileView *>(
+                    g_Player.GetPrimaryShtFile())->bombCount);
 
             g_GameManager.globals->grazeInStage = 0;
             g_GameManager.globals->pointItemsCollectedInStage = 0;

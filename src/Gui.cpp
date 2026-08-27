@@ -15,8 +15,14 @@
 #include "SoundPlayer.hpp"
 #include "Spellcard.hpp"
 #include "Supervisor.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 #include <stdio.h>
+#ifdef TH08_IOS
+#include <string.h>
+#endif
 
 namespace th08
 {
@@ -24,25 +30,89 @@ namespace th08
 DIFFABLE_STATIC(Gui, g_Gui);
 DIFFABLE_STATIC(ChainElem, g_GuiCalcChain);
 DIFFABLE_STATIC(ChainElem, g_GuiDrawChain);
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+i32 &g_GuiFullPowerModeFrames = g_Supervisor.unk174;
+i32 &g_GuiMessageStageMode = g_Background.EclExBarrierState().unknown4;
+#else
 DIFFABLE_STATIC(i32, g_GuiFullPowerModeFrames);
 DIFFABLE_STATIC(i32, g_GuiMessageStageMode);
+#endif
 DIFFABLE_STATIC(u16, g_GuiMessageInputCurrent);
 DIFFABLE_STATIC(u16, g_GuiMessageInputPrevious);
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+i32 &g_GuiMessageScreenEffectDuration = g_Supervisor.unk174;
+#else
 DIFFABLE_STATIC(i32, g_GuiMessageScreenEffectDuration);
+#endif
+#ifdef TH08_IOS
+i32 g_GuiStageScoreValues[MAX_STAGES] = {};
+#elif defined(TH08_MODERN_WEB)
+i32 *g_GuiStageScoreTableData[MAX_STAGES] = {0};
+i32 *(&g_GuiStageScoreTables)[MAX_STAGES] = g_GuiStageScoreTableData;
+#else
 DIFFABLE_STATIC_ARRAY(i32 *, MAX_STAGES, g_GuiStageScoreTables);
+#endif
 struct GuiMessageTextColorSet
 {
     u32 colors[4];
 };
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+GuiMessageTextColorSet g_GuiMessageTextColorData[SHOT_ALL] = {};
+GuiMessageTextColorSet (&g_GuiMessageTextColors)[SHOT_ALL] = g_GuiMessageTextColorData;
+#else
 DIFFABLE_STATIC_ARRAY(GuiMessageTextColorSet, SHOT_ALL, g_GuiMessageTextColors);
+#endif
 
 struct GuiStageMusicContextSet
 {
     i32 values[3];
 };
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+GuiStageMusicContextSet g_GuiStageMusicContextData[MAX_STAGES] = {};
+GuiStageMusicContextSet (&g_GuiStageMusicContexts)[MAX_STAGES] = g_GuiStageMusicContextData;
+#else
 DIFFABLE_STATIC_ARRAY(GuiStageMusicContextSet, MAX_STAGES, g_GuiStageMusicContexts);
+#endif
 DIFFABLE_STATIC_ARRAY_ASSIGN(u32, 4, g_GuiBossTimerColors) = {0x00a0d0ff, 0x00a080ff, 0x00e080c0, 0x00ff4040};
 DIFFABLE_STATIC_ARRAY_ASSIGN(const char *, 2, g_GuiTimePeriodLabels) = {"AM", "PM"};
+
+#ifdef TH08_IOS
+void InitializeIosGuiTables()
+{
+    static const i32 stageScores[MAX_STAGES] = {
+        1000000, 1500000, 2000000, 2500000, 2500000, 3000000, 4000000, 6000000, 6660000,
+    };
+    static const u32 messageTextColors[SHOT_ALL][4] = {
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+        {0x00e8f0ff, 0x00f0e8ff, 0x00ffe8f0, 0x00ffe8f0},
+    };
+    static const i32 stageMusicContexts[MAX_STAGES][3] = {
+        {1, 2, 0}, {3, 4, 0}, {5, 6, 0}, {7, 8, 0}, {7, 9, 0},
+        {10, 11, 0}, {12, 13, 15}, {12, 14, 15}, {16, 17, 0},
+    };
+
+    memcpy(g_GuiStageScoreValues, stageScores, sizeof(stageScores));
+    memcpy(g_GuiMessageTextColorData, messageTextColors, sizeof(messageTextColors));
+    memcpy(g_GuiStageMusicContextData, stageMusicContexts, sizeof(stageMusicContexts));
+}
+
+i32 GetIosStageMusicContext(i32 stage, i32 track)
+{
+    if (stage < 0 || stage >= MAX_STAGES || track < 0 || track >= 3)
+        return 0;
+    return g_GuiStageMusicContexts[stage].values[track];
+}
+#endif
 
 DIFFABLE_STATIC_ARRAY_ASSIGN(const char *, 12, g_GuiLoadingAnmPaths) = {
     "loading00.anm", "loading01.anm", "loading02.anm", "loading03.anm", "loading00h.anm", "loading00a.anm",
@@ -108,8 +178,13 @@ struct GuiMessageTextArgs
 
 struct GuiMessageStateOverlay
 {
+#ifdef TH08_IOS
+    IosPtr32<void> msgFile;         // +0x000
+    IosPtr32<GuiRawMessageInstruction> currentInstr; // +0x004
+#else
     void *msgFile;                  // +0x000
     u8 *currentInstr;               // +0x004
+#endif
     i32 currentMsgIdx;              // +0x008
     ZunTimer timer;                 // +0x00C
     i32 framesElapsedDuringPause;   // +0x018
@@ -131,12 +206,31 @@ struct GuiMessageStateOverlay
     u8 choiceSelection;             // +0x156F
     i32 resultState;                // +0x1570
     i32 unknown1574;                // +0x1574
+
+    void *GetMsgFile() const
+    {
+        return this->msgFile;
+    }
+
+    GuiRawMessageInstruction *GetCurrentInstr() const
+    {
+        return this->currentInstr;
+    }
+
+    void SetCurrentInstr(GuiRawMessageInstruction *instruction)
+    {
+        this->currentInstr = instruction;
+    }
 };
 C_ASSERT(sizeof(GuiMessageStateOverlay) == 0x1578);
 C_ASSERT(offsetof(GuiMessageStateOverlay, portraits) == 0x20);
 C_ASSERT(offsetof(GuiMessageStateOverlay, dialogueLines) == 0xAB0);
 C_ASSERT(offsetof(GuiMessageStateOverlay, extraVms) == 0xFF8);
 C_ASSERT(offsetof(GuiMessageStateOverlay, textColors) == 0x1540);
+#ifdef TH08_IOS
+typedef char IosGuiMessageOverlaySizeCheck[(sizeof(GuiMessageStateOverlay) == 0x1578) ? 1 : -1];
+typedef char IosGuiMessagePortraitOffsetCheck[(offsetof(GuiMessageStateOverlay, portraits) == 0x20) ? 1 : -1];
+#endif
 
 struct GuiStageResultUpdateOverlay
 {
@@ -166,6 +260,21 @@ ChainCallbackResult Gui::OnUpdate(Gui *gui)
     if (g_EclScriptedGlobalUpdateFreeze)
         return CHAIN_CALLBACK_RESULT_CONTINUE;
 
+#ifdef TH08_IOS
+    // Let simulator smoke tests exercise the real message VM and draw path
+    // without waiting for a software-rendered stage to reach its first boss.
+    static bool smokeDialogueTriggered;
+    const char *smokeTest = SDL_getenv("TH08_IOS_SMOKE_TEST");
+    if (!smokeDialogueTriggered && smokeTest != NULL && strcmp(smokeTest, "dialogue") == 0 &&
+        SDL_GetTicks() >= 45000 && gui->impl->msgVm.GetMsgFile() != NULL &&
+        reinterpret_cast<GuiMessageStateOverlay *>(&gui->impl->msgVm)->currentMsgIdx < 0)
+    {
+        smokeDialogueTriggered = true;
+        modern::LogStartup("smoke-dialogue: requesting stage dialogue");
+        gui->FUN_00439810(0);
+    }
+#endif
+
     gui->FUN_00435900();
     gui->impl->RunMsg();
     if ((g_CurFrameInput & TH_BUTTON_SKIP) && g_GuiMessageScreenEffectDuration < 8)
@@ -177,7 +286,7 @@ ChainCallbackResult Gui::OnUpdate(Gui *gui)
 // FUNCTION: th08 0x433927
 ChainCallbackResult Gui::OnDraw(Gui *gui)
 {
-    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(gui->impl) + 0x22d84) != 0)
+    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(gui->GetImpl()) + 0x22d84) != 0)
         gui->FUN_0043826b();
     gui->impl->DrawDialogue();
     gui->FUN_0043741d();
@@ -303,7 +412,25 @@ void GuiImpl::FUN_0043396d(i32 value)
     }
 
     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentMsgIdx = value;
-    reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr = reinterpret_cast<u8 **>(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->msgFile)[value + 1];
+#ifdef TH08_IOS
+    {
+        GuiMessageStateOverlay *state = reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm);
+        const i32 relativeOffset = reinterpret_cast<const i32 *>(state->GetMsgFile())[value + 1];
+        state->SetCurrentInstr(reinterpret_cast<GuiRawMessageInstruction *>(
+            reinterpret_cast<u8 *>(state->GetMsgFile()) + relativeOffset));
+        char message[192];
+        snprintf(message, sizeof(message),
+                 "dialogue-start: index=%d file=%p offset=%d instruction=%p opcode=%u time=%u",
+                 value, state->GetMsgFile(), relativeOffset,
+                 static_cast<void *>(state->GetCurrentInstr()),
+                 static_cast<unsigned int>(state->GetCurrentInstr()->opcode),
+                 static_cast<unsigned int>(state->GetCurrentInstr()->time));
+        modern::LogStartup(message);
+    }
+#else
+    reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr =
+        reinterpret_cast<u8 **>(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->msgFile)[value + 1];
+#endif
     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[0].scriptIndex = -1;
     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1].scriptIndex = -1;
     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->messageFlag = 1;
@@ -330,6 +457,11 @@ void GuiImpl::FUN_0043396d(i32 value)
 
 // FUNCTION: th08 0x433db3
 #pragma var_order(args, j, portraitArgs, k, portraitSpriteArgs, text3, text16, text19, text20, i)
+#ifdef TH08_IOS
+// Keep the reconstructed expression shape below while resolving the original
+// four-byte instruction slot through its native iOS pointer handle.
+#define currentInstr GetCurrentInstr()
+#endif
 i32 GuiImpl::RunMsg()
 {
     GuiMessagePortraitArgs *args;
@@ -757,7 +889,7 @@ i32 GuiImpl::RunMsg()
                                                                 &this->msgVm)->currentInstr)->args)])))
                 {
                     g_Supervisor.PlayAudio(
-                        reinterpret_cast<GuiStageMusicDataOverlay *>(g_Background.stageAnmSecondary)
+                        reinterpret_cast<GuiStageMusicDataOverlay *>(g_Background.GetStageAnmSecondary())
                             ->songPaths[*reinterpret_cast<i32 *>(reinterpret_cast<GuiRawMessageInstruction *>(
                                 reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args)],
                         g_GuiStageMusicContexts[g_GameManager.currentStage]
@@ -785,8 +917,13 @@ i32 GuiImpl::RunMsg()
                 (i8)g_GameManager.GetClockTime() * 30 + 0x294;
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x22E00) = g_GameManager.GetClockTimeIncrement();
             g_GameManager.AddToClockTime(*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x22E00));
+            #ifdef TH08_IOS
+            *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x22DEC) =
+                g_GuiStageScoreValues[g_GameManager.currentStage];
+            #else
             *reinterpret_cast<i32 **>(reinterpret_cast<u8 *>(this) + 0x22DEC) =
                 g_GuiStageScoreTables[g_GameManager.currentStage];
+            #endif
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x22E08) =
                 (i8)g_GameManager.GetClockTime() * 30 + 0x294;
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0x22E0C) =
@@ -813,8 +950,8 @@ i32 GuiImpl::RunMsg()
             if (g_GameManager.currentStage != STAGE6A && g_GameManager.currentStage != STAGE6B &&
                 g_GameManager.currentStage != EXTRASTAGE)
             {
-                (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(&g_Gui) + 0x18))
-                    ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this) + 0x3778), 0);
+                g_Gui.loadingPortraitAnm->SetAndExecuteScriptIdx(
+                    reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this) + 0x3778), 0);
                 g_AsciiManager.captureAnm->SetAndExecuteScriptIdx(
                     reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this) + 0x3CC0), 1);
                 g_AnmManager->SetTextureCaptureParams(
@@ -873,12 +1010,21 @@ i32 GuiImpl::RunMsg()
 
         }
 
+#ifdef TH08_IOS
+        reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->SetCurrentInstr(
+            reinterpret_cast<GuiRawMessageInstruction *>(
+                reinterpret_cast<uintptr_t>(&reinterpret_cast<GuiRawMessageInstruction *>(
+                    reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args) +
+                reinterpret_cast<GuiRawMessageInstruction *>(
+                    reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->argSize));
+#else
         reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr =
             reinterpret_cast<u8 *>(
                 reinterpret_cast<uintptr_t>(&reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args) +
                 reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->argSize);
+#endif
     }
 
     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->timer++;
@@ -900,6 +1046,9 @@ run_scripts:
 
     return 0;
 }
+#ifdef TH08_IOS
+#undef currentInstr
+#endif
 
 // FUNCTION: th08 0x4353ec
 #pragma var_order(i, decoded)
@@ -924,6 +1073,24 @@ ZunResult GuiImpl::DrawDialogue()
 
     if (reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentMsgIdx < 0)
         return ZUN_ERROR;
+
+#ifdef TH08_IOS
+    {
+        static u32 dialogueDrawCount;
+        GuiMessageStateOverlay *state = reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm);
+        if ((dialogueDrawCount++ % 120) == 0)
+        {
+            char message[224];
+            snprintf(message, sizeof(message),
+                     "dialogue-draw: index=%d timer=%d flag=%u line0-script=%d visible=%d line1-script=%d visible=%d",
+                     state->currentMsgIdx, static_cast<i32>(state->timer),
+                     static_cast<unsigned int>(state->messageFlag),
+                     state->dialogueLines[0].scriptIndex, state->dialogueLines[0].visible ? 1 : 0,
+                     state->dialogueLines[1].scriptIndex, state->dialogueLines[1].visible ? 1 : 0);
+            modern::LogStartup(message);
+        }
+    }
+#endif
 
     if (reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->timer < 60)
         dialogueBoxHeight = static_cast<f32>(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->timer) *
@@ -1013,9 +1180,9 @@ i32 Gui::MsgWait()
 {
     if (this->impl == NULL)
         return 0;
-    if (*(u32 *)((u8 *)this->impl + 0x22D78) > 0)
+    if (*(u32 *)((u8 *)this->GetImpl() + 0x22D78) > 0)
         return 0;
-    return *(i32 *)((u8 *)this->impl + 0x2181C) >= 0;
+    return *(i32 *)((u8 *)this->GetImpl() + 0x2181C) >= 0;
 }
 
 // FUNCTION: th08 0x4358bb
@@ -1023,7 +1190,7 @@ i32 Gui::IsDialogPresent()
 {
     if (this->impl == NULL)
         return 0;
-    return *(i32 *)((u8 *)this->impl + 0x2181C) >= 0 || *(i32 *)((u8 *)this->impl + 0x2181C) == -2;
+    return *(i32 *)((u8 *)this->GetImpl() + 0x2181C) >= 0 || *(i32 *)((u8 *)this->GetImpl() + 0x2181C) == -2;
 }
 
 // FUNCTION: th08 0x435900
@@ -1040,28 +1207,28 @@ void Gui::FUN_00435900()
     {
         if (this->bossPresent)
         {
-            if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) == 0)
+            if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) == 0)
             {
                 this->impl->vm0000[12].SetInterrupt(1);
-                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) = 1;
+                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) = 1;
                 this->bossUIOpacity = 0;
             }
             else
             {
                 if (this->impl->vm0000[12].FUN_004396f8())
-                    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) = 2;
+                    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) = 2;
                 if (this->bossUIOpacity < 0xfc)
                     this->bossUIOpacity += 4;
                 else
                     this->bossUIOpacity = 0xff;
             }
         }
-        else if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) != 0)
+        else if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) != 0)
         {
-            if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) <= 2)
+            if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) <= 2)
             {
                 this->impl->vm0000[12].SetInterrupt(2);
-                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) = 3;
+                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) = 3;
             }
             if (this->bossUIOpacity > 0)
                 this->bossUIOpacity -= 4;
@@ -1069,13 +1236,13 @@ void Gui::FUN_00435900()
                 this->bossUIOpacity = 0;
             if (this->impl->vm0000[12].FUN_004396f8())
             {
-                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) = 0;
+                *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) = 0;
                 this->bossLifeBarMaxSize = 0.0f;
                 this->bossUIOpacity = 0;
             }
         }
 
-        if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) >= 2)
+        if (*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) >= 2)
         {
             if (this->bossLifeBarSize > this->bossLifeBarMaxSize)
             {
@@ -1130,7 +1297,7 @@ void Gui::FUN_00435900()
             g_AnmManager->ExecuteScript(&this->impl->vm3f64[i]);
     }
 
-    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->impl) + 0x21810) != 0)
+    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x21810) != 0)
     {
         remaining = 0xa8;
         for (j = 0; j < 0xa8; j++)
@@ -1138,7 +1305,7 @@ void Gui::FUN_00435900()
             if (g_AnmManager->ExecuteScript(&this->impl->vm5728[j]))
                 remaining--;
         }
-        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->impl) + 0x21810) = remaining;
+        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x21810) = remaining;
     }
 
     if (this->impl->formatted0.isShown)
@@ -1176,13 +1343,13 @@ void Gui::FUN_00435900()
     {
         score = 0;
         score += reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                     reinterpret_cast<u8 *>(this->impl) + 0x22dec)->baseScore;
+                     reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->baseScore;
         score += reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                     reinterpret_cast<u8 *>(this->impl) + 0x22dec)->grazeInStage * 50;
+                     reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->grazeInStage * 50;
         score += reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                     reinterpret_cast<u8 *>(this->impl) + 0x22dec)->pointItemsCollectedInStage * 5000;
+                     reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->pointItemsCollectedInStage * 5000;
         score += reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                     reinterpret_cast<u8 *>(this->impl) + 0x22dec)->timeOrbs * 100;
+                     reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->timeOrbs * 100;
 
         if (g_GameManager.currentStage >= STAGE6A && !g_GameManager.IsPracticeMode())
         {
@@ -1210,7 +1377,7 @@ void Gui::FUN_00435900()
             break;
         }
 
-        switch (*reinterpret_cast<i8 *>(reinterpret_cast<u8 *>(g_GameManager.cfg) + 0x1c))
+        switch (*reinterpret_cast<i8 *>(reinterpret_cast<u8 *>(g_GameManager.GetCfg()) + 0x1c))
         {
         case 3:
             score = score * 5 / 10;
@@ -1235,43 +1402,43 @@ void Gui::FUN_00435900()
     }
 
     if (g_GameManager.currentStage < STAGE6A &&
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent != 0 &&
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent >=
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTarget &&
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent != 0 &&
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent >=
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget &&
         g_GameManager.flags.unk5_6 == 0)
     {
         g_GameManager.flags.unk5_6 = 2;
     }
 
-    if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent != 0 &&
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent !=
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTarget)
+    if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent != 0 &&
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent !=
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget)
     {
-        if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTimer >= 60)
+        if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTimer >= 60)
         {
-            if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent <
-                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTarget)
+            if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent <
+                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget)
             {
-                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent++;
+                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent++;
                 if ((g_GuiMessageInputCurrent & TH_BUTTON_SHOOT) || (g_GuiMessageInputCurrent & TH_BUTTON_SKIP))
                 {
-                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent += 3;
+                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent += 3;
                 }
-                if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent >
-                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTarget)
+                if (reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent >
+                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget)
                 {
-                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent =
-                        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTarget;
+                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent =
+                        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget;
                 }
             }
             else
             {
-                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTimer++;
+                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTimer++;
             }
         }
         else
         {
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayTimer++;
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTimer++;
         }
     }
 }
@@ -1541,7 +1708,7 @@ void Gui::FUN_0043741d()
         }
     }
 
-    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->impl) + 0x21810) != 0)
+    if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x21810) != 0)
     {
         for (i = 0; i < 0xa8; i++)
         {
@@ -1551,7 +1718,7 @@ void Gui::FUN_0043741d()
     }
 
     if (reinterpret_cast<GuiMessageStateOverlay *>(&this->impl->msgVm)->currentMsgIdx < 0 &&
-        (this->bossPresent + *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40)) > 0)
+        (this->bossPresent + *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40)) > 0)
     {
 #pragma var_order(bossColorDark, bossColor, rect, bossValue, segmentIndex, segmentStop, bossTimerColor, segmentWidth, textPos)
         ZunRect rect;
@@ -1644,9 +1811,17 @@ void Gui::FUN_0043741d()
                 g_AsciiManager.CreateFamiliarPopup(
                     &textPos,
                     reinterpret_cast<EclOperands::TargetEnemyHelpersOverlay *>(
+#if defined(TH08_MODERN_IOS)
+                        EclRunLowProposal::EclEnemySlot(0))->CountParentChain(),
+#else
                         EclRunLowProposal::g_EclEnemyTableF54CC0[0])->CountParentChain(),
+#endif
                     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
+#if defined(TH08_MODERN_IOS)
+                        EclRunLowProposal::EclEnemySlot(0)) + 0x3380),
+#else
                         EclRunLowProposal::g_EclEnemyTableF54CC0[0]) + 0x3380),
+#endif
                     0xfff0f00f);
             }
         }
@@ -1779,6 +1954,21 @@ void __fastcall FUN_00437f5c(i32 spriteIdx)
     RECT destRect;
     RECT srcRect;
 
+#ifdef TH08_IOS
+    char message[224];
+    snprintf(message, sizeof(message),
+             "gui-stage-copy: requested=%d anm=%p idx=%d sprites=%p scripts=%p textures=%p capacity=%d",
+             spriteIdx, static_cast<void *>(g_Gui.stageTextAnm), g_Gui.stageTextAnm->anmIdx,
+             static_cast<void *>(g_Gui.stageTextAnm->sprites), static_cast<void *>(g_Gui.stageTextAnm->scripts),
+             static_cast<void *>(g_Gui.stageTextAnm->textures), g_Gui.stageTextAnm->spriteCount);
+    modern::LogStartup(message);
+    if (!g_Gui.stageTextAnm->HasSprite(10) || !g_Gui.stageTextAnm->HasSprite(spriteIdx))
+    {
+        modern::LogStartup("gui-stage-copy: skipped invalid original sprite lookup");
+        return;
+    }
+#endif
+
     destRect.left = (i32)g_Gui.stageTextAnm->GetSprite(10)->startPixelInclusive.x;
     destRect.top = (i32)g_Gui.stageTextAnm->GetSprite(10)->startPixelInclusive.y;
     destRect.right = (i32)g_Gui.stageTextAnm->GetSprite(10)->endPixelInclusive.x;
@@ -1886,26 +2076,26 @@ void Gui::FUN_0043826b()
     g_AsciiManager.SetColor(0xffffffff);
     g_AsciiManager.AddFormatText(
         &stringPos, "Clear = %8d0",
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->baseScore);
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->baseScore);
 
     stringPos.y += 16.0f;
     g_AsciiManager.SetColor(0xffe0e0ff);
     g_AsciiManager.AddFormatText(
         &stringPos, "Point = %8d0",
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                 ->pointItemsCollectedInStage * 5000);
 
     stringPos.y += 16.0f;
     g_AsciiManager.SetColor(0xffd0d0ff);
     g_AsciiManager.AddFormatText(
         &stringPos, "Graze = %8d0",
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->grazeInStage * 50);
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->grazeInStage * 50);
 
     stringPos.y += 16.0f;
     g_AsciiManager.SetColor(0xffd0d0ff);
     g_AsciiManager.AddFormatText(
         &stringPos, "Time  = %8d0",
-        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->timeOrbs * 100);
+        reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->timeOrbs * 100);
 
     stringPos.y += 16.0f;
     g_AsciiManager.SetColor(0xffd0d0ff);
@@ -1933,9 +2123,9 @@ void Gui::FUN_0043826b()
             g_AsciiManager.SetColor(0xffffff80);
             g_AsciiManager.AddFormatText(
                 &stringPos, "Last Time = %2d:%.2d",
-                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                         ->clockDisplayTarget / 60 % 12,
-                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+                reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                         ->clockDisplayTarget % 60);
             stringPos.y += 16.0f;
             g_AsciiManager.AddFormatText(&stringPos, "Night Bonus");
@@ -1979,7 +2169,7 @@ void Gui::FUN_0043826b()
     if (g_GameManager.difficulty < EXTRA && !g_GameManager.flags.isPracticeMode)
     {
         stringPos.y += 16.0f;
-        switch (*reinterpret_cast<i8 *>(reinterpret_cast<u8 *>(g_GameManager.cfg) + 0x1c))
+        switch (*reinterpret_cast<i8 *>(reinterpret_cast<u8 *>(g_GameManager.GetCfg()) + 0x1c))
         {
         case 3:
             g_AsciiManager.SetColor(0xffff8080);
@@ -2021,10 +2211,10 @@ void Gui::FUN_0043826b()
         g_AsciiManager.AddFormatText(
             &stringPos, "%s%2d:%.2d",
             g_GuiTimePeriodLabels[(reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayStart / 60) < 12],
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+                reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayStart / 60) < 12],
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                     ->clockDisplayStart / 60 % 12,
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                     ->clockDisplayStart % 60);
         stringPos.x += 99.0f;
         g_AsciiManager.SetColor(0xffafafaf);
@@ -2034,10 +2224,10 @@ void Gui::FUN_0043826b()
         g_AsciiManager.AddFormatText(
             &stringPos, "%s%2d:%.2d",
             g_GuiTimePeriodLabels[(reinterpret_cast<GuiStageResultUpdateOverlay *>(
-                reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent / 60) < 12],
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+                reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent / 60) < 12],
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                     ->clockDisplayCurrent / 60 % 12,
-            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)
+            reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)
                     ->clockDisplayCurrent % 60);
         g_AsciiManager.SetColor(0xffffffff);
     }
@@ -2173,9 +2363,9 @@ i32 Gui::StartStageBackgroundSequence()
 ZunResult Gui::FUN_00439050()
 {
     this->timesAnm->SetSprite(
-        reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->impl) + 0x2156C),
+        reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2156C),
         static_cast<i8>(g_GameManager.GetClockTime()));
-    reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->impl) + 0x2156C)->SetInterrupt(1);
+    reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2156C)->SetInterrupt(1);
     return ZUN_SUCCESS;
 }
 
@@ -2183,16 +2373,16 @@ ZunResult Gui::FUN_00439050()
 ZunResult Gui::FUN_00439093()
 {
     this->timesAnm->SetSprite(
-        reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->impl) + 0x2156C),
+        reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2156C),
         static_cast<i8>(g_GameManager.GetClockTime()));
-    reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->impl) + 0x2156C)->SetInterrupt(2);
+    reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2156C)->SetInterrupt(2);
     return ZUN_SUCCESS;
 }
 
 // FUNCTION: th08 0x4390d6
 ZunResult Gui::FUN_004390d6()
 {
-    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2175f) = 0;
+    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2175f) = 0;
     return ZUN_SUCCESS;
 }
 
@@ -2248,7 +2438,7 @@ ZunResult Gui::ActualAddedCallback()
                 this->impl->vm5728[i * 12 + j].uvScrollPos.y = i * 32.0f / 512.0f;
             }
         }
-        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->impl) + 0x21810) = 168;
+        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x21810) = 168;
     }
 
     g_Gui.FUN_004390d6();
@@ -2283,7 +2473,7 @@ ZunResult Gui::ActualAddedCallback()
 
     this->unk_0 = 0;
     this->bossPresent = false;
-    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->impl) + 0x2a40) = 0;
+    *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x2a40) = 0;
     this->bossLifeBarSize = 0.0f;
     this->bossLifeBarMaxSize = 0.0f;
 
@@ -2312,7 +2502,7 @@ ZunResult Gui::ActualAddedCallback()
 
     g_AsciiManager.asciiAnm->SetAndExecuteScriptIdx(&this->impl->vm212c8, 3);
     g_GuiMessageScreenEffectDuration = 16;
-    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->impl) + 0x22dec)->clockDisplayCurrent = 0;
+    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayCurrent = 0;
 
     return ZUN_SUCCESS;
 }
@@ -2323,7 +2513,7 @@ void Gui::FUN_004396b8()
     this->impl->vm3778.activeSpriteIndex = -1;
     this->impl->vm3a1c.activeSpriteIndex = -1;
     this->impl->vm3cc0.activeSpriteIndex = -1;
-    *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->impl) + 0x21810) = 0;
+    *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x21810) = 0;
 }
 
 // FUNCTION: th08 0x4396f8
@@ -2342,13 +2532,15 @@ ZunResult Gui::LoadMsg(const char *path)
         g_GameErrorContext.Log("\x65\x72\x72\x6f\x72\x20\x3a\x20\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x83\x74\x83\x40\x83\x43\x83\x8b\x20\x25\x73\x20\x82\xaa\x93\xc7\x82\xdd\x8d\x9e\x82\xdf\x82\xdc\x82\xb9\x82\xf1\x82\xc5\x82\xb5\x82\xbd\x0d\x0a", path);
         return ZUN_ERROR;
     }
-    *(i32 *)((u8 *)this->impl + 0x2181C) = -1;
-    *(i32 *)((u8 *)this->impl + 0x21818) = 0;
-    for (i32 i = 0; i < *(i32 *)this->impl->msgVm.msgFile; ++i)
+    *(i32 *)((u8 *)this->GetImpl() + 0x2181C) = -1;
+    *(i32 *)((u8 *)this->GetImpl() + 0x21818) = 0;
+#ifndef TH08_IOS
+    for (i32 i = 0; i < *(i32 *)this->impl->msgVm.GetMsgFile(); ++i)
     {
-        ((i32 *)this->impl->msgVm.msgFile)[i + 1] +=
-            static_cast<i32>(reinterpret_cast<uintptr_t>(this->impl->msgVm.msgFile));
+        ((i32 *)this->impl->msgVm.GetMsgFile())[i + 1] +=
+            static_cast<i32>(reinterpret_cast<uintptr_t>(this->impl->msgVm.GetMsgFile()));
     }
+#endif
     return ZUN_SUCCESS;
 }
 

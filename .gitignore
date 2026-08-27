@@ -33,3 +33,7 @@ reccmp-build.yml
 *.idb
 *.i64
 *.pyc
+
+# Local iOS build products and diagnostics.
+/build-ios*/
+/ios/build-ios-*.log

@@ -1,22 +1,38 @@
-# Building the TH08 iOS bring-up
+# Building the TH08 iOS port
 
-On the Mac, clone this repository and point the build at a directory containing
-the legally obtained original `th08.dat`, `thbgm.dat`, and (for Japanese text)
-`msgothic.ttc`:
+Use a Mac with Xcode, CMake, and legally obtained copies of `th08.dat` and
+`thbgm.dat`. Put the data files and an optional `msgothic.ttc` in one directory:
 
 ```sh
 git clone https://github.com/Ymgjdsh/th08-ios-port.git
 cd th08-ios-port
 chmod +x ios/*.sh
+
 TH08_IOS_DATA_DIR="$HOME/TH08-data" \
-  IOS_VERSION=0.1.0 IOS_BUILD=1 \
+  IOS_VERSION=0.3.0 IOS_BUILD=85 \
   ./ios/build_ios.sh
 ```
 
-The IPA is written under `build-ios/`. CMake downloads pinned SDL2 sources on
-the first configure, so the initial build needs network access. No original
-executable or data archive is committed to this repository.
+The initial configure downloads the pinned SDL2 family sources and therefore
+needs network access. For repeatable offline builds, set `TH08_IOS_DEPS_DIR`
+to a directory containing these source trees:
 
-This is currently a bring-up build, not a release claim. See
-`PORTING_STATUS.md` for the arm64 layout, renderer, and fixed-address work that
-still has to be completed before device gameplay is expected.
+```text
+SDL-release-2.30.9
+SDL_image-release-2.8.2
+SDL_mixer-release-2.8.0
+SDL_ttf-release-2.22.0
+```
+
+Useful overrides are `BUILD_DIR`, `OUTPUT_IPA`, `IOS_SDK`, `IOS_ARCH`, and
+`IOS_DEPLOYMENT_TARGET`. Their defaults produce a Release arm64 device build
+with a minimum deployment target of iOS 14.0. The IPA is written below
+`build-ios/` unless `OUTPUT_IPA` is set.
+
+The packaging step compiles the asset catalog and launch storyboard, applies
+an ad-hoc signature, and rejects a stale app bundle whose version does not
+match the requested `IOS_VERSION` and `IOS_BUILD`. It never downloads or
+commits original game data.
+
+See [PORTING_STATUS.md](PORTING_STATUS.md) for the implemented mobile features,
+the latest complete-campaign checkpoint, and remaining test coverage.

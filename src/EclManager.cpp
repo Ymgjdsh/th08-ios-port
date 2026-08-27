@@ -42,17 +42,21 @@ ZunResult EclManager::Load(char *path)
         return ZUN_ERROR;
     }
 
+#ifndef TH08_IOS
     for (index = 0; index < 16; index++)
     {
         this->eclFile->timelineOffsets[index] +=
             static_cast<u32>(reinterpret_cast<uintptr_t>(this->eclFile));
     }
+#endif
 
     this->subTable = this->eclFile->subOffsets;
+#ifndef TH08_IOS
     for (index = 0; index < this->eclFile->subCount; index++)
     {
         this->subTable[index] += static_cast<u32>(reinterpret_cast<uintptr_t>(this->eclFile));
     }
+#endif
 
     return ZUN_SUCCESS;
 }
@@ -73,7 +77,12 @@ ZunResult EclManager::CallEclSub(EnemyEclContext *context, i16 subId)
         return ZUN_SUCCESS;
     }
 
+#ifdef TH08_IOS
+    context->currentInstr = reinterpret_cast<EclRawInstruction *>(
+        reinterpret_cast<u8 *>(this->GetEclFile()) + this->GetSubTable()[subId]);
+#else
     context->currentInstr = (EclRawInstruction *)this->subTable[subId];
+#endif
     context->time = 0;
     context->secondaryTime = 0;
     context->subId = subId;
@@ -87,8 +96,7 @@ namespace EclOperands
 // FUNCTION: th08 0x0041F000
 i32 TargetEnemyHelpersOverlay::HasParentChain()
 {
-    return *(void **)((u8 *)this + 0x2DA4) == 0 &&
-           *(void **)((u8 *)this + 8) != 0;
+    return EnemyOwner(this) == NULL && EnemyNext(this) != NULL;
 }
 
 } // namespace EclOperands
@@ -129,7 +137,7 @@ namespace EclOperands
 // FUNCTION: th08 0x0041FD20
 i32 TargetEnemyHelpersOverlay::HasAttachedEnemy()
 {
-    return *(void **)((u8 *)this + 0x2DA4) != 0;
+    return EnemyOwner(this) != NULL;
 }
 
 // FUNCTION: th08 0x0041FD40
@@ -139,9 +147,9 @@ i32 TargetEnemyHelpersOverlay::CountParentChain()
     i32 count = 0;
     if (this->HasParentChain())
     {
-        while (*(void **)((u8 *)cursor + 8) != 0)
+        while (EnemyNext(cursor) != NULL)
         {
-            cursor = *(TargetEnemyHelpersOverlay **)((u8 *)cursor + 8);
+            cursor = reinterpret_cast<TargetEnemyHelpersOverlay *>(EnemyNext(cursor));
             count++;
         }
     }
@@ -182,9 +190,13 @@ i32 EclManager::GetTimelineCount()
 }
 
 // FUNCTION: th08 0x42dfd0
-u32 EclManager::GetTimeline(i32 index)
+uintptr_t EclManager::GetTimeline(i32 index)
 {
+#ifdef TH08_IOS
+    return reinterpret_cast<uintptr_t>(this->GetEclFile()) + this->GetEclFile()->timelineOffsets[index];
+#else
     return this->eclFile->timelineOffsets[index];
+#endif
 }
 
 // FUNCTION: th08 0x0042DFF0

@@ -167,8 +167,13 @@ struct AsciiManager
     i32 spaceWidth;
     u32 unk_8284;
 
+#ifdef TH08_IOS
+    IosPtr32<AnmLoaded> asciiAnm;
+    IosPtr32<AnmLoaded> captureAnm;
+#else
     AnmLoaded *asciiAnm;
     AnmLoaded *captureAnm;
+#endif
 
     i32 nextScorePopupIndex;
     i32 nextPlayerPointPopupIndex;
@@ -191,6 +196,9 @@ struct AsciiManager
 };
 
 C_ASSERT(sizeof(AsciiManager) == 0x171b0);
+#ifdef TH08_IOS
+typedef char IosAsciiManagerSizeCheck[(sizeof(AsciiManager) == 0x171b0) ? 1 : -1];
+#endif
 DIFFABLE_EXTERN(AsciiManager, g_AsciiManager);
 
 } // namespace th08

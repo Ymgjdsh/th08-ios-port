@@ -177,24 +177,28 @@ ChainCallbackResult Background::OnUpdate(Background *background)
         return CHAIN_CALLBACK_RESULT_CONTINUE;
     }
 
+#if defined(TH08_MODERN_IOS)
+    if (g_GameManager.currentStage == STAGE6B)
+#else
     if (*reinterpret_cast<i32 *>(0x164D2CC) == 7)
+#endif
     {
-        if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8) == NULL)
+        if (background->stageEffect == NULL)
         {
             Float3 zeroVector(0.0f, 0.0f, 0.0f);
-            *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8) =
-                g_EffectManager.FUN_00425870(0x40, reinterpret_cast<D3DXVECTOR3 *>(&zeroVector), 0xC, 1, -1);
-            spawnedStageEffect = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            background->stageEffect = g_EffectManager.FUN_00425870(
+                0x40, reinterpret_cast<D3DXVECTOR3 *>(&zeroVector), 0xC, 1, -1);
+            spawnedStageEffect = background->stageEffect;
             background->stageAnmFile->SetAndExecuteScriptIdx(spawnedStageEffect, 11);
         }
         else if (background->unk6260 == 1)
         {
-            AnmVm *stageEffect1 = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            AnmVm *stageEffect1 = background->stageEffect;
             background->stageAnmFile->SetAndExecuteScriptIdx(stageEffect1, 11);
         }
         else if (background->unk6260 == 2)
         {
-            AnmVm *stageEffect2 = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            AnmVm *stageEffect2 = background->stageEffect;
             BackgroundAnmVmSnapshot savedStageVm2 = *reinterpret_cast<BackgroundAnmVmSnapshot *>(stageEffect2);
             background->stageAnmFile->SetAndExecuteScriptIdx(stageEffect2, 12);
             stageEffect2->SetInterrupt(2);
@@ -213,7 +217,7 @@ ChainCallbackResult Background::OnUpdate(Background *background)
         }
         else if (background->unk6260 == 3)
         {
-            AnmVm *stageEffect3 = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            AnmVm *stageEffect3 = background->stageEffect;
             BackgroundAnmVmSnapshot savedStageVm3 = *reinterpret_cast<BackgroundAnmVmSnapshot *>(stageEffect3);
             stageEffect3->SetInterrupt(3);
             *reinterpret_cast<Float3 *>(reinterpret_cast<u8 *>(stageEffect3) + 0x244) =
@@ -231,7 +235,7 @@ ChainCallbackResult Background::OnUpdate(Background *background)
         }
         else if (background->unk6260 == 4)
         {
-            AnmVm *stageEffect4 = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            AnmVm *stageEffect4 = background->stageEffect;
             BackgroundAnmVmSnapshot savedStageVm4 = *reinterpret_cast<BackgroundAnmVmSnapshot *>(stageEffect4);
             stageEffect4->SetInterrupt(4);
             *reinterpret_cast<Float3 *>(reinterpret_cast<u8 *>(stageEffect4) + 0x244) =
@@ -252,7 +256,7 @@ ChainCallbackResult Background::OnUpdate(Background *background)
     if (background->unk6260 != 0)
     {
         i32 seekIndex = 0;
-        curInsn = reinterpret_cast<RawStageInstr *>(background->stageUnknown808);
+        curInsn = reinterpret_cast<RawStageInstr *>(background->GetStageUnknown808());
         BG_I32(0x818) = 0;
         while ((curInsn->opcode != 0x1F || background->unk6260 != curInsn->args[0]) && curInsn->frame != -1)
         {
@@ -268,7 +272,7 @@ ChainCallbackResult Background::OnUpdate(Background *background)
     }
 
 read_instruction:
-    curInsn = reinterpret_cast<RawStageInstr *>(background->stageUnknown808) + BG_I32(0x818);
+    curInsn = reinterpret_cast<RawStageInstr *>(background->GetStageUnknown808()) + BG_I32(0x818);
     if (background->timer80c >= curInsn->frame)
     {
         if (curInsn->frame != -1)
@@ -773,10 +777,22 @@ ChainCallbackResult Background::OnDrawHighPrio(Background *background)
         {
             g_AnmManager->Draw2DAndFlush(&background->stageVm1);
         }
+        #ifdef TH08_IOS
+        if (background->stageEffect != NULL)
+        #else
         if (*reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8) != NULL)
+        #endif
         {
+            #ifdef TH08_IOS
+            effect = background->stageEffect;
+            #else
             effect = *reinterpret_cast<AnmVm **>(reinterpret_cast<u8 *>(background) + 0xAE8);
+            #endif
+            #ifdef TH08_IOS
+            RunIosEffectDrawCallback(effect);
+            #else
             (*reinterpret_cast<void (__fastcall **)(AnmVm *)>(reinterpret_cast<u8 *>(effect) + 0x34C))(effect);
+            #endif
         }
     }
 
@@ -1079,11 +1095,11 @@ ZunResult Background::LoadStageData(const char *path)
         }
     }
 
-    this->stageObjectCount = ((RawStageHeader *)this->stageAnmSecondary)->nbObjects;
-    this->stageVmCount = ((RawStageHeader *)this->stageAnmSecondary)->nbFaces;
+    this->stageObjectCount = ((RawStageHeader *)this->GetStageAnmSecondary())->nbObjects;
+    this->stageVmCount = ((RawStageHeader *)this->GetStageAnmSecondary())->nbFaces;
 #ifdef TH08_IOS
     {
-        const u8 *stageBase = reinterpret_cast<const u8 *>(this->stageAnmSecondary);
+        const u8 *stageBase = reinterpret_cast<const u8 *>(this->GetStageAnmSecondary());
         const RawStageHeader *stageHeader = reinterpret_cast<const RawStageHeader *>(stageBase);
         this->stageUnknown804 = const_cast<u8 *>(stageBase + stageHeader->facesOffset);
         this->stageUnknown808 = const_cast<u8 *>(stageBase + stageHeader->scriptOffset);
@@ -1121,12 +1137,12 @@ ZunResult Background::LoadStageData(const char *path)
     this->stageAnm = g_ZunMemory.Alloc(this->stageVmCount * sizeof(AnmVm), "bgscroll");
     for (i = 0, vmIdx = 0; i < this->stageObjectCount; i++)
     {
-        curObj = ((RawStageObject **)this->stageOffsets)[i];
+        curObj = ((RawStageObject **)this->GetStageOffsets())[i];
         curObj->flags = 1;
         curQuad = &curObj->firstQuad;
         while (curQuad->type >= 0)
         {
-            this->stageAnmFile->ExecuteAnmIdx(&((AnmVm *)this->stageAnm)[vmIdx], curQuad->anmScript);
+            this->stageAnmFile->ExecuteAnmIdx(&((AnmVm *)this->GetStageAnm())[vmIdx], curQuad->anmScript);
             curQuad->vmIdx = vmIdx++;
             curQuad = (RawStageQuadBasic *)((u8 *)curQuad + curQuad->byteSize);
         }
@@ -1179,14 +1195,14 @@ u32 Background::FUN_00409f40()
 
     for (i = 0; i < this->stageObjectCount; i++)
     {
-        curObj = ((RawStageObject **)this->stageOffsets)[i];
+        curObj = ((RawStageObject **)this->GetStageOffsets())[i];
         if ((curObj->flags & 1) != 0)
         {
             activeVms = 0;
             curQuad = &curObj->firstQuad;
             while (curQuad->type >= 0)
             {
-                vm = &((AnmVm *)this->stageAnm)[curQuad->vmIdx];
+                vm = &((AnmVm *)this->GetStageAnm())[curQuad->vmIdx];
                 switch (curQuad->type)
                 {
                 case 0:
@@ -1240,7 +1256,7 @@ ZunResult Background::RenderObjects(i32 mode)
     f32 quadWidth;
     ZunColor originalColor;
 
-    instance = reinterpret_cast<RawStageObjectInstance *>(this->stageUnknown804);
+    instance = reinterpret_cast<RawStageObjectInstance *>(this->GetStageUnknown804());
     instancesDrawn = 0;
     didDraw = 0;
 
@@ -1261,7 +1277,7 @@ ZunResult Background::RenderObjects(i32 mode)
 
     while (instance->id >= 0)
     {
-        obj = reinterpret_cast<RawStageObject **>(this->stageOffsets)[instance->id];
+        obj = reinterpret_cast<RawStageObject **>(this->GetStageOffsets())[instance->id];
         if (obj->zLevel == mode)
         {
             curQuad = &obj->firstQuad;
@@ -1289,7 +1305,7 @@ ZunResult Background::RenderObjects(i32 mode)
             didDraw = 1;
             while (curQuad->type >= 0)
             {
-                        curQuadVm = &reinterpret_cast<AnmVm *>(this->stageAnm)[curQuad->vmIdx];
+                        curQuadVm = &reinterpret_cast<AnmVm *>(this->GetStageAnm())[curQuad->vmIdx];
                         switch (curQuad->type)
                         {
                         case 0:

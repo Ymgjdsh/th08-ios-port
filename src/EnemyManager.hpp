@@ -102,6 +102,49 @@ struct Enemy
     void FUN_0042deb0();
 };
 C_ASSERT(sizeof(Enemy) == 0x53d0);
+#ifdef TH08_IOS
+typedef char IosEnemySizeCheck[(sizeof(Enemy) == 0x53d0) ? 1 : -1];
+#endif
+
+inline void *EnemyEffectContext(const Enemy *enemy, i32 index)
+{
+    return LegacyPointerGet<void>(enemy, 0x3384 + index * 4);
+}
+
+inline void SetEnemyEffectContext(Enemy *enemy, i32 index, void *context)
+{
+    LegacyPointerSet<void>(enemy, 0x3384 + index * 4, context);
+}
+
+inline AnmVm *EnemyAuxVm(const Enemy *enemy, i32 index)
+{
+    return LegacyPointerGet<AnmVm>(enemy, 0x5360 + index * 4);
+}
+
+inline void SetEnemyAuxVm(Enemy *enemy, i32 index, AnmVm *vm)
+{
+    LegacyPointerSet<AnmVm>(enemy, 0x5360 + index * 4, vm);
+}
+
+inline AnmVm *EnemyDeathVm(const Enemy *enemy)
+{
+    return LegacyPointerGet<AnmVm>(enemy, 0x53C8);
+}
+
+inline void SetEnemyDeathVm(Enemy *enemy, AnmVm *vm)
+{
+    LegacyPointerSet<AnmVm>(enemy, 0x53C8, vm);
+}
+
+inline Enemy *EnemyDrawNext(const Enemy *enemy)
+{
+    return LegacyPointerGet<Enemy>(enemy, 0x0);
+}
+
+inline void SetEnemyDrawNext(Enemy *enemy, Enemy *next)
+{
+    LegacyPointerSet<Enemy>(enemy, 0x0, next);
+}
 
 struct EclTimelineInstruction
 {
@@ -119,11 +162,18 @@ struct EclTimelineInstruction
 struct EclTimeline
 {
     ZunTimer timer;
+#ifdef TH08_IOS
+    IosPtr32<EclTimelineInstruction> instruction;
+#else
     EclTimelineInstruction *instruction;
+#endif
     EclTimeline();
     void Run();
 };
 C_ASSERT(sizeof(EclTimeline) == 0x10);
+#ifdef TH08_IOS
+typedef char IosEclTimelineSizeCheck[(sizeof(EclTimeline) == 0x10) ? 1 : -1];
+#endif
 
 struct EnemyManager
 {
@@ -152,6 +202,41 @@ struct EnemyManager
     static void CutChain();
 };
 C_ASSERT(sizeof(EnemyManager) == 0x9dcf10);
+#ifdef TH08_IOS
+typedef char IosEnemyManagerSizeCheck[
+    (sizeof(EnemyManager) == 0x9dcf10) ? 1 : -1];
+#endif
+
+#if defined(TH08_MODERN_IOS)
+extern Enemy *g_IosEnemyManagerDrawHeads[4];
+extern AnmLoaded *g_IosEnemyManagerCommonAnm;
+extern AnmLoaded *g_IosEnemyManagerStageAnm;
+
+inline Enemy **EnemyManagerDrawHeads(EnemyManager *manager)
+{
+    (void)manager;
+    return g_IosEnemyManagerDrawHeads;
+}
+
+inline AnmLoaded *&EnemyManagerCommonAnm(EnemyManager *manager)
+{
+    (void)manager;
+    return g_IosEnemyManagerCommonAnm;
+}
+
+inline AnmLoaded *&EnemyManagerStageAnm(EnemyManager *manager)
+{
+    (void)manager;
+    return g_IosEnemyManagerStageAnm;
+}
+#else
+#define EnemyManagerDrawHeads(manager) \
+    reinterpret_cast<Enemy **>(reinterpret_cast<u8 *>(manager) + 0x9dcedc)
+#define EnemyManagerCommonAnm(manager) \
+    (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(manager) + 0x9dceec))
+#define EnemyManagerStageAnm(manager) \
+    (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(manager) + 0x9dcef0))
+#endif
 
 DIFFABLE_EXTERN(EnemyManager, g_EnemyManager);
 

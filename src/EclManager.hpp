@@ -33,6 +33,20 @@ struct Effect
 };
 C_ASSERT(sizeof(Effect) == 0x360);
 
+#ifdef TH08_IOS
+typedef i32 (__fastcall *IosEffectUpdateCallback)(AnmVm *effect);
+typedef i32 (__fastcall *IosEffectDrawCallback)(Effect *effect);
+
+// Retail effects store four pointers in adjacent 32-bit fields.  Keep those
+// pointers in native-width side storage on arm64 so one field cannot overwrite
+// the next effect record.
+void SetIosEffectUpdateCallback(AnmVm *effect, IosEffectUpdateCallback callback);
+void SetIosEffectDrawCallback(AnmVm *effect, IosEffectDrawCallback callback);
+void *GetIosEffectResource(AnmVm *effect);
+void SetIosEffectResource(AnmVm *effect, void *resource);
+ZunBool RunIosEffectDrawCallback(AnmVm *effect);
+#endif
+
 struct EffectManager
 {
     EffectManager();
@@ -75,10 +89,15 @@ DIFFABLE_EXTERN(ChainElem, g_EffectManagerCalcChain);
 DIFFABLE_EXTERN(ChainElem, g_EffectManagerDrawChain);
 
 // A dword published by an ECL enemy callback from the target object's +0x18
-// field.  Its consumer semantics are still unknown; this name records only
-// the observed callback ownership and width.
+// field.  On relocatable targets these are views into their owning objects,
+// rather than independent globals.
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i32 &g_EclCallbackPublishedEnemyField24;
+extern i32 &g_EclCallbackPublishedEnemyField56;
+#else
 DIFFABLE_EXTERN(i32, g_EclCallbackPublishedEnemyField24);
 DIFFABLE_EXTERN(i32, g_EclCallbackPublishedEnemyField56);
+#endif
 struct EclExBarrierRenderState
 {
     i32 mode;
@@ -88,9 +107,15 @@ struct EclExBarrierRenderState
 };
 C_ASSERT(offsetof(EclExBarrierRenderState, vm0) == 0x8);
 C_ASSERT(offsetof(EclExBarrierRenderState, vm1) == 0x2ac);
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i8 &g_EclScriptedGlobalUpdateFreeze;
+extern f32 &g_EclGameTimeScale;
+extern u32 &g_EclGameTimeScaleFlags;
+#else
 DIFFABLE_EXTERN(i8, g_EclScriptedGlobalUpdateFreeze);
 DIFFABLE_EXTERN(f32, g_EclGameTimeScale);
 DIFFABLE_EXTERN(u32, g_EclGameTimeScaleFlags);
+#endif
 struct EclRawInstruction
 {
     i32 time;
@@ -112,15 +137,17 @@ struct EclRawHeader
     u32 timelineOffsets[16];
     u32 subOffsets[1];
 };
-#ifndef TH08_IOS
 typedef char EclRawHeaderSubTableOffsetCheck[offsetof(EclRawHeader, subOffsets) == 0x48 ? 1 : -1];
-#endif
 
 // Target-observed TH08 per-enemy ECL context. Unknown spans deliberately keep
 // the public ABI narrower than the still-unrecovered interpreter state.
 struct EnemyEclContext
 {
+#ifdef TH08_IOS
+    IosPtr32<EclRawInstruction> currentInstr; // +0x000
+#else
     EclRawInstruction *currentInstr; // +0x000
+#endif
     ZunTimer time;                   // +0x004
     u8 unknown10[0x80];
     ZunTimer secondaryTime; // +0x090
@@ -128,10 +155,35 @@ struct EnemyEclContext
     i16 subId; // +0x224
     u8 unknown226[2];
 };
-#ifndef TH08_IOS
 typedef char EnemyEclContextSecondaryTimerOffsetCheck[offsetof(EnemyEclContext, secondaryTime) == 0x90 ? 1 : -1];
 typedef char EnemyEclContextSubIdOffsetCheck[offsetof(EnemyEclContext, subId) == 0x224 ? 1 : -1];
 typedef char EnemyEclContextSizeCheck[sizeof(EnemyEclContext) == 0x228 ? 1 : -1];
+
+#ifdef TH08_IOS
+// ECL runtime state contains several adjacent retail pointer fields. Accessing
+// them as native arm64 pointers overwrites the following field, so every iOS
+// access must go through the same four-byte handle representation used by the
+// reconstructed structures.
+template <typename T>
+inline IosPtr32<T> &IosEclPointerField(void *base, size_t offset)
+{
+    return *reinterpret_cast<IosPtr32<T> *>(reinterpret_cast<u8 *>(base) + offset);
+}
+
+inline EnemyEclContext *IosEclCurrentContext(void *enemy)
+{
+    return IosEclPointerField<EnemyEclContext>(enemy, 0x2CA0).Get();
+}
+
+inline u8 *IosEclCurrentVariables(void *enemy)
+{
+    return IosEclPointerField<u8>(enemy, 0x2CA4).Get();
+}
+
+inline IosPtr32<u8> &IosEclChildContextField(void *enemy, i32 index)
+{
+    return IosEclPointerField<u8>(enemy, 0x3384 + index * 4);
+}
 #endif
 
 struct EclTimelineState
@@ -150,13 +202,31 @@ struct EclManager
     ZunResult CallEclSub(EnemyEclContext *context, i16 subId);
     ZunResult RunEcl(Enemy *enemy);
     i32 GetTimelineCount();
-    u32 GetTimeline(i32 index);
+    uintptr_t GetTimeline(i32 index);
 
+#ifdef TH08_IOS
+    IosPtr32<EclRawHeader> eclFile;  // +0x000
+    IosPtr32<u32> subTable;          // +0x004
+#else
     EclRawHeader *eclFile;             // +0x000
     u32 *subTable;                     // +0x004
+#endif
     EclTimelineState timelineState;    // +0x008
+
+    EclRawHeader *GetEclFile() const
+    {
+        return this->eclFile;
+    }
+
+    u32 *GetSubTable() const
+    {
+        return this->subTable;
+    }
 };
 C_ASSERT(sizeof(EclManager) == 0x168);
+#ifdef TH08_IOS
+typedef char IosEclManagerSizeCheck[(sizeof(EclManager) == 0x168) ? 1 : -1];
+#endif
 
 DIFFABLE_EXTERN(EclManager, g_EclManager);
 

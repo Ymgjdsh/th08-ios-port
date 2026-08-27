@@ -20,7 +20,11 @@ C_ASSERT(sizeof(GuiFormattedText) == 0x20);
 
 struct GuiMsgVm
 {
+#ifdef TH08_IOS
+    IosPtr32<void> msgFile;
+#else
     void *msgFile;
+#endif
     i32 currentMsgIdx;
     i32 currentLineIdx;
     ZunTimer timer;
@@ -34,8 +38,16 @@ struct GuiMsgVm
     unknown_fields(0x1569, 0xf);
 
     GuiMsgVm();
+
+    void *GetMsgFile() const
+    {
+        return this->msgFile;
+    }
 };
 C_ASSERT(sizeof(GuiMsgVm) == 0x1578);
+#ifdef TH08_IOS
+typedef char IosGuiMsgVmSizeCheck[(sizeof(GuiMsgVm) == 0x1578) ? 1 : -1];
+#endif
 
 struct GuiImpl
 {
@@ -65,6 +77,9 @@ struct GuiImpl
     ZunResult DrawDialogue();
 };
 C_ASSERT(sizeof(GuiImpl) == 0x230b8);
+#ifdef TH08_IOS
+typedef char IosGuiImplSizeCheck[(sizeof(GuiImpl) == 0x230b8) ? 1 : -1];
+#endif
 
 struct GuiFlags
 {
@@ -121,13 +136,26 @@ struct Gui
     void FUN_00438a89();
     ZunResult FUN_00438f58();
 
+    GuiImpl *GetImpl() const
+    {
+        return this->impl;
+    }
+
     u32 unk_0;
     GuiFlags flags;
+#ifdef TH08_IOS
+    IosPtr32<GuiImpl> impl;
+    IosPtr32<AnmLoaded> frontAnm;
+    IosPtr32<AnmLoaded> stageTextAnm;
+    IosPtr32<AnmLoaded> timesAnm;
+    IosPtr32<AnmLoaded> loadingPortraitAnm;
+#else
     GuiImpl *impl;
     AnmLoaded *frontAnm;
     AnmLoaded *stageTextAnm;
     AnmLoaded *timesAnm;
     AnmLoaded *loadingPortraitAnm;
+#endif
     u32 bossUIOpacity;
     i32 eclSetLives;
     i32 spellcardSecondsRemaining;
@@ -141,7 +169,15 @@ struct Gui
     i32 bossLifeBarSegmentColor[MAX_BOSS_LIFEBAR_SEGMENTS];
 };
 C_ASSERT(sizeof(Gui) == 0x9c);
+#ifdef TH08_IOS
+typedef char IosGuiSizeCheck[(sizeof(Gui) == 0x9c) ? 1 : -1];
+#endif
 
 DIFFABLE_EXTERN(Gui, g_Gui);
+
+#ifdef TH08_IOS
+void InitializeIosGuiTables();
+i32 GetIosStageMusicContext(i32 stage, i32 track);
+#endif
 
 } /* namespace th08 */

@@ -9,6 +9,9 @@
 #include "TitleScreen.hpp"
 #include "ZunMath.hpp"
 #include "i18n.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 #include <direct.h>
 #include <stdio.h>
@@ -215,6 +218,17 @@ void DrawPieChart(Float3 *position, D3DCOLOR color, float param_3, float param_4
 
 ChainCallbackResult TitleScreen::OnUpdate(TitleScreen *titleScreen)
 {
+#ifdef TH08_IOS
+    static bool loggedUpdatePointer = false;
+    if (!loggedUpdatePointer)
+    {
+        char pointerMessage[96];
+        snprintf(pointerMessage, sizeof(pointerMessage), "title: update pointer=%p global=%p",
+                 static_cast<void *>(titleScreen), static_cast<void *>(g_TitleScreen));
+        modern::LogStartup(pointerMessage);
+        loggedUpdatePointer = true;
+    }
+#endif
     ChainCallbackResult result;
 
     if (titleScreen->state != TitleScreenState_Ready)
@@ -3788,6 +3802,10 @@ void TitleScreen::TitleSetupThread(TitleScreen *titleScreen)
 {
     int i;
 
+#ifdef TH08_IOS
+    modern::LogStartup("title-load: begin");
+#endif
+
     while (g_AnmManager->captureSurfaceIdx >= 0)
     {
         Sleep(1);
@@ -3796,16 +3814,28 @@ void TitleScreen::TitleSetupThread(TitleScreen *titleScreen)
     g_TitleScreen->titleAnm = g_AnmManager->PreloadAnm(20, "title01.anm");
     if (g_TitleScreen->titleAnm == NULL)
     {
+#ifdef TH08_IOS
+        modern::LogStartup("title-load: title01.anm failed");
+#endif
         g_TitleScreen->state = TitleScreenState_Close;
         return;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("title-load: title01.anm ready");
+#endif
 
     g_TitleScreen->resultTextAnm = g_AnmManager->PreloadAnm(22, "resulttext.anm");
     if (g_TitleScreen->resultTextAnm == NULL)
     {
+#ifdef TH08_IOS
+        modern::LogStartup("title-load: resulttext.anm failed");
+#endif
         g_TitleScreen->state = TitleScreenState_Close;
         return;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("title-load: resulttext.anm ready");
+#endif
 
     if (g_Supervisor.subthreadCloseRequestActive)
     {
@@ -3841,9 +3871,15 @@ void TitleScreen::TitleSetupThread(TitleScreen *titleScreen)
 
     if (g_AnmManager->PreloadSurface(0, "title/title00.png") != ZUN_SUCCESS)
     {
+#ifdef TH08_IOS
+        modern::LogStartup("title-load: title/title00.png failed");
+#endif
         g_TitleScreen->state = TitleScreenState_Close;
         return;
     }
+#ifdef TH08_IOS
+    modern::LogStartup("title-load: title/title00.png ready");
+#endif
 
     if (!g_GameManager.flags.isDemoMode)
     {
@@ -3863,6 +3899,9 @@ void TitleScreen::TitleSetupThread(TitleScreen *titleScreen)
 
     g_TitleScreen->currentHelpTextVm = &g_TitleScreen->helpTextVms[0];
     g_TitleScreen->state = TitleScreenState_Ready;
+#ifdef TH08_IOS
+    modern::LogStartup("title-load: ready");
+#endif
     g_Supervisor.HideLoadingVms();
     g_Supervisor.runningSubthreadHandle = NULL;
     g_Supervisor.subthreadCloseRequestActive = FALSE;
@@ -3969,6 +4008,11 @@ ZunResult TitleScreen::RegisterChain(int param)
 {
     TitleScreen *titleScreen = new TitleScreen();
     g_TitleScreen = titleScreen;
+#ifdef TH08_IOS
+    char pointerMessage[96];
+    snprintf(pointerMessage, sizeof(pointerMessage), "title: allocated pointer=%p", static_cast<void *>(titleScreen));
+    modern::LogStartup(pointerMessage);
+#endif
 
     memset(titleScreen, 0, sizeof(TitleScreen));
     g_GameManager.isInGameMenu = FALSE;

@@ -46,11 +46,19 @@ struct BulletSpawnDescriptor
     i32 spawnSound;
     i32 transformSound;
     i32 transformStartIndex;
+#ifdef TH08_IOS
+    IosPtr32<BulletTypeSprites> templateSprites;
+#else
     BulletTypeSprites *templateSprites;
+#endif
 
     BulletSpawnDescriptor();
 };
 C_ASSERT(sizeof(BulletSpawnDescriptor) == 0x210);
+#ifdef TH08_IOS
+typedef char IosBulletSpawnDescriptorSizeCheck[
+    (sizeof(BulletSpawnDescriptor) == 0x210) ? 1 : -1];
+#endif
 
 i32 IsBulletManagerAnmReleaseRequired();
 
@@ -67,6 +75,10 @@ struct BulletTypeSprites
     unknown_fields(0xd40, 4);
 };
 C_ASSERT(sizeof(BulletTypeSprites) == 0xd44);
+#ifdef TH08_IOS
+typedef char IosBulletTypeSpritesSizeCheck[
+    (sizeof(BulletTypeSprites) == 0xd44) ? 1 : -1];
+#endif
 
 struct BulletExState
 {
@@ -107,6 +119,9 @@ struct Laser
     u8 unknown59A[2];
 };
 C_ASSERT(sizeof(Laser) == 0x59c);
+#ifdef TH08_IOS
+typedef char IosLaserSizeCheck[(sizeof(Laser) == 0x59c) ? 1 : -1];
+#endif
 
 struct Bullet
 {
@@ -136,6 +151,9 @@ struct Bullet
     unknown_fields(0x10b4, 4);
 };
 C_ASSERT(sizeof(Bullet) == 0x10b8);
+#ifdef TH08_IOS
+typedef char IosBulletSizeCheck[(sizeof(Bullet) == 0x10b8) ? 1 : -1];
+#endif
 
 struct BulletManager
 {
@@ -145,11 +163,23 @@ struct BulletManager
     unknown_fields(0x6ba538, 8);
     ZunTimer timer;
     unknown_fields(0x6ba54c, 4);
+#ifdef TH08_IOS
+    IosPtr32<char> bulletAnmPath;
+#else
     char *bulletAnmPath;
+#endif
     unknown_fields(0x6ba554, 0x18);
+#ifdef TH08_IOS
+    IosPtr32<u8> bulletCursor;
+#else
     u8 *bulletCursor;
+#endif
     i32 unk6ba570;
+#ifdef TH08_IOS
+    IosPtr32<AnmLoaded> bulletAnm;
+#else
     AnmLoaded *bulletAnm;
+#endif
 
     BulletManager();
 
@@ -170,6 +200,21 @@ struct BulletManager
     static ZunResult DeletedCallback(BulletManager *bulletManager);
     static void CutChain();
 };
+
+#ifdef TH08_IOS
+typedef char IosBulletManagerSizeCheck[
+    (sizeof(BulletManager) == 0x6ba578) ? 1 : -1];
+#endif
+
+#if defined(TH08_MODERN_IOS)
+Bullet **BulletManagerDrawHeads(BulletManager *manager);
+Bullet *&BulletDrawNext(Bullet *bullet);
+#else
+#define BulletManagerDrawHeads(manager) \
+    reinterpret_cast<Bullet **>(reinterpret_cast<u8 *>(manager) + 0x6ba554)
+#define BulletDrawNext(bullet) \
+    (*reinterpret_cast<Bullet **>(reinterpret_cast<u8 *>(bullet) + 0xdc0))
+#endif
 
 DIFFABLE_EXTERN(BulletManager, g_BulletManager);
 

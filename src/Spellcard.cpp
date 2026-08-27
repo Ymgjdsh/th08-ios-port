@@ -418,7 +418,11 @@ Spellcard::Spellcard()
 }
 
 
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i32 &g_GuiFullPowerModeFrames;
+#else
 DIFFABLE_EXTERN(i32, g_GuiFullPowerModeFrames);
+#endif
 
 // FUNCTION: th08 0x4144d0
 #pragma var_order(difficulty, i)

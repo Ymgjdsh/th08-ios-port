@@ -168,10 +168,31 @@ restart_from_first_job:
     {
         if (current->callback != NULL)
         {
+#ifdef TH08_IOS
+            static unsigned calcLogCount;
+            if (calcLogCount < 1200)
+            {
+                char message[192];
+                snprintf(message, sizeof(message), "calc: elem=%p cb=%p arg=%p priority=%d count=%u",
+                         static_cast<void *>(current), reinterpret_cast<void *>(current->callback),
+                         current->arg, static_cast<int>(current->priority), calcLogCount++);
+                modern::LogStartup(message);
+            }
+#endif
         execute_again:
             g_Supervisor.LeaveCriticalSectionWrapper(0);
             result = current->callback(current->arg);
             g_Supervisor.EnterCriticalSectionWrapper(0);
+#ifdef TH08_IOS
+            if (calcLogCount < 1200)
+            {
+                char message[128];
+                snprintf(message, sizeof(message), "calc: result=%u elem=%p next=%p",
+                         static_cast<unsigned>(result), static_cast<void *>(current),
+                         static_cast<void *>(current->next));
+                modern::LogStartup(message);
+            }
+#endif
 
             switch (result)
             {
@@ -233,6 +254,18 @@ int Chain::RunDrawChain()
     {
         if (current->callback != NULL)
         {
+#ifdef TH08_IOS
+            static unsigned drawLogCount;
+            if (drawLogCount < 240)
+            {
+                char message[192];
+                snprintf(message, sizeof(message), "draw: elem=%p cb=%p arg=%p priority=%d heap=%u count=%u",
+                         static_cast<void *>(current), reinterpret_cast<void *>(current->callback), current->arg,
+                         static_cast<int>(current->priority), static_cast<unsigned>(current->isHeapAllocated),
+                         drawLogCount++);
+                modern::LogStartup(message);
+            }
+#endif
         execute_again:
             g_Supervisor.LeaveCriticalSectionWrapper(0);
             result = current->callback(current->arg);
@@ -243,6 +276,9 @@ int Chain::RunDrawChain()
             case CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB:
                 tmp1 = current;
                 current = current->next;
+#ifdef TH08_IOS
+                modern::LogStartup("draw: callback requested removal");
+#endif
                 CutImpl(tmp1);
 
                 updatedCount++;
@@ -930,8 +966,25 @@ LPBYTE FileSystem::TryDecryptFromTable(LPBYTE inData, LPINT unused, i32 size)
         }
 
         // 4 bytes are skipped to exclude the encryption signature
-        decryptedData = Decrypt(rawData + 4, size - 4, g_DecryptParams[i].xorValue, g_DecryptParams[i].xorValueInc,
-                                g_DecryptParams[i].chunkSize, g_DecryptParams[i].maxBytesToDecrypt);
+        const i32 decryptedSize = size - 4;
+        decryptedData = Decrypt(rawData + 4, decryptedSize, g_DecryptParams[i].xorValue,
+                                g_DecryptParams[i].xorValueInc, g_DecryptParams[i].chunkSize,
+                                g_DecryptParams[i].maxBytesToDecrypt);
+#ifdef TH08_IOS
+        // The encrypted four-byte signature is not part of the returned
+        // allocation. Keep the caller's byte count aligned with that buffer;
+        // SDL_image otherwise reads four bytes past its end.
+        if (decryptedData == rawData + 4)
+        {
+            modern::LogStartup("decrypt: allocation failed; preserving encrypted input");
+            return rawData;
+        }
+        if (unused != NULL)
+            *unused = decryptedSize;
+        char message[128];
+        snprintf(message, sizeof(message), "decrypt: input=%d output=%d", size, decryptedSize);
+        modern::LogStartup(message);
+#endif
         g_ZunMemory.Free(inData);
         return decryptedData;
     }
@@ -1054,7 +1107,17 @@ LPBYTE FileSystem::OpenFile(LPCSTR path, i32 *fileSize, BOOL isExternalResource)
             {
                 goto error;
             }
-            g_PbgArchive.ReadDecompressEntry(entryname, data);
+            if (g_PbgArchive.ReadDecompressEntry(entryname, data) == NULL)
+            {
+#ifdef TH08_IOS
+                char message[256];
+                snprintf(message, sizeof(message),
+                         "archive: failed to read %s from th08.dat", entryname);
+                modern::LogStartup(message);
+#endif
+                g_ZunMemory.Free(data);
+                goto error;
+            }
             data = TryDecryptFromTable(data, fileSize, size);
             goto done;
         }

@@ -472,7 +472,11 @@ ChainCallbackResult ScreenEffect::FUN_0045bf10(ScreenEffect *screenEffect)
         return CHAIN_CALLBACK_RESULT_CONTINUE;
     if (g_EclScriptedGlobalUpdateFreeze)
         return CHAIN_CALLBACK_RESULT_CONTINUE;
+#if defined(TH08_MODERN_IOS)
+    if (g_GameManager.unk3DB94 <= 1)
+#else
     if (*reinterpret_cast<i32 *>(0x164D2C8) <= 1)
+#endif
         return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
 
     screenEffect->timer++;

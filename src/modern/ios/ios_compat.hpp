@@ -5,6 +5,7 @@
 #endif
 
 #include <strings.h>
+#include <stdint.h>
 #include <windows.h>
 #include <mmsystem.h>
 #include <d3d8.h>
@@ -54,3 +55,44 @@
 
 typedef LPDIRECT3D8 PDIRECT3D8;
 typedef LPDIRECT3DDEVICE8 PDIRECT3DDEVICE8;
+
+// The retail data layouts store pointers in four-byte slots.  Keeping native
+// arm64 pointers in those slots shifts every following fixed-offset field.
+// IosPtr32 stores a process-local handle while preserving the original size.
+DWORD TH08IosStorePointer(uintptr_t pointerValue);
+uintptr_t TH08IosLoadPointer(DWORD handle);
+void TH08IosForgetPointer(uintptr_t pointerValue);
+
+template <typename T> struct IosPtr32
+{
+    DWORD handle;
+
+    IosPtr32 &operator=(T *pointer)
+    {
+        this->handle = TH08IosStorePointer(reinterpret_cast<uintptr_t>(pointer));
+        return *this;
+    }
+
+    T *Get() const
+    {
+        return reinterpret_cast<T *>(TH08IosLoadPointer(this->handle));
+    }
+
+    operator T *() const
+    {
+        return this->Get();
+    }
+
+    T *operator->() const
+    {
+        return this->Get();
+    }
+
+    void operator()() const
+    {
+        T *function = this->Get();
+        (*function)();
+    }
+};
+
+typedef char TH08IosPtr32SizeCheck[(sizeof(IosPtr32<void>) == 4) ? 1 : -1];

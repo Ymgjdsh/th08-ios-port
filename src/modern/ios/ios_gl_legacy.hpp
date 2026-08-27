@@ -140,8 +140,13 @@ typedef double GLclampd;
 #define GL_DEPTH_COMPONENT24 0x81A6
 #endif
 
-inline void glBegin(GLenum) {}
-inline void glEnd() {}
+// The original renderer uses the OpenGL 1.x immediate-mode API. OpenGL ES 2
+// does not expose that API, so these functions are implemented by the small
+// GLES2 compatibility layer in ios_gl_legacy.cpp. Keeping the old call sites
+// unchanged is important because the D3D8 shim emits already-transformed
+// screen-space vertices.
+void glBegin(GLenum mode);
+void glEnd();
 inline void glPushAttrib(GLbitfield) {}
 inline void glPopAttrib() {}
 inline void glPushMatrix() {}
@@ -149,10 +154,10 @@ inline void glPopMatrix() {}
 inline void glLoadIdentity() {}
 inline void glMatrixMode(GLenum) {}
 inline void glOrtho(GLdouble, GLdouble, GLdouble, GLdouble, GLdouble, GLdouble) {}
-inline void glColor4ub(GLubyte, GLubyte, GLubyte, GLubyte) {}
-inline void glTexCoord2f(GLfloat, GLfloat) {}
-inline void glVertex2f(GLfloat, GLfloat) {}
-inline void glVertex3f(GLfloat, GLfloat, GLfloat) {}
+void glColor4ub(GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha);
+void glTexCoord2f(GLfloat u, GLfloat v);
+void glVertex2f(GLfloat x, GLfloat y);
+void glVertex3f(GLfloat x, GLfloat y, GLfloat z);
 inline void glDrawBuffer(GLenum) {}
 inline void glReadBuffer(GLenum) {}
 inline void glAlphaFunc(GLenum, GLclampf) {}

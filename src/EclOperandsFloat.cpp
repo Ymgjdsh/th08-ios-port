@@ -29,7 +29,12 @@ struct TargetVector3
 // __forceinline helpers become out-of-line COMDAT calls under the probe
 // profile, whereas both target bodies access the private layouts directly.
 // Keep the overlay private while retaining that direct expression shape.
+#ifdef TH08_IOS
+#define ECL_CONTEXT(owner) \
+    (reinterpret_cast<u8 *>(IosEclCurrentContext(owner)))
+#else
 #define ECL_CONTEXT(owner) (*(u8 **)((owner)->bytes + 0x2CA0))
+#endif
 #define CONTEXT_INT(owner, offset) (*(i32 *)(ECL_CONTEXT(owner) + (offset)))
 #define CONTEXT_FLOAT(owner, offset) (*(f32 *)(ECL_CONTEXT(owner) + (offset)))
 #define ENEMY_INT(owner, offset) (*(i32 *)((owner)->bytes + (offset)))
@@ -150,7 +155,7 @@ f32 EnemyOverlay::ResolveFloat(f32 operand)
         return (f32)(ENEMY_HELPERS(this)->HasParentChain()
                          ? ENEMY_HELPERS(this)->CountParentChain()
                          : ENEMY_HELPERS(this)->HasAttachedEnemy()
-                               ? ((TargetEnemyHelpersOverlay *)*(void **)(bytes + 0x2DA4))->CountParentChain()
+                               ? reinterpret_cast<TargetEnemyHelpersOverlay *>(EnemyOwner(this))->CountParentChain()
                                : 0);
 
     case 0x2742:

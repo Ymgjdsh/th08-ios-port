@@ -13,6 +13,13 @@
 namespace th08
 {
 
+#ifdef TH08_IOS
+#define TH08_EX_CURRENT_CONTEXT(enemy) IosEclCurrentContext(enemy)
+#else
+#define TH08_EX_CURRENT_CONTEXT(enemy) \
+    (*reinterpret_cast<EnemyEclContext **>((enemy)->bytes + 0x2ca0))
+#endif
+
 struct EclExInstruction
 {
     i32 time;
@@ -30,8 +37,11 @@ void __fastcall ReisenFreezeBullets(EclOperands::EnemyOverlay *enemy, EclExInstr
 void __fastcall MokouResurrection(EclOperands::EnemyOverlay *enemy, EclExInstruction *instruction);
 }
 
+#ifdef TH08_MODERN_WEB
+extern AnmLoaded *&g_AsciiManagerDemoAnm0577EB4;
+#else
 DIFFABLE_EXTERN(AnmLoaded *, g_AsciiManagerDemoAnm0577EB4);
-extern i32 g_EclCallbackPublishedEnemyField56;
+#endif
 
 void __fastcall FUN_004235a0();
 
@@ -39,9 +49,9 @@ void __fastcall FUN_004235a0();
 void __fastcall FUN_00423390(EclOperands::EnemyOverlay *enemy, EclExInstruction *instruction)
 {
     g_EclCallbackPublishedEnemyField24 = *reinterpret_cast<i32 *>(
-        reinterpret_cast<u8 *>(*reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18);
+        reinterpret_cast<u8 *>(TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18);
     g_EclCallbackPublishedEnemyField56 = *reinterpret_cast<i32 *>(
-        reinterpret_cast<u8 *>(*reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38);
+        reinterpret_cast<u8 *>(TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38);
 }
 
 // FUNCTION: th08 0x4233d0
@@ -66,11 +76,11 @@ void __fastcall FUN_00423400(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 
     if (*reinterpret_cast<f32 *>(enemy->bytes + 0x2d50) <
         *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-            *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x54))
+            TH08_EX_CURRENT_CONTEXT(enemy)) + 0x54))
     {
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d50) +=
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x50);
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x50);
         changed = 1;
     }
 
@@ -469,20 +479,20 @@ void __fastcall FUN_004244f0(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     EclOperands::EnemyOverlay *cursor;
 
     groupId = *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x60);
-    cursor = *reinterpret_cast<EclOperands::EnemyOverlay **>(enemy->bytes + 0x2da4);
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x60);
+    cursor = EclOperands::EnemyOwner(enemy);
     if (cursor == NULL)
         return;
 
     count = 0;
-    while (*reinterpret_cast<EclOperands::EnemyOverlay **>(cursor->bytes + 0x8) != NULL)
+    while (EclOperands::EnemyNext(cursor) != NULL)
     {
-        cursor = *reinterpret_cast<EclOperands::EnemyOverlay **>(cursor->bytes + 0x8);
+        cursor = EclOperands::EnemyNext(cursor);
         if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(cursor->bytes + 0x2ca0)) + 0x60) == groupId)
+                TH08_EX_CURRENT_CONTEXT(cursor)) + 0x60) == groupId)
         {
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(cursor->bytes + 0x2ca0)) + 0x5c) = count;
+                TH08_EX_CURRENT_CONTEXT(cursor)) + 0x5c) = count;
             if (count == 0)
                 firstChild = cursor;
             ++count;
@@ -490,33 +500,33 @@ void __fastcall FUN_004244f0(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     }
 
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x2c) = 0;
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x2c) = 0;
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-            *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x30) != count)
+            TH08_EX_CURRENT_CONTEXT(enemy)) + 0x30) != count)
     {
         if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x30) != 0)
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x30) != 0)
         {
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x2c) = 1;
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x2c) = 1;
         }
         *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-            *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x30) = count;
+            TH08_EX_CURRENT_CONTEXT(enemy)) + 0x30) = count;
     }
 
     groupId = *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x5c);
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x5c);
     ++*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x34);
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x34);
     if (groupId != 0)
     {
         targetAngle = AddNormalizeAngle(
             *reinterpret_cast<f32 *>(firstChild->bytes + 0x2d9c),
             static_cast<f32>(groupId) * 6.2831854820251465f / static_cast<f32>(count));
         if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(firstChild->bytes + 0x2ca0)) + 0x34) !=
+                TH08_EX_CURRENT_CONTEXT(firstChild)) + 0x34) !=
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x34))
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x34))
         {
             targetAngle = AddNormalizeAngle(
                 targetAngle, *reinterpret_cast<f32 *>(firstChild->bytes + 0x2da0));
@@ -559,10 +569,10 @@ void __fastcall FUN_00424730(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     Float3 origin(
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d88) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38),
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d8c) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x3c),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x3c),
         0.0f);
     Float3 outerSize(590.0f, 160.0f, 0.0f);
     Float3 innerSize(590.0f, 128.0f, 0.0f);
@@ -586,10 +596,10 @@ void __fastcall FUN_00424820(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     Float3 origin(
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d34) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38),
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d38) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x3c),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x3c),
         0.0f);
     Float3 outerSize(590.0f, 240.0f, 0.0f);
     Float3 innerSize(590.0f, 192.0f, 0.0f);
@@ -612,10 +622,10 @@ void __fastcall FUN_00424910(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     Float3 origin(
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d88) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38),
         *reinterpret_cast<f32 *>(enemy->bytes + 0x2d8c) -
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x3c),
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x3c),
         0.0f);
     Float3 outerSize(590.0f, 288.0f, 0.0f);
     Float3 innerSize(590.0f, 224.0f, 0.0f);
@@ -645,7 +655,7 @@ void __fastcall EclExIns::ReisenFreezeBullets(EclOperands::EnemyOverlay *enemy, 
             continue;
         if ((*reinterpret_cast<u32 *>(bullet + 0xdb0) &
              *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(
-                 *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18)) != 0)
+                 TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18)) != 0)
         {
         if (*reinterpret_cast<i16 *>(bullet + 0x1fc) == 1)
         {
@@ -658,10 +668,10 @@ void __fastcall EclExIns::ReisenFreezeBullets(EclOperands::EnemyOverlay *enemy, 
             *reinterpret_cast<u8 *>(bullet + 0x10b4) = 1;
             reinterpret_cast<Float3 *>(bullet + 0xd50)->FromAngleMagnitude(
                 *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                    *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38),
+                    TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38),
                 g_EclGameTimeScale *
                     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x3c));
+                        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x3c));
         }
         else
         {
@@ -679,12 +689,12 @@ void __fastcall EclExIns::ReisenFreezeBullets(EclOperands::EnemyOverlay *enemy, 
     }
 
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-            *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x1c) == 0)
+            TH08_EX_CURRENT_CONTEXT(enemy)) + 0x1c) == 0)
     {
         setCursor = enemy;
-        while (*reinterpret_cast<EclOperands::EnemyOverlay **>(setCursor->bytes + 0x8) != NULL)
+        while (EclOperands::EnemyNext(setCursor) != NULL)
         {
-            setCursor = *reinterpret_cast<EclOperands::EnemyOverlay **>(setCursor->bytes + 0x8);
+            setCursor = EclOperands::EnemyNext(setCursor);
             *reinterpret_cast<u32 *>(setCursor->bytes + 0x3328) |= 0x80U;
         }
         g_Background.EclExBarrierState().vm0.SetInterrupt(2);
@@ -693,9 +703,9 @@ void __fastcall EclExIns::ReisenFreezeBullets(EclOperands::EnemyOverlay *enemy, 
     else
     {
         clearCursor = enemy;
-        while (*reinterpret_cast<EclOperands::EnemyOverlay **>(clearCursor->bytes + 0x8) != NULL)
+        while (EclOperands::EnemyNext(clearCursor) != NULL)
         {
-            clearCursor = *reinterpret_cast<EclOperands::EnemyOverlay **>(clearCursor->bytes + 0x8);
+            clearCursor = EclOperands::EnemyNext(clearCursor);
             *reinterpret_cast<u32 *>(clearCursor->bytes + 0x3328) &= ~0x80U;
         }
         g_Background.EclExBarrierState().vm0.SetInterrupt(1);
@@ -716,7 +726,7 @@ void __fastcall FUN_00424c40(EclOperands::EnemyOverlay *enemy, EclExInstruction 
             continue;
         if ((*reinterpret_cast<u32 *>(bullet + 0xdb0) &
              *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(
-                 *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18)) != 0)
+                 TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18)) != 0)
         {
         if (*reinterpret_cast<i16 *>(bullet + 0x1fc) == 1)
         {
@@ -732,7 +742,7 @@ void __fastcall FUN_00424c40(EclOperands::EnemyOverlay *enemy, EclExInstruction 
                 *reinterpret_cast<f32 *>(bullet + 0xd74),
                 g_EclGameTimeScale *
                     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x3c));
+                        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x3c));
         }
         else if (*reinterpret_cast<i16 *>(bullet + 0x1fc) == 0)
         {
@@ -786,25 +796,25 @@ void __fastcall FUN_00424e50(EclOperands::EnemyOverlay *enemy, EclExInstruction 
             continue;
         if ((*reinterpret_cast<u32 *>(bullet + 0xdb0) & 0x100000U) != 0)
         {
-        child = *reinterpret_cast<EclOperands::EnemyOverlay **>(enemy->bytes + 0x8);
+        child = EclOperands::EnemyNext(enemy);
         while (child != NULL)
         {
             if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                    *reinterpret_cast<EnemyEclContext **>(child->bytes + 0x2ca0)) + 0x60) == 0)
+                    TH08_EX_CURRENT_CONTEXT(child)) + 0x60) == 0)
             {
                 delta = *reinterpret_cast<Float3 *>(bullet + 0xd44) -
                         *reinterpret_cast<Float3 *>(child->bytes + 0x2d34);
                 if (D3DXVec3LengthSq(reinterpret_cast<D3DXVECTOR3 *>(&delta)) < 4096.0f)
                 {
                     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                        *reinterpret_cast<EnemyEclContext **>(child->bytes + 0x2ca0)) + 0x60) = 60;
+                        TH08_EX_CURRENT_CONTEXT(child)) + 0x60) = 60;
                     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                        *reinterpret_cast<EnemyEclContext **>(child->bytes + 0x2ca0)) + 0x34) =
+                        TH08_EX_CURRENT_CONTEXT(child)) + 0x34) =
                         *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                            *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x34);
+                            TH08_EX_CURRENT_CONTEXT(enemy)) + 0x34);
                 }
             }
-            child = *reinterpret_cast<EclOperands::EnemyOverlay **>(child->bytes + 0x8);
+            child = EclOperands::EnemyNext(child);
         }
         }
     }
@@ -832,7 +842,7 @@ void __fastcall FUN_00424f90(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 void __fastcall FUN_00424fc0(EclOperands::EnemyOverlay *enemy, EclExInstruction *instruction)
 {
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18) =
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18) =
         static_cast<i32>(g_GameManager.currentSpellCardNumber);
 }
 
@@ -854,7 +864,7 @@ void __fastcall FUN_00425020(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 void __fastcall FUN_00425040(EclOperands::EnemyOverlay *enemy, EclExInstruction *instruction)
 {
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-        *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18) =
+        TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18) =
         g_GameManager.globals->spellcardsCaptured;
 }
 
@@ -891,14 +901,14 @@ void __fastcall FUN_004250d0(EclOperands::EnemyOverlay *enemy, EclExInstruction 
         if ((*reinterpret_cast<u32 *>(bullet + 0xdb0) & 0x100000U) != 0)
         {
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(
-                *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x38) =
+                TH08_EX_CURRENT_CONTEXT(enemy)) + 0x38) =
                 *reinterpret_cast<f32 *>(bullet + 0xd74);
             g_EnemyManager.SpawnEnemy2(
                 *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                    *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x60),
+                    TH08_EX_CURRENT_CONTEXT(enemy)) + 0x60),
                 reinterpret_cast<D3DXVECTOR3 *>(bullet + 0xd44), 800, -2, 10,
                 reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(
-                    *reinterpret_cast<EnemyEclContext **>(enemy->bytes + 0x2ca0)) + 0x18));
+                    TH08_EX_CURRENT_CONTEXT(enemy)) + 0x18));
             *reinterpret_cast<u32 *>(bullet + 0xdb0) &= ~0x100000U;
         }
     }
@@ -971,5 +981,7 @@ void __fastcall FUN_00425390(EclOperands::EnemyOverlay *enemy, EclExInstruction 
     else
         g_ItemManager.SpawnItem(reinterpret_cast<Float3 *>(enemy->bytes + 0x2d34), static_cast<ItemType>(5), 0);
 }
+
+#undef TH08_EX_CURRENT_CONTEXT
 
 } // namespace th08

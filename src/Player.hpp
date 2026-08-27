@@ -68,8 +68,13 @@ struct PlayerOptionState
     f32 orbitAngle;
     f32 facingAngle;
     ZunTimer timer;
+#ifdef TH08_IOS
+    IosPtr32<void> updateCallback;
+    IosPtr32<void> renderCallback;
+#else
     void *updateCallback;
     void *renderCallback;
+#endif
 
     PlayerOptionState();
 };
@@ -87,12 +92,30 @@ struct PlayerBombWorkItem
     Float3 position;
     Float3 velocity;
     AnmVm vms[8];
+#ifdef TH08_IOS
+    IosPtr32<AnmVm> effect;
+#else
     AnmVm *effect;
+#endif
     ZunTimer timer;
+#ifdef TH08_IOS
+    IosPtr32<PlayerUnkStruct0x40> damageSlot;
+    IosPtr32<PlayerUnkStruct0x40> cancelSlot;
+#else
     PlayerUnkStruct0x40 *damageSlot;
     PlayerUnkStruct0x40 *cancelSlot;
+#endif
 
     PlayerBombWorkItem();
+
+    AnmVm *GetEffect() const
+    {
+#ifdef TH08_IOS
+        return effect.Get();
+#else
+        return effect;
+#endif
+    }
 };
 C_ASSERT(sizeof(PlayerBombWorkItem) == 0x16F0);
 
@@ -138,8 +161,13 @@ struct PlayerShot
     unknown_fields(0x466, 8);
     i16 animationIndex;
     unknown_fields(0x470, 0xC);
+#ifdef TH08_IOS
+    IosPtr32<void> collisionCallback;
+    IosPtr32<void> shtEntry;
+#else
     PlayerShotCollisionCallback collisionCallback;
     void *shtEntry;
+#endif
 
     PlayerShot();
 };
@@ -156,7 +184,11 @@ struct Player
     i8 stateFlag;
     u8 isYoukai;
     unknown_fields(0x6, 0x6);
+#ifdef TH08_IOS
+    IosPtr32<AnmLoaded> anmFile;
+#else
     AnmLoaded *anmFile;
+#endif
     AnmVm mainVm;
     Float3 position;
     Float3 position2;
@@ -181,8 +213,13 @@ struct Player
     EclTimeline timelines[3];
     unknown_fields(0xE2A68, 8);
     i32 playerStateSlotCooldown;
+#ifdef TH08_IOS
+    IosPtr32<PlayerRawShtFile> primaryShtFile;
+    IosPtr32<PlayerRawShtFile> secondaryShtFile;
+#else
     PlayerRawShtFile *primaryShtFile;
     PlayerRawShtFile *secondaryShtFile;
+#endif
     i32 itemTimeOrbMode;
     unknown_fields(0xE2A80, 0x10);
     i32 bulletCancelItemType;
@@ -191,7 +228,11 @@ struct Player
     unknown_fields(0xE2A9C, 8);
     Float3 tailPosition0;
     Float3 tailPosition1;
+#ifdef TH08_IOS
+    IosPtr32<Enemy> optionHomingTarget;
+#else
     Enemy *optionHomingTarget;
+#endif
     i32 enemyTrackedPositionValid;
     ZunTimer timerE2AC4;
     ZunTimer timerE2AD0;
@@ -200,12 +241,55 @@ struct Player
     ZunTimer timer;
     ZunTimer timerE2B00;
     unknown_fields(0xE2B0C, 4);
+#ifdef TH08_IOS
+    IosPtr32<ChainElem> calcChain;
+    IosPtr32<ChainElem> drawChainHighPrio;
+    IosPtr32<ChainElem> drawChainLowPrio;
+    IosPtr32<PlayerStateEffect> stateEffect;
+#else
     ChainElem *calcChain;
     ChainElem *drawChainHighPrio;
     ChainElem *drawChainLowPrio;
     PlayerStateEffect *stateEffect;
+#endif
     unknown_fields(0xE2B20, 0xC);
     i32 damageAccumulatorThreshold;
+
+    AnmLoaded *GetAnmFile() const
+    {
+#ifdef TH08_IOS
+        return anmFile.Get();
+#else
+        return anmFile;
+#endif
+    }
+
+    PlayerRawShtFile *GetPrimaryShtFile() const
+    {
+#ifdef TH08_IOS
+        return primaryShtFile.Get();
+#else
+        return primaryShtFile;
+#endif
+    }
+
+    PlayerRawShtFile *GetSecondaryShtFile() const
+    {
+#ifdef TH08_IOS
+        return secondaryShtFile.Get();
+#else
+        return secondaryShtFile;
+#endif
+    }
+
+    Enemy *GetOptionHomingTarget() const
+    {
+#ifdef TH08_IOS
+        return optionHomingTarget.Get();
+#else
+        return optionHomingTarget;
+#endif
+    }
 
     static ZunResult RegisterChain(u32 playerType);
     static ChainCallbackResult OnUpdate(Player *player);
@@ -277,6 +361,18 @@ C_ASSERT(offsetof(Player, enemyTrackedPositionValid) == 0xE2AC0);
 C_ASSERT(offsetof(Player, timer) == 0xE2AF4);
 C_ASSERT(offsetof(Player, calcChain) == 0xE2B10);
 C_ASSERT(offsetof(Player, damageAccumulatorThreshold) == 0xE2B2C);
+
+#ifdef TH08_IOS
+typedef char IosPlayerOptionStateSizeCheck[(sizeof(PlayerOptionState) == 0x2F4) ? 1 : -1];
+typedef char IosPlayerBombWorkItemSizeCheck[(sizeof(PlayerBombWorkItem) == 0x16F0) ? 1 : -1];
+typedef char IosPlayerShotSizeCheck[(sizeof(PlayerShot) == 0x484) ? 1 : -1];
+typedef char IosPlayerMainVmOffsetCheck[(offsetof(Player, mainVm) == 0x10) ? 1 : -1];
+typedef char IosPlayerPositionOffsetCheck[(offsetof(Player, position) == 0x2B4) ? 1 : -1];
+typedef char IosPlayerBombOffsetCheck[(offsetof(Player, bombState) == 0xFDC) ? 1 : -1];
+typedef char IosPlayerShotArrayOffsetCheck[(offsetof(Player, shots) == 0xBE838) ? 1 : -1];
+typedef char IosPlayerTailOffsetCheck[(offsetof(Player, damageAccumulatorThreshold) == 0xE2B2C) ? 1 : -1];
+typedef char IosPlayerSizeCheck[(sizeof(Player) == 0xE2B30) ? 1 : -1];
+#endif
 
 DIFFABLE_EXTERN(Player, g_Player);
 

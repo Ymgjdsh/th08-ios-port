@@ -15,8 +15,14 @@
     <dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconName</key><string>AppIcon</string><key>CFBundleIconFiles</key><array><string>AppIcon76x76</string></array></dict></dict>
     <key>CFBundleShortVersionString</key><string>@TH08_IOS_VERSION@</string>
     <key>CFBundleVersion</key><string>@TH08_IOS_BUILD@</string>
+    <key>MinimumOSVersion</key><string>@CMAKE_OSX_DEPLOYMENT_TARGET@</string>
     <key>LSRequiresIPhoneOS</key><true/>
+    <key>UIDeviceFamily</key>
+    <array><integer>1</integer><integer>2</integer></array>
     <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
+    <key>UIRequiresFullScreen</key><true/>
+    <key>UIStatusBarHidden</key><true/>
+    <key>UIViewControllerBasedStatusBarAppearance</key><false/>
     <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
     <key>UISupportedInterfaceOrientations</key>
     <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string></array>

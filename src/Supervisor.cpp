@@ -17,6 +17,9 @@
 #include "TitleScreen.hpp"
 #include "i18n.hpp"
 #include "utils.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 #include <winbase.h>
 #include <d3dx8.h>
 #include <direct.h>
@@ -25,6 +28,17 @@
 
 namespace th08
 {
+#ifdef TH08_IOS
+namespace
+{
+u8 g_IosMusicPlaybackStarted;
+
+void MarkMusicPlaybackStarted()
+{
+    g_IosMusicPlaybackStarted = 1;
+}
+} // namespace
+#endif
 #ifndef TH08_MODERN_PORT
 inline Float3::Float3(float x, float y, float z)
 {
@@ -565,11 +579,13 @@ int Supervisor::AddedCallback(Supervisor *s)
 
     g_Supervisor.unk178 = 1;
 
+#ifndef TH08_IOS
     if (!g_Supervisor.disableVsync && Supervisor::CheckFps() != ZUN_SUCCESS)
     {
         g_AnmManager->ReleaseSurface(0);
         return -2;
     }
+#endif
 
     g_AnmManager->SetupVertexBuffer();
     TextHelper::CreateTextBuffer();
@@ -808,6 +824,20 @@ void Supervisor::StartupThread(Supervisor *s)
 
     if (g_Supervisor.flags.unk8 && ((scoreFile = FileSystem::OpenFile("score.dat", &scoreFileSize, TRUE)) != NULL))
     {
+#ifdef TH08_IOS
+        // The application bundle is read-only.  The original backup routine
+        // changes into ./backup and then blindly changes to ../ even when the
+        // first chdir fails.  On iOS that moved the process out of the bundle,
+        // so every later relative open of th08.dat failed and title loading
+        // parsed uninitialized memory.  FileSystem redirects this path to
+        // Documents and creates its parent directory without changing cwd.
+        time(&currentTime);
+        currentLocalTime = localtime(&currentTime);
+        strftime(fileNameBuffer, sizeof(fileNameBuffer), "backup/score_1.%y%m%d.bak", currentLocalTime);
+        FileSystem::WriteDataToFile(fileNameBuffer, scoreFile, scoreFileSize);
+        g_ZunMemory.Free(scoreFile);
+        modern::LogStartup("ios-files: score backup persisted without changing cwd");
+#else
         scoreBackupFileName = "score_4.??????.bak";
 
         i = 0;
@@ -861,6 +891,7 @@ void Supervisor::StartupThread(Supervisor *s)
         FileSystem::WriteDataToFile(fileNameBuffer, scoreFile, scoreFileSize);
         free(scoreFile);
         _chdir("../");
+#endif
     }
 
     if (g_Supervisor.flags.unk6)
@@ -1023,12 +1054,22 @@ ZunResult Supervisor::DeletedCallback(Supervisor *s)
 
     if (g_GameManager.globals != NULL)
     {
+#ifdef TH08_IOS
+        delete g_GameManager.GetGlobals();
+        g_GameManager.globals = NULL;
+#else
         ZUN_DELETE2(g_GameManager.globals);
+#endif
     }
 
     if (g_GameManager.cfg != NULL)
     {
+#ifdef TH08_IOS
+        delete g_GameManager.GetCfg();
+        g_GameManager.cfg = NULL;
+#else
         ZUN_DELETE2(g_GameManager.cfg);
+#endif
     }
 
     g_PbgArchive.Release();
@@ -1371,7 +1412,13 @@ ZunResult Supervisor::LoadConfig(char *configFile)
     i32 fileSize;
 
     memset(&g_Supervisor.cfg, 0, sizeof(GameConfiguration));
+#ifdef TH08_IOS
+    modern::LogStartup("config: opening th08.cfg");
+#endif
     configFileBuffer = FileSystem::OpenFile(configFile, &fileSize, true);
+#ifdef TH08_IOS
+    modern::LogStartup(configFileBuffer != NULL ? "config: existing file opened" : "config: using defaults");
+#endif
     if (configFileBuffer == NULL)
     {
         g_GameErrorContext.Log(TH_ERR_CONFIG_NOT_FOUND);
@@ -1382,12 +1429,18 @@ ZunResult Supervisor::LoadConfig(char *configFile)
         g_Supervisor.cfg.version = GAME_VERSION;
         g_Supervisor.cfg.padXAxis = 600;
         g_Supervisor.cfg.padYAxis = 600;
+#ifdef TH08_IOS
+        modern::LogStartup("config: opening thbgm.dat header");
+#endif
         bgmHandle = CreateFileA("./thbgm.dat", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING,
                                 FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
         if (bgmHandle != INVALID_HANDLE_VALUE)
         {
             ReadFile(bgmHandle, bgmBuffer, 16, &bytesRead, NULL);
             CloseHandle(bgmHandle);
+#ifdef TH08_IOS
+            modern::LogStartup("config: thbgm.dat header read");
+#endif
             if (bgmBuffer[0] != ZWAV_MAGIC || bgmBuffer[1] != 1 || bgmBuffer[2] != 0x800)
             {
                 g_GameErrorContext.Fatal(TH_ERR_BGM_VERSION_MISMATCH);
@@ -1410,6 +1463,9 @@ ZunResult Supervisor::LoadConfig(char *configFile)
         g_Supervisor.cfg.shotSlow = 0;
         g_Supervisor.cfg.musicVolume = 100;
         g_Supervisor.cfg.sfxVolume = 80;
+#ifdef TH08_IOS
+        modern::LogStartup("config: defaults ready");
+#endif
     }
     else
     {
@@ -1511,11 +1567,18 @@ ZunResult Supervisor::LoadConfig(char *configFile)
 
     if (FileSystem::WriteDataToFile(configFile, &g_Supervisor.cfg, sizeof(GameConfiguration)) != 0)
     {
+#ifdef TH08_IOS
+        modern::LogStartup("config: persistence failed");
+#endif
         g_GameErrorContext.Fatal(TH_ERR_FILE_CANNOT_BE_EXPORTED, configFile);
         g_GameErrorContext.Fatal(TH_ERR_FOLDER_HAS_WRITE_PROTECT_OR_DISK_FULL);
         return ZUN_ERROR;
     }
 
+#ifdef TH08_IOS
+    modern::LogStartup("config: persisted to user storage");
+    modern::LogStartup("config: complete");
+#endif
     return ZUN_SUCCESS;
 }
 
@@ -1575,7 +1638,11 @@ ZunBool Supervisor::PlayMusic(int param_1, char *param_2)
         if (((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 3) & 1) == 0 &&
             ((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 1) & 1) == 0)
         {
+#ifdef TH08_IOS
+            MarkMusicPlaybackStarted();
+#else
             param_2[0x164CF14] = 1;
+#endif
         }
         return FALSE;
     }
@@ -1589,7 +1656,11 @@ ZunBool Supervisor::PlayMusic(int param_1, char *param_2)
         if (((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 3) & 1) == 0 &&
             ((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 1) & 1) == 0)
         {
+#ifdef TH08_IOS
+            MarkMusicPlaybackStarted();
+#else
             param_2[0x164CF14] = 1;
+#endif
         }
     }
 
@@ -1615,7 +1686,11 @@ ZunResult Supervisor::PlayAudio(char *path, int param_2)
         if (((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 3) & 1) == 0 &&
             ((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 1) & 1) == 0)
         {
+#ifdef TH08_IOS
+            MarkMusicPlaybackStarted();
+#else
             ((char *)param_2)[0x164CF14] = 1;
+#endif
         }
     }
     else if (g_Supervisor.cfg.musicMode == WAV)
@@ -1631,7 +1706,11 @@ ZunResult Supervisor::PlayAudio(char *path, int param_2)
         if (((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 3) & 1) == 0 &&
             ((*(u32 *)((u8 *)&g_GameManager + 0x3DBAC) >> 1) & 1) == 0)
         {
+#ifdef TH08_IOS
+            MarkMusicPlaybackStarted();
+#else
             ((char *)param_2)[0x164CF14] = 1;
+#endif
         }
     }
     else

@@ -11,6 +11,8 @@
 #include <windows.h>
 #include <SDL.h>
 #include "ios_touch.hpp"
+#include "Gui.hpp"
+#include "Spellcard.hpp"
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPTSTR, int);
 
@@ -218,9 +220,9 @@ void CopyTargetString(uintptr_t address, const char *value)
 void InitializeTargetData()
 {
 #ifdef TH08_IOS
-    // These tables still live at retail 32-bit addresses in the desktop
-    // reconstruction. iOS uses symbolic storage; leave them untouched until
-    // the portable-global migration supplies real owners.
+    g_LastSpellCount = 43;
+    InitializeIosGuiTables();
+    WriteDiagnosticLine("runtime-data: portable effect/gui/music tables ready");
     return;
 #else
     static const ModernEffectTemplate effectTemplates[66] = {
@@ -420,6 +422,21 @@ bool ConfigureDataDirectory()
 void InstallCrashReporter()
 {
     InitializeTargetData();
+#ifdef TH08_IOS
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+    WriteDiagnosticLine("crash-reporter: signal handlers disabled for sanitizer build");
+    return;
+#endif
+#endif
+    const char *disableCrashHandler = getenv("TH08_DISABLE_CRASH_HANDLER");
+    if (disableCrashHandler != NULL && disableCrashHandler[0] != '\0' &&
+        disableCrashHandler[0] != '0')
+    {
+        WriteDiagnosticLine("crash-reporter: signal handlers disabled for sanitizer");
+        return;
+    }
+#endif
     InstallSignalHandler(SIGSEGV);
     InstallSignalHandler(SIGABRT);
     InstallSignalHandler(SIGFPE);
@@ -458,12 +475,8 @@ void SetArguments(int argc, char **argv)
 } // namespace modern
 } // namespace th08
 
-// SDL's public header maps `main` to `SDL_main` unless the application opts
-// out.  This target owns the UIKit/SDL bootstrap itself, so the iOS linker
-// must see the real C entry point.
-#ifdef main
-#undef main
-#endif
+// SDL maps this entry point to SDL_main on iOS. SDL2main owns the real process
+// entry point and starts UIApplication before invoking the game.
 int main(int argc, char **argv)
 {
     th08::modern::SetArguments(argc, argv);

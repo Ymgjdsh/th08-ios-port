@@ -18,6 +18,44 @@ void __fastcall FUN_00428310(AnmVm *effect, D3DXVECTOR3 *base);
 i32 __fastcall FUN_00428720(Effect *effect);
 i32 __fastcall FUN_00427450(Effect *effect);
 
+#ifdef TH08_IOS
+i32 __fastcall EffectRandomSplashInit(AnmVm *effect);
+i32 __fastcall EffectRandomSplashUpdate(AnmVm *effect);
+i32 __fastcall EffectRandomSplashBigInit(AnmVm *effect);
+i32 __fastcall EffectOrbitInit(AnmVm *effect);
+i32 __fastcall EffectOrbitUpdate(AnmVm *effect);
+i32 __fastcall FUN_0040e040(AnmVm *effect);
+i32 __fastcall FUN_0040e120(AnmVm *effect);
+i32 __fastcall FUN_0040e200(AnmVm *effect);
+i32 __fastcall FUN_0040e2d0(AnmVm *effect);
+i32 __fastcall FUN_00410bb0(AnmVm *effect);
+i32 __fastcall FUN_004114e0(AnmVm *effect);
+i32 __fastcall FUN_00411720(AnmVm *effect);
+i32 __fastcall FUN_00411a80(AnmVm *effect);
+i32 __fastcall FUN_00413070(AnmVm *effect);
+i32 __fastcall FUN_00426280(Effect *effect);
+i32 __fastcall FUN_004264f0(Effect *effect);
+i32 __fastcall FUN_00426720(Effect *effect);
+i32 __fastcall FUN_00426990(Effect *effect);
+i32 __fastcall FUN_00426b20(Effect *effect);
+i32 __fastcall FUN_00426bb0(Effect *effect);
+i32 __fastcall FUN_00426c40(Effect *effect);
+i32 __fastcall FUN_00426c90(Effect *effect);
+i32 __fastcall FUN_00426d70(Effect *effect);
+i32 __fastcall FUN_00426e70(Effect *effect);
+i32 __fastcall FUN_004270c0(Effect *effect);
+i32 __fastcall FUN_004271a0(Effect *effect);
+i32 __fastcall FUN_00427250(Effect *effect);
+i32 __fastcall FUN_00427260(Effect *effect);
+i32 __fastcall FUN_004272e0(Effect *effect);
+i32 __fastcall FUN_00427970(Effect *effect);
+i32 __fastcall FUN_00427990(Effect *effect);
+i32 __fastcall FUN_004279d0(Effect *effect);
+i32 __fastcall FUN_00427a60(Effect *effect);
+i32 __fastcall FUN_00427ae0(Effect *effect);
+i32 __fastcall FUN_00427b50(Effect *effect);
+#endif
+
 
 
 
@@ -48,7 +86,16 @@ DIFFABLE_STATIC(ChainElem, g_EffectManagerCalcChain);
 DIFFABLE_STATIC(ChainElem, g_EffectManagerDrawChain);
 
 // Target 0x004E4B64 is owned by Gui.cpp but participates in effect-resource setup.
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+extern i32 &g_GuiMessageStageMode;
+#else
 extern i32 g_GuiMessageStageMode;
+#endif
+
+#ifdef TH08_IOS
+extern AnmLoaded *g_AsciiManagerDemoAnm0577EB4;
+extern AnmLoaded *g_SpellcardBackgroundAnm;
+#endif
 
 
 
@@ -63,7 +110,9 @@ extern i32 g_GuiMessageStageMode;
 
 
 
+#if !defined(TH08_MODERN_WEB) && !defined(TH08_MODERN_IOS)
 extern f32 g_EclGameTimeScale;
+#endif
 
 
 
@@ -75,10 +124,201 @@ extern f32 g_EclGameTimeScale;
 struct EffectTemplate
 {
     i32 scriptIdx;
+#ifdef TH08_IOS
+    IosEffectUpdateCallback update;
+    IosEffectUpdateCallback initialize;
+#else
     i32 field348;
     i32 (__fastcall *callback)(AnmVm *effect);
+#endif
 };
+#ifdef TH08_IOS
+static i32 __fastcall IosAnmVmUpdate(AnmVm *effect)
+{
+    return effect->FUN_0040eb50();
+}
+
+#define IOS_ANM_CALLBACK(callback) reinterpret_cast<IosEffectUpdateCallback>(callback)
+#define IOS_EFFECT_CALLBACK(callback) reinterpret_cast<IosEffectUpdateCallback>(callback)
+
+static EffectTemplate g_EffectTemplates[66] = {
+    {28, NULL, NULL}, {29, NULL, NULL}, {30, NULL, NULL},
+    {31, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashBigInit)},
+    {36, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {37, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {38, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {39, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {40, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {41, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {42, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {43, IOS_ANM_CALLBACK(EffectRandomSplashUpdate), IOS_ANM_CALLBACK(EffectRandomSplashInit)},
+    {44, NULL, NULL},
+    {45, IOS_ANM_CALLBACK(EffectOrbitUpdate), IOS_ANM_CALLBACK(EffectOrbitInit)},
+    {45, IOS_ANM_CALLBACK(EffectOrbitUpdate), IOS_ANM_CALLBACK(EffectOrbitInit)},
+    {45, IOS_ANM_CALLBACK(EffectOrbitUpdate), IOS_ANM_CALLBACK(EffectOrbitInit)},
+    {0, NULL, NULL},
+    {32, IOS_EFFECT_CALLBACK(FUN_00426bb0), IOS_EFFECT_CALLBACK(FUN_00426b20)},
+    {33, IOS_EFFECT_CALLBACK(FUN_00426c90), IOS_EFFECT_CALLBACK(FUN_00426b20)},
+    {51, IOS_EFFECT_CALLBACK(FUN_00426d70), IOS_EFFECT_CALLBACK(FUN_00426e70)},
+    {56, NULL, NULL},
+    {52, IOS_EFFECT_CALLBACK(FUN_004271a0), IOS_EFFECT_CALLBACK(FUN_004270c0)},
+    {54, IOS_EFFECT_CALLBACK(FUN_00426c40), NULL},
+    {104, IOS_EFFECT_CALLBACK(FUN_00427250), NULL},
+    {104, IOS_EFFECT_CALLBACK(FUN_00427250), NULL},
+    {35, NULL, NULL},
+    {53, IOS_EFFECT_CALLBACK(FUN_004271a0), IOS_EFFECT_CALLBACK(FUN_004270c0)},
+    {34, IOS_EFFECT_CALLBACK(FUN_00426bb0), IOS_EFFECT_CALLBACK(FUN_00426b20)},
+    {57, NULL, NULL}, {58, NULL, NULL}, {59, NULL, NULL}, {60, NULL, NULL},
+    {48, NULL, NULL}, {49, NULL, NULL}, {50, NULL, NULL},
+    {88, IOS_EFFECT_CALLBACK(FUN_00427990), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {88, IOS_ANM_CALLBACK(FUN_004114e0), IOS_ANM_CALLBACK(FUN_00411720)},
+    {92, IOS_ANM_CALLBACK(FUN_004114e0), IOS_ANM_CALLBACK(FUN_00411a80)},
+    {71, NULL, NULL},
+    {76, IOS_EFFECT_CALLBACK(FUN_00427990), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {81, IOS_EFFECT_CALLBACK(FUN_004279d0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {82, IOS_ANM_CALLBACK(IosAnmVmUpdate), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {83, IOS_ANM_CALLBACK(FUN_0040e040), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {83, IOS_ANM_CALLBACK(FUN_0040e120), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {83, IOS_ANM_CALLBACK(FUN_0040e200), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {83, IOS_ANM_CALLBACK(FUN_0040e2d0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {84, IOS_ANM_CALLBACK(FUN_00410bb0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {72, NULL, NULL},
+    {85, IOS_ANM_CALLBACK(FUN_00413070), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {86, IOS_EFFECT_CALLBACK(FUN_00427990), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {80, IOS_EFFECT_CALLBACK(FUN_00427a60), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {73, IOS_EFFECT_CALLBACK(FUN_004264f0), IOS_EFFECT_CALLBACK(FUN_00426280)},
+    {77, IOS_EFFECT_CALLBACK(FUN_00427990), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {88, IOS_EFFECT_CALLBACK(FUN_00427ae0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {88, IOS_EFFECT_CALLBACK(FUN_00427ae0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {87, IOS_EFFECT_CALLBACK(FUN_004279d0), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {96, IOS_EFFECT_CALLBACK(FUN_004279d0), IOS_EFFECT_CALLBACK(FUN_00427970)},
+    {55, NULL, NULL},
+    {100, IOS_EFFECT_CALLBACK(FUN_004279d0), IOS_EFFECT_CALLBACK(FUN_00427970)},
+    {78, IOS_EFFECT_CALLBACK(FUN_00427990), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {102, NULL, IOS_EFFECT_CALLBACK(FUN_00427260)},
+    {103, NULL, IOS_EFFECT_CALLBACK(FUN_00427260)},
+    {75, NULL, NULL},
+    {74, IOS_EFFECT_CALLBACK(FUN_00426990), IOS_EFFECT_CALLBACK(FUN_00426720)},
+    {77, IOS_EFFECT_CALLBACK(FUN_00427b50), IOS_EFFECT_CALLBACK(FUN_004272e0)},
+    {98, IOS_EFFECT_CALLBACK(FUN_004279d0), IOS_EFFECT_CALLBACK(FUN_00427970)},
+};
+
+struct IosEffectRuntime
+{
+    IosEffectUpdateCallback update;
+    IosEffectDrawCallback draw;
+    void *resource;
+    u8 *next;
+};
+
+static IosEffectRuntime g_IosEffectRuntime[659];
+static u8 *g_IosEffectTails[5];
+
+static i32 GetIosEffectIndex(const void *effect)
+{
+    const u8 *base = reinterpret_cast<const u8 *>(&g_EffectManager) + 0x1c;
+    const ptrdiff_t offset = reinterpret_cast<const u8 *>(effect) - base;
+    if (offset < 0 || (offset % 0x360) != 0 || offset / 0x360 >= 659)
+        return -1;
+    return static_cast<i32>(offset / 0x360);
+}
+
+static IosEffectRuntime *GetIosEffectRuntime(const void *effect)
+{
+    i32 index = GetIosEffectIndex(effect);
+    return index >= 0 ? &g_IosEffectRuntime[index] : NULL;
+}
+
+static void ResetIosEffectRuntime(void *effect)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    if (runtime != NULL)
+        memset(runtime, 0, sizeof(*runtime));
+}
+
+void SetIosEffectUpdateCallback(AnmVm *effect, IosEffectUpdateCallback callback)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    if (runtime != NULL)
+        runtime->update = callback;
+}
+
+void SetIosEffectDrawCallback(AnmVm *effect, IosEffectDrawCallback callback)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    if (runtime != NULL)
+        runtime->draw = callback;
+}
+
+void *GetIosEffectResource(AnmVm *effect)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    return runtime != NULL ? runtime->resource : NULL;
+}
+
+void SetIosEffectResource(AnmVm *effect, void *resource)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    if (runtime != NULL)
+        runtime->resource = resource;
+}
+
+ZunBool RunIosEffectDrawCallback(AnmVm *effect)
+{
+    IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+    if (runtime == NULL || runtime->draw == NULL)
+        return FALSE;
+    runtime->draw(reinterpret_cast<Effect *>(effect));
+    return TRUE;
+}
+
+static u8 *&IosEffectNext(u8 *effect)
+{
+    return g_IosEffectRuntime[GetIosEffectIndex(effect)].next;
+}
+
+static u8 *GetIosEffectSentinel(EffectManager *manager, i32 list)
+{
+    return reinterpret_cast<u8 *>(manager) + 0x89f5c + list * 0x360;
+}
+
+static void AppendIosEffect(i32 list, u8 *effect)
+{
+    IosEffectNext(g_IosEffectTails[list]) = effect;
+    g_IosEffectTails[list] = effect;
+}
+
+static void InitializeIosEffectSideStorage()
+{
+    memset(g_IosEffectRuntime, 0, sizeof(g_IosEffectRuntime));
+    memset(g_IosEffectTails, 0, sizeof(g_IosEffectTails));
+}
+
+#undef IOS_ANM_CALLBACK
+#undef IOS_EFFECT_CALLBACK
+#else
 DIFFABLE_STATIC_ARRAY(EffectTemplate, 20, g_EffectTemplates);
+#endif
+
+static AnmLoaded *&EffectManagerCommonAnm(EffectManager *manager)
+{
+#ifdef TH08_IOS
+    (void)manager;
+    return g_AsciiManagerDemoAnm0577EB4;
+#else
+    return *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(manager) + 0x8B054);
+#endif
+}
+
+static AnmLoaded *&EffectManagerStageAnm(EffectManager *manager)
+{
+#ifdef TH08_IOS
+    (void)manager;
+    return g_SpellcardBackgroundAnm;
+#else
+    return *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(manager) + 0x8B058);
+#endif
+}
 
 // FUNCTION: th08 0x423d70
 Float3 *Float3::operator*=(f32 scalar)
@@ -92,13 +332,20 @@ Float3 *Float3::operator*=(f32 scalar)
 // FUNCTION: th08 0x4253e0
 AnmVm *EffectManager::FUN_004253e0(i32 index)
 {
+#ifdef TH08_IOS
+    return reinterpret_cast<AnmVm *>(reinterpret_cast<u8 *>(this) + (index + 0x280) * 0x360 + 0x1c);
+#else
     return &this->effects[index + 0x280].vm;
+#endif
 }
 
 // FUNCTION: th08 0x425410
 void EffectManager::ResetEffects()
 {
     memset(this, 0, 0x8B05C);
+#ifdef TH08_IOS
+    InitializeIosEffectSideStorage();
+#endif
 }
 
 // FUNCTION: th08 0x425430
@@ -129,27 +376,39 @@ AnmVm *EffectManager::SpawnEffect(i32 id, D3DXVECTOR3 *position, i32 count, i32 
             continue;
         }
 
+        #ifdef TH08_IOS
+        if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+            g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+        ResetIosEffectRuntime(effect);
+        #else
         if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
         {
             g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
         }
+        #endif
 
         memset(effect, 0, 0x360);
         *reinterpret_cast<i8 *>(effect + 0x350) = 1;
         *reinterpret_cast<i8 *>(effect + 0x351) = id;
         *reinterpret_cast<D3DXVECTOR3 *>(effect + 0x2A4) = *position;
-        (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(this) + 0x8B054))
-            ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
+        EffectManagerCommonAnm(this)->SetAndExecuteScriptIdx(
+            reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
         *reinterpret_cast<u32 *>(effect + 0x1F8) |= 0x2000;
         *reinterpret_cast<i32 *>(effect + 0x1F0) = color;
         *reinterpret_cast<i32 *>(effect + 0x288) = 0;
         *reinterpret_cast<i32 *>(effect + 0x28C) = 0;
         *reinterpret_cast<i32 *>(effect + 0x290) = 0;
+        #ifdef TH08_IOS
+        SetIosEffectUpdateCallback(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].update);
+        if (g_EffectTemplates[id].initialize != NULL)
+        {
+            if (g_EffectTemplates[id].initialize(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #else
         *reinterpret_cast<i32 *>(effect + 0x348) = g_EffectTemplates[id].field348;
-
         if (g_EffectTemplates[id].callback != NULL)
         {
             if (g_EffectTemplates[id].callback(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #endif
             {
                 *reinterpret_cast<i8 *>(effect + 0x350) = 0;
             }
@@ -171,7 +430,7 @@ AnmVm *EffectManager::SpawnEffect(i32 id, D3DXVECTOR3 *position, i32 count, i32 
         }
     }
 
-    *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xDA) |= 0x400;
+    g_ReplayManager->flags |= 0x400;
     return reinterpret_cast<AnmVm *>(i >= 0x200 ? reinterpret_cast<u8 *>(this) + 0x89BFC : effect);
 }
 
@@ -203,27 +462,43 @@ AnmVm *EffectManager::SpawnEffectAngle(i32 id, D3DXVECTOR3 *position, D3DXVECTOR
             continue;
         }
 
+        #ifdef TH08_IOS
+        if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+            g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+        ResetIosEffectRuntime(effect);
+        #else
         if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
         {
             g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
         }
+        #endif
 
         memset(effect, 0, 0x360);
         *reinterpret_cast<i8 *>(effect + 0x350) = 1;
         *reinterpret_cast<i8 *>(effect + 0x351) = id;
         *reinterpret_cast<D3DXVECTOR3 *>(effect + 0x2A4) = *position;
-        (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(this) + 0x8B054))
-            ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
+        EffectManagerCommonAnm(this)->SetAndExecuteScriptIdx(
+            reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
         *reinterpret_cast<i32 *>(effect + 0x1F0) = color;
         *reinterpret_cast<i32 *>(effect + 0x288) = 0;
         *reinterpret_cast<i32 *>(effect + 0x28C) = 0;
         *reinterpret_cast<i32 *>(effect + 0x290) = 0;
+        #ifdef TH08_IOS
+        SetIosEffectUpdateCallback(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].update);
+        #else
         *reinterpret_cast<i32 *>(effect + 0x348) = g_EffectTemplates[id].field348;
+        #endif
         *reinterpret_cast<D3DXVECTOR3 *>(effect + 0x2B0) = *velocity;
 
+        #ifdef TH08_IOS
+        if (g_EffectTemplates[id].initialize != NULL)
+        {
+            if (g_EffectTemplates[id].initialize(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #else
         if (g_EffectTemplates[id].callback != NULL)
         {
             if (g_EffectTemplates[id].callback(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #endif
             {
                 *reinterpret_cast<i8 *>(effect + 0x350) = 0;
             }
@@ -245,7 +520,7 @@ AnmVm *EffectManager::SpawnEffectAngle(i32 id, D3DXVECTOR3 *position, D3DXVECTOR
         }
     }
 
-    *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xDA) |= 0x400;
+    g_ReplayManager->flags |= 0x400;
     return reinterpret_cast<AnmVm *>(i >= 0x200 ? reinterpret_cast<u8 *>(this) + 0x89BFC : effect);
 }
 
@@ -255,10 +530,16 @@ AnmVm *EffectManager::FUN_00425870(i32 id, D3DXVECTOR3 *position, i32 slotIndex,
 {
     u8 *effect = reinterpret_cast<u8 *>(this) + (slotIndex + 0x280) * 0x360 + 0x1C;
 
+    #ifdef TH08_IOS
+    if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+        g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+    ResetIosEffectRuntime(effect);
+    #else
     if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
     {
         g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
     }
+    #endif
 
     memset(effect, 0, 0x360);
     *reinterpret_cast<i32 *>(effect + 0x328) = slotIndex;
@@ -268,8 +549,8 @@ AnmVm *EffectManager::FUN_00425870(i32 id, D3DXVECTOR3 *position, i32 slotIndex,
 
     if (g_EffectTemplates[id].scriptIdx >= 0)
     {
-        (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(this) + 0x8B054))
-            ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
+        EffectManagerCommonAnm(this)->SetAndExecuteScriptIdx(
+            reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
     }
 
     *reinterpret_cast<u32 *>(effect + 0x1F8) |= 0x2000;
@@ -277,15 +558,20 @@ AnmVm *EffectManager::FUN_00425870(i32 id, D3DXVECTOR3 *position, i32 slotIndex,
     *reinterpret_cast<i32 *>(effect + 0x288) = 0;
     *reinterpret_cast<i32 *>(effect + 0x28C) = 0;
     *reinterpret_cast<i32 *>(effect + 0x290) = 0;
+    #ifdef TH08_IOS
+    SetIosEffectUpdateCallback(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].update);
+    if (g_EffectTemplates[id].initialize != NULL &&
+        g_EffectTemplates[id].initialize(reinterpret_cast<AnmVm *>(effect)) != 0)
+    #else
     *reinterpret_cast<i32 *>(effect + 0x348) = g_EffectTemplates[id].field348;
-
     if (g_EffectTemplates[id].callback != NULL &&
         g_EffectTemplates[id].callback(reinterpret_cast<AnmVm *>(effect)) != 0)
+    #endif
     {
         *reinterpret_cast<i8 *>(effect + 0x350) = 0;
     }
 
-    *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xDA) |= 0x400;
+    g_ReplayManager->flags |= 0x400;
     return reinterpret_cast<AnmVm *>(effect);
 }
 
@@ -296,8 +582,14 @@ AnmVm *EffectManager::FUN_004259e0(i32 id, D3DXVECTOR3 *position, D3DXVECTOR3 *v
 {
     u8 *effect = reinterpret_cast<u8 *>(this) + (slotIndex + 0x280) * 0x360 + 0x1C;
 
+    #ifdef TH08_IOS
+    if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+        g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+    ResetIosEffectRuntime(effect);
+    #else
     if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
         g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
+    #endif
 
     memset(effect, 0, 0x360);
     *reinterpret_cast<i32 *>(effect + 0x328) = slotIndex;
@@ -308,8 +600,8 @@ AnmVm *EffectManager::FUN_004259e0(i32 id, D3DXVECTOR3 *position, D3DXVECTOR3 *v
 
     if (g_EffectTemplates[id].scriptIdx >= 0)
     {
-        (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(this) + 0x8B054))
-            ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
+        EffectManagerCommonAnm(this)->SetAndExecuteScriptIdx(
+            reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
     }
 
     *reinterpret_cast<u32 *>(effect + 0x1F8) |= 0x2000;
@@ -317,15 +609,20 @@ AnmVm *EffectManager::FUN_004259e0(i32 id, D3DXVECTOR3 *position, D3DXVECTOR3 *v
     *reinterpret_cast<i32 *>(effect + 0x288) = 0;
     *reinterpret_cast<i32 *>(effect + 0x28C) = 0;
     *reinterpret_cast<i32 *>(effect + 0x290) = 0;
+    #ifdef TH08_IOS
+    SetIosEffectUpdateCallback(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].update);
+    if (g_EffectTemplates[id].initialize != NULL &&
+        g_EffectTemplates[id].initialize(reinterpret_cast<AnmVm *>(effect)) != 0)
+    #else
     *reinterpret_cast<i32 *>(effect + 0x348) = g_EffectTemplates[id].field348;
-
     if (g_EffectTemplates[id].callback != NULL &&
         g_EffectTemplates[id].callback(reinterpret_cast<AnmVm *>(effect)) != 0)
+    #endif
     {
         *reinterpret_cast<i8 *>(effect + 0x350) = 0;
     }
 
-    *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xDA) |= 0x400;
+    g_ReplayManager->flags |= 0x400;
     return reinterpret_cast<AnmVm *>(effect);
 }
 
@@ -343,31 +640,47 @@ AnmVm *EffectManager::SpawnEffect00425B70(i32 id, D3DXVECTOR3 *position, i32 cou
             continue;
         }
 
+        #ifdef TH08_IOS
+        if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+            g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+        ResetIosEffectRuntime(effect);
+        #else
         if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
         {
             g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
         }
         *reinterpret_cast<void **>(effect + 0x358) = NULL;
         *reinterpret_cast<i32 *>(effect + 0x34C) = 0;
+        #endif
         *reinterpret_cast<i8 *>(effect + 0x354) = 0;
         *reinterpret_cast<i8 *>(effect + 0x350) = 1;
         *reinterpret_cast<i8 *>(effect + 0x351) = id;
         *reinterpret_cast<D3DXVECTOR3 *>(effect + 0x2A4) = *position;
-        (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(this) + 0x8B054))
-            ->SetAndExecuteScriptIdx(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
+        EffectManagerCommonAnm(this)->SetAndExecuteScriptIdx(
+            reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].scriptIdx);
         *reinterpret_cast<i32 *>(effect + 0x1F0) = color;
         *reinterpret_cast<i32 *>(effect + 0x288) = 0;
         *reinterpret_cast<i32 *>(effect + 0x28C) = 0;
         *reinterpret_cast<i32 *>(effect + 0x290) = 0;
+        #ifdef TH08_IOS
+        SetIosEffectUpdateCallback(reinterpret_cast<AnmVm *>(effect), g_EffectTemplates[id].update);
+        #else
         *reinterpret_cast<i32 *>(effect + 0x348) = g_EffectTemplates[id].field348;
+        #endif
         *reinterpret_cast<ZunTimer *>(effect + 0x338) = 0;
         *reinterpret_cast<i8 *>(effect + 0x352) = 0;
         *reinterpret_cast<i8 *>(effect + 0x353) = 0;
         *reinterpret_cast<D3DXVECTOR3 *>(effect + 0x2B0) = D3DXVECTOR3(0, 0, 0);
 
+        #ifdef TH08_IOS
+        if (g_EffectTemplates[id].initialize != NULL)
+        {
+            if (g_EffectTemplates[id].initialize(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #else
         if (g_EffectTemplates[id].callback != NULL)
         {
             if (g_EffectTemplates[id].callback(reinterpret_cast<AnmVm *>(effect)) != 0)
+        #endif
             {
                 *reinterpret_cast<i8 *>(effect + 0x350) = 0;
             }
@@ -380,7 +693,7 @@ AnmVm *EffectManager::SpawnEffect00425B70(i32 id, D3DXVECTOR3 *position, i32 cou
         }
     }
 
-    *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xDA) |= 0x400;
+    g_ReplayManager->flags |= 0x400;
     return reinterpret_cast<AnmVm *>(i >= 0x80 ? reinterpret_cast<u8 *>(this) + 0x89BFC : effect);
 }
 
@@ -801,9 +1114,16 @@ i32 __fastcall FUN_00427260(Effect *effect)
 // FUNCTION: th08 0x4272e0
 i32 __fastcall FUN_004272e0(Effect *effect)
 {
+#ifdef TH08_IOS
+    VertexTex1DiffuseXyzrhw *vertices =
+        static_cast<VertexTex1DiffuseXyzrhw *>(g_ZunMemory.Alloc(0x1c38, "Effect"));
+    SetIosEffectResource(&effect->vm, vertices);
+    if (vertices == NULL)
+#else
     *reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358) =
         static_cast<VertexTex1DiffuseXyzrhw *>(g_ZunMemory.Alloc(0x1c38, "Effect"));
     if (*reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358) == NULL)
+#endif
         return -1;
 
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) = 3;
@@ -820,10 +1140,18 @@ i32 __fastcall FUN_004272e0(Effect *effect)
 
     g_AnmManager->FUN_004649a0(
         reinterpret_cast<AnmVm *>(effect),
+#ifdef TH08_IOS
+        vertices,
+#else
         *reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358),
+#endif
         *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) * 2);
     *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(effect) + 0x356) = 1;
+#ifdef TH08_IOS
+    SetIosEffectDrawCallback(&effect->vm, &FUN_00427450);
+#else
     *reinterpret_cast<void **>(reinterpret_cast<u8 *>(effect) + 0x34c) = reinterpret_cast<void *>(&FUN_00427450);
+#endif
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x32c) = 0.0f;
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x330) = 0.0f;
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x334) = 0.0f;
@@ -846,10 +1174,18 @@ i32 __fastcall FUN_00427450(Effect *effect)
         angleStep = ZUN_2PI / *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324);
         radius = *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x320) /
                  sinf((ZUN_PI - angleStep) / 2.0f);
+        #ifdef TH08_IOS
+        vertex = static_cast<VertexTex1DiffuseXyzrhw *>(GetIosEffectResource(&effect->vm));
+        #else
         vertex = *reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358);
+        #endif
         g_AnmManager->FUN_00464b00(
             reinterpret_cast<AnmVm *>(effect),
+            #ifdef TH08_IOS
+            vertex,
+            #else
             *reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358),
+            #endif
             *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) * 2 + 2);
 
         if (*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x32c) == 0.0f)
@@ -962,7 +1298,11 @@ i32 __fastcall FUN_00427450(Effect *effect)
 
     g_AnmManager->DrawVertices(
         reinterpret_cast<AnmVm *>(effect),
+        #ifdef TH08_IOS
+        static_cast<VertexTex1DiffuseXyzrhw *>(GetIosEffectResource(&effect->vm)),
+        #else
         *reinterpret_cast<VertexTex1DiffuseXyzrhw **>(reinterpret_cast<u8 *>(effect) + 0x358),
+        #endif
         *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) * 2 + 2);
     return 1;
 }
@@ -1051,6 +1391,13 @@ ChainCallbackResult EffectManager::OnUpdate(EffectManager *effectManager)
     i32 i;
 
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effectManager) + 0x8) = 0;
+#ifdef TH08_IOS
+    for (i = 0; i < 5; ++i)
+    {
+        g_IosEffectTails[i] = GetIosEffectSentinel(effectManager, i);
+        IosEffectNext(g_IosEffectTails[i]) = NULL;
+    }
+#else
     *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B03C) =
         reinterpret_cast<u8 *>(effectManager) + 0x89F5C;
     *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B040) =
@@ -1067,16 +1414,25 @@ ChainCallbackResult EffectManager::OnUpdate(EffectManager *effectManager)
     *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8A978) = NULL;
     *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8ACD8) = NULL;
     *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B038) = NULL;
+#endif
 
     for (i = 0; i < 653; i++, effect += 0x360)
     {
         if (*reinterpret_cast<i8 *>(effect + 0x350) == 0)
         {
+#ifdef TH08_IOS
+            if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+            {
+                g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+                SetIosEffectResource(reinterpret_cast<AnmVm *>(effect), NULL);
+            }
+#else
             if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
             {
                 g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
                 *reinterpret_cast<void **>(effect + 0x358) = NULL;
             }
+#endif
             continue;
         }
 
@@ -1084,8 +1440,14 @@ ChainCallbackResult EffectManager::OnUpdate(EffectManager *effectManager)
         if (!g_GameManager.flags.unk10 ||
             *reinterpret_cast<i8 *>(effect + 0x357) != 0)
         {
+#ifdef TH08_IOS
+            IosEffectRuntime *runtime = GetIosEffectRuntime(effect);
+            if (runtime != NULL && runtime->update != NULL &&
+                runtime->update(reinterpret_cast<AnmVm *>(effect)) != 1)
+#else
             if (*reinterpret_cast<void **>(effect + 0x348) != NULL &&
                 reinterpret_cast<i32 (__fastcall *)(void *)>(*reinterpret_cast<void **>(effect + 0x348))(effect) != 1)
+#endif
             {
                 *reinterpret_cast<i8 *>(effect + 0x350) = 0;
                 continue;
@@ -1098,37 +1460,61 @@ ChainCallbackResult EffectManager::OnUpdate(EffectManager *effectManager)
             (*reinterpret_cast<ZunTimer *>(effect + 0x338))++;
         }
 
+#ifdef TH08_IOS
+        IosEffectNext(effect) = NULL;
+#else
         *reinterpret_cast<u8 **>(effect + 0x35C) = NULL;
+#endif
         if (*reinterpret_cast<i8 *>(effect + 0x351) == 0x40)
             continue;
 
         if (*reinterpret_cast<i8 *>(effect + 0x354) == 1 || *reinterpret_cast<i8 *>(effect + 0x354) >= 3)
         {
+#ifdef TH08_IOS
+            AppendIosEffect(1, effect);
+#else
             *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B040) + 0x35C) = effect;
             *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B040) = effect;
+#endif
         }
         else if (*reinterpret_cast<i8 *>(effect + 0x354) == 0)
         {
             if (*reinterpret_cast<i8 *>(effect + 0x355) != 0)
             {
+#ifdef TH08_IOS
+                AppendIosEffect(3, effect);
+#else
                 *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B048) + 0x35C) = effect;
                 *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B048) = effect;
+#endif
             }
             else if (((*reinterpret_cast<u32 *>(effect + 0x1F8) >> 4) & 3) == 1)
             {
+#ifdef TH08_IOS
+                AppendIosEffect(4, effect);
+#else
                 *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B04C) + 0x35C) = effect;
                 *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B04C) = effect;
+#endif
             }
             else
             {
+#ifdef TH08_IOS
+                AppendIosEffect(0, effect);
+#else
                 *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B03C) + 0x35C) = effect;
                 *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B03C) = effect;
+#endif
             }
         }
         else
         {
+#ifdef TH08_IOS
+            AppendIosEffect(2, effect);
+#else
             *reinterpret_cast<u8 **>(*reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B044) + 0x35C) = effect;
             *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B044) = effect;
+#endif
         }
     }
 
@@ -1144,13 +1530,23 @@ ChainCallbackResult EffectManager::OnDraw(EffectManager *effectManager)
 {
     u8 *effect;
 
+    #ifdef TH08_IOS
+    effect = IosEffectNext(GetIosEffectSentinel(effectManager, 0));
+    #else
     effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8A2B8);
+    #endif
     while (effect != NULL)
     {
+        #ifdef TH08_IOS
+        if (RunIosEffectDrawCallback(reinterpret_cast<AnmVm *>(effect)))
+        {
+        }
+        #else
         if (*reinterpret_cast<void **>(effect + 0x34C) != NULL)
         {
             reinterpret_cast<void (__fastcall *)(void *)>(*reinterpret_cast<void **>(effect + 0x34C))(effect);
         }
+        #endif
         else
         {
             *reinterpret_cast<Float3 *>(effect + 0x208) = *reinterpret_cast<Float3 *>(effect + 0x2A4);
@@ -1161,24 +1557,46 @@ ChainCallbackResult EffectManager::OnDraw(EffectManager *effectManager)
                 *reinterpret_cast<Float3 *>(effect + 0x288));
             g_AnmManager->Draw2D(reinterpret_cast<AnmVm *>(effect));
         }
+        #ifdef TH08_IOS
+        effect = IosEffectNext(effect);
+        #else
         effect = *reinterpret_cast<u8 **>(effect + 0x35C);
+        #endif
     }
 
+    #ifdef TH08_IOS
+    effect = IosEffectNext(GetIosEffectSentinel(effectManager, 2));
+    #else
     effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8A978);
+    #endif
     while (effect != NULL)
     {
         *reinterpret_cast<Float3 *>(effect + 0x208) = *reinterpret_cast<Float3 *>(effect + 0x2A4);
         g_AnmManager->FUN_00463cf0(reinterpret_cast<AnmVm *>(effect));
+        #ifdef TH08_IOS
+        effect = IosEffectNext(effect);
+        #else
         effect = *reinterpret_cast<u8 **>(effect + 0x35C);
+        #endif
     }
 
+    #ifdef TH08_IOS
+    effect = IosEffectNext(GetIosEffectSentinel(effectManager, 4));
+    #else
     effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(effectManager) + 0x8B038);
+    #endif
     while (effect != NULL)
     {
+        #ifdef TH08_IOS
+        if (RunIosEffectDrawCallback(reinterpret_cast<AnmVm *>(effect)))
+        {
+        }
+        #else
         if (*reinterpret_cast<void **>(effect + 0x34C) != NULL)
         {
             reinterpret_cast<void (__fastcall *)(void *)>(*reinterpret_cast<void **>(effect + 0x34C))(effect);
         }
+        #endif
         else
         {
             *reinterpret_cast<Float3 *>(effect + 0x208) = *reinterpret_cast<Float3 *>(effect + 0x2A4);
@@ -1189,7 +1607,11 @@ ChainCallbackResult EffectManager::OnDraw(EffectManager *effectManager)
                 *reinterpret_cast<Float3 *>(effect + 0x288));
             g_AnmManager->Draw2D(reinterpret_cast<AnmVm *>(effect));
         }
+        #ifdef TH08_IOS
+        effect = IosEffectNext(effect);
+        #else
         effect = *reinterpret_cast<u8 **>(effect + 0x35C);
+        #endif
     }
 
     return CHAIN_CALLBACK_RESULT_CONTINUE;
@@ -1199,14 +1621,24 @@ ChainCallbackResult EffectManager::OnDraw(EffectManager *effectManager)
 #pragma var_order(effect, this)
 i32 EffectManager::DrawUnkTypeEffects()
 {
+    #ifdef TH08_IOS
+    u8 *effect = IosEffectNext(GetIosEffectSentinel(this, 3));
+    #else
     u8 *effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x8acd8);
+    #endif
 
     while (effect != NULL)
     {
+        #ifdef TH08_IOS
+        if (RunIosEffectDrawCallback(reinterpret_cast<AnmVm *>(effect)))
+        {
+        }
+        #else
         if (*reinterpret_cast<void **>(effect + 0x34c) != NULL)
         {
             reinterpret_cast<void (__fastcall *)(void *)>(*reinterpret_cast<void **>(effect + 0x34c))(effect);
         }
+        #endif
         else
         {
             *reinterpret_cast<Float3 *>(effect + 0x208) = *reinterpret_cast<Float3 *>(effect + 0x2a4);
@@ -1218,7 +1650,11 @@ i32 EffectManager::DrawUnkTypeEffects()
             g_AnmManager->Draw2D(reinterpret_cast<AnmVm *>(effect));
         }
 
+        #ifdef TH08_IOS
+        effect = IosEffectNext(effect);
+        #else
         effect = *reinterpret_cast<u8 **>(effect + 0x35c);
+        #endif
     }
 
     return 1;
@@ -1228,10 +1664,14 @@ i32 EffectManager::DrawUnkTypeEffects()
 #pragma var_order(effect, i, this)
 i32 EffectManager::FUN_004281e0()
 {
+    #ifdef TH08_IOS
+    u8 *effect = IosEffectNext(GetIosEffectSentinel(this, 1));
+    #else
     u8 *effect = *reinterpret_cast<u8 **>(reinterpret_cast<u8 *>(this) + 0x8A618);
+    #endif
     i32 i = 0;
 
-    if (*reinterpret_cast<u8 *>((u8 *)&g_Supervisor + 0x13C) == 0)
+    if (g_Supervisor.cfg.effectQuality == 0)
     {
         return 1;
     }
@@ -1239,7 +1679,7 @@ i32 EffectManager::FUN_004281e0()
     while (effect != NULL)
     {
         i++;
-        if (*reinterpret_cast<u8 *>((u8 *)&g_Supervisor + 0x13C) == 1 && (i & 1) != 0)
+        if (g_Supervisor.cfg.effectQuality == 1 && (i & 1) != 0)
         {
             return 1;
         }
@@ -1265,7 +1705,11 @@ i32 EffectManager::FUN_004281e0()
             g_AnmManager->FUN_00464070(reinterpret_cast<AnmVm *>(effect));
         }
 
+        #ifdef TH08_IOS
+        effect = IosEffectNext(effect);
+        #else
         effect = *reinterpret_cast<u8 **>(effect + 0x35C);
+        #endif
     }
     return 1;
 }
@@ -1294,7 +1738,12 @@ void __fastcall FUN_00428310(AnmVm *effect, D3DXVECTOR3 *base)
             }
         }
 
-        delta = point - *reinterpret_cast<D3DXVECTOR3 *>(0x17D61AC);
+        #ifdef TH08_MODERN_PORT
+        delta = point - reinterpret_cast<D3DXVECTOR3 &>(EclOperands::g_TargetPlayerPosition017D61AC);
+        #else
+        delta = point - *reinterpret_cast<D3DXVECTOR3 *>(
+                            &EclOperands::g_TargetPlayerPosition017D61AC);
+        #endif
         delta.x -= 32.0f;
         delta.y -= 16.0f;
         delta.z = 0.0f;
@@ -1310,7 +1759,7 @@ void __fastcall FUN_00428310(AnmVm *effect, D3DXVECTOR3 *base)
 ZunResult EffectManager::AddedCallback(EffectManager *effectManager)
 {
     effectManager->ResetEffects();
-    *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(effectManager) + 0x8B054) = g_AnmManager->GetAnm(6);
+    EffectManagerCommonAnm(effectManager) = g_AnmManager->GetAnm(6);
     g_GuiMessageStageMode = 0;
     g_Background.EclExBarrierState().mode = 2;
 
@@ -1318,21 +1767,21 @@ ZunResult EffectManager::AddedCallback(EffectManager *effectManager)
     {
         if (!g_GameManager.IsSpellPractice() || g_GameManager.currentSpellCardNumber < 216)
         {
-            *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(effectManager) + 0x8B058) =
+            EffectManagerStageAnm(effectManager) =
                 g_AnmManager->PreloadAnm(9, g_EffectAnms[g_GameManager.currentStage]);
         }
         else
         {
-            *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(effectManager) + 0x8B058) =
+            EffectManagerStageAnm(effectManager) =
                 g_AnmManager->PreloadAnm(
                     9, g_EffectAnms[g_GameManager.currentSpellCardNumber - 216 + 9]);
         }
-        if (*reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(effectManager) + 0x8B058) == NULL)
+        if (EffectManagerStageAnm(effectManager) == NULL)
             return ZUN_ERROR;
     }
     else
     {
-        *reinterpret_cast<AnmLoaded **>(reinterpret_cast<u8 *>(effectManager) + 0x8B058) = g_AnmManager->GetAnm(9);
+        EffectManagerStageAnm(effectManager) = g_AnmManager->GetAnm(9);
     }
     return ZUN_SUCCESS;
 }
@@ -1345,11 +1794,20 @@ ZunResult EffectManager::DeletedCallback(EffectManager *effectManager)
     i32 i;
     for (i = 0; i < 653; i++, effect += 0x360)
     {
+        #ifdef TH08_IOS
+        if (GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)) != NULL)
+        {
+            g_ZunMemory.Free(GetIosEffectResource(reinterpret_cast<AnmVm *>(effect)));
+            SetIosEffectResource(reinterpret_cast<AnmVm *>(effect), NULL);
+        }
+        ResetIosEffectRuntime(effect);
+        #else
         if (*reinterpret_cast<void **>(effect + 0x358) != NULL)
         {
             g_ZunMemory.Free(*reinterpret_cast<void **>(effect + 0x358));
             *reinterpret_cast<void **>(effect + 0x358) = NULL;
         }
+        #endif
     }
     if (!IsDisableResourceReload())
         g_AnmManager->ReleaseAnm(9);

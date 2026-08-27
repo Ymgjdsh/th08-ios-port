@@ -1,8 +1,11 @@
 #include "d3d8_internal.hpp"
+#include "GameManager.hpp"
 #include "Gui.hpp"
+#include "Supervisor.hpp"
 
 #include <SDL.h>
 #include "ios_gl_legacy.hpp"
+#include "ios_touch.hpp"
 
 #include <math.h>
 #include <new>
@@ -163,6 +166,28 @@ void Identity(D3DMATRIX *matrix)
     matrix->_11 = matrix->_22 = matrix->_33 = matrix->_44 = 1.0f;
 }
 
+void DrawPresentationRegion(int sourceX, int sourceY, int sourceWidth, int sourceHeight,
+                            int destinationX, int destinationY,
+                            int destinationWidth, int destinationHeight)
+{
+    const float u0 = static_cast<float>(sourceX) / 640.0f;
+    const float u1 = static_cast<float>(sourceX + sourceWidth) / 640.0f;
+    const float vTop = 1.0f - static_cast<float>(sourceY) / 480.0f;
+    const float vBottom =
+        1.0f - static_cast<float>(sourceY + sourceHeight) / 480.0f;
+    const float x0 = static_cast<float>(destinationX);
+    const float x1 = static_cast<float>(destinationX + destinationWidth);
+    const float y0 = static_cast<float>(destinationY);
+    const float y1 = static_cast<float>(destinationY + destinationHeight);
+
+    glBegin(GL_TRIANGLE_STRIP);
+    glTexCoord2f(u0, vTop); glVertex2f(x0, y0);
+    glTexCoord2f(u1, vTop); glVertex2f(x1, y0);
+    glTexCoord2f(u0, vBottom); glVertex2f(x0, y1);
+    glTexCoord2f(u1, vBottom); glVertex2f(x1, y1);
+    glEnd();
+}
+
 class LinuxSurface : public IDirect3DSurface8
 {
   public:
@@ -221,10 +246,9 @@ class LinuxSurface : public IDirect3DSurface8
 
         GLuint name = 0;
         glPushAttrib(GL_ALL_ATTRIB_BITS);
-        glDisable(GL_ALPHA_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
+        glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
         glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_FALSE);
-        glEnable(GL_TEXTURE_2D);
         glGenTextures(1, &name); glBindTexture(GL_TEXTURE_2D, name);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -417,17 +441,28 @@ class LinuxDevice : public IDirect3DDevice8
         : refs(1), window(window_), context(NULL), backbuffer(NULL), texture(NULL), vertexBuffer(NULL),
           fvf(0), streamStride(0), renderFramebuffer(0), renderColorTexture(0), renderDepthBuffer(0),
           dialogueSnapshotTexture(0), framebufferReady(false), dialogueSnapshotReady(false),
-          wasDialogPresent(false), presentCount(0)
+          wasDialogPresent(false), presentCount(0), defaultFramebuffer(0), defaultRenderbuffer(0)
     {
         memset(renderStates, 0, sizeof(renderStates)); memset(textureStates, 0, sizeof(textureStates));
         Identity(&world); Identity(&view); Identity(&projection); Identity(&textureTransform);
         context = SDL_GL_CreateContext(window);
         if (context == NULL) return;
         SDL_GL_MakeCurrent(window, context);
+#ifdef TH08_IOS
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &defaultFramebuffer);
+        glGetIntegerv(GL_RENDERBUFFER_BINDING, &defaultRenderbuffer);
+        char framebufferMessage[128];
+        snprintf(framebufferMessage, sizeof(framebufferMessage),
+                 "gles2: SDL default framebuffer=%d renderbuffer=%d", defaultFramebuffer,
+                 defaultRenderbuffer);
+        th08::modern::LogStartup(framebufferMessage);
+#endif
         g_fogCoordf = reinterpret_cast<FogCoordfFunction>(SDL_GL_GetProcAddress("glFogCoordf"));
         if (g_fogCoordf == NULL)
             g_fogCoordf = reinterpret_cast<FogCoordfFunction>(SDL_GL_GetProcAddress("glFogCoordfEXT"));
-        SDL_GL_SetSwapInterval(parameters.FullScreen_PresentationInterval == D3DPRESENT_INTERVAL_IMMEDIATE ? 0 : 1);
+        const bool fastSmoke = SDL_getenv("TH08_IOS_SMOKE_FAST") != NULL;
+        SDL_GL_SetSwapInterval(fastSmoke ? 0 :
+            (parameters.FullScreen_PresentationInterval == D3DPRESENT_INTERVAL_IMMEDIATE ? 0 : 1));
         framebufferReady = ResetInternal(parameters);
         renderStates[D3DRS_TEXTUREFACTOR] = 0xffffffffu;
         renderStates[D3DRS_SRCBLEND] = D3DBLEND_SRCALPHA;
@@ -440,7 +475,7 @@ class LinuxDevice : public IDirect3DDevice8
         textureStates[D3DTSS_ALPHAARG1] = D3DTA_TEXTURE; textureStates[D3DTSS_ALPHAARG2] = D3DTA_DIFFUSE;
         textureStates[D3DTSS_ADDRESSU] = D3DTADDRESS_WRAP; textureStates[D3DTSS_ADDRESSV] = D3DTADDRESS_WRAP;
         textureStates[D3DTSS_MINFILTER] = D3DTEXF_POINT; textureStates[D3DTSS_MAGFILTER] = D3DTEXF_POINT;
-        glDisable(GL_CULL_FACE); glDisable(GL_LIGHTING);
+        glDisable(GL_CULL_FACE);
     }
     ~LinuxDevice()
     {
@@ -468,15 +503,72 @@ class LinuxDevice : public IDirect3DDevice8
 
         int drawableWidth, drawableHeight;
         SDL_GL_GetDrawableSize(window, &drawableWidth, &drawableHeight);
-        g_framebufferApi.bindFramebuffer(GL_FRAMEBUFFER, 0);
+        if (drawableWidth <= 0 || drawableHeight <= 0)
+            return E_FAIL;
+
+        int viewportX = 0;
+        int viewportY = 0;
+        int viewportWidth = drawableWidth;
+        int viewportHeight = drawableHeight;
+        const bool portraitGameplay = drawableHeight > drawableWidth &&
+            th08::g_Supervisor.curState == th08::SupervisorState_GameManager &&
+            th08::g_GameManager.globals != NULL;
+        if (static_cast<long long>(drawableWidth) * 480LL >
+            static_cast<long long>(drawableHeight) * 640LL)
+        {
+            viewportHeight = drawableHeight;
+            viewportWidth = drawableHeight * 640 / 480;
+            viewportX = (drawableWidth - viewportWidth) / 2;
+        }
+        else if (static_cast<long long>(drawableWidth) * 480LL <
+                 static_cast<long long>(drawableHeight) * 640LL)
+        {
+            viewportWidth = drawableWidth;
+            viewportHeight = drawableWidth * 480 / 640;
+            viewportY = (drawableHeight - viewportHeight) / 2;
+        }
+#ifdef TH08_IOS
+        if (portraitGameplay)
+        {
+            viewportX = 0;
+            viewportY = drawableHeight * 22 / 100;
+            if (viewportY < 1) viewportY = 1;
+            if (viewportY >= drawableHeight) viewportY = drawableHeight - 1;
+            viewportWidth = drawableWidth;
+            viewportHeight = drawableHeight - viewportY;
+        }
+        th08::modern::ios::PresentationLayout layout = {
+            drawableWidth, drawableHeight, viewportX, viewportY,
+            viewportWidth, viewportHeight};
+        th08::modern::ios::SetPresentationLayout(layout);
+        if (presentCount == 1 || presentCount % 300 == 0)
+        {
+            char presentationMessage[224];
+            SDL_snprintf(presentationMessage, sizeof(presentationMessage),
+                         "ios: present mode=%s drawable=%dx%d viewport=%d,%d %dx%d",
+                         portraitGameplay ? "portrait-gameplay" : "whole-frame",
+                         drawableWidth, drawableHeight, viewportX, viewportY,
+                         viewportWidth, viewportHeight);
+            th08::modern::LogStartup(presentationMessage);
+        }
+#endif
+        g_framebufferApi.bindFramebuffer(GL_FRAMEBUFFER,
+#ifdef TH08_IOS
+                                         static_cast<GLuint>(defaultFramebuffer)
+#else
+                                         0
+#endif
+        );
         glDrawBuffer(GL_BACK);
         glViewport(0, 0, drawableWidth, drawableHeight);
-
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
         glPushAttrib(GL_ALL_ATTRIB_BITS);
-        glDisable(GL_ALPHA_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
-        glDisable(GL_DEPTH_TEST); glDisable(GL_LIGHTING); glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
+        glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_FALSE);
-        glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D, renderColorTexture);
+        glBindTexture(GL_TEXTURE_2D, renderColorTexture);
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -484,17 +576,37 @@ class LinuxDevice : public IDirect3DDevice8
         glOrtho(0.0, drawableWidth, drawableHeight, 0.0, -1.0, 1.0);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
         glColor4ub(255, 255, 255, 255);
-        glBegin(GL_TRIANGLE_STRIP);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 0.0f);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(static_cast<float>(drawableWidth), 0.0f);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, static_cast<float>(drawableHeight));
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(static_cast<float>(drawableWidth),
-                                            static_cast<float>(drawableHeight));
-        glEnd();
+        if (portraitGameplay)
+        {
+            const int headerHeight = viewportY;
+            const int leftHeaderWidth = drawableWidth / 2;
+            // TH08 renders the 384x448 playfield at (32,16), with two
+            // 224x224 HUD columns to its right. Recompose those regions so
+            // portrait gameplay fills the display without black bands.
+            DrawPresentationRegion(416, 16, 224, 224,
+                                   0, 0, leftHeaderWidth, headerHeight);
+            DrawPresentationRegion(416, 240, 224, 224,
+                                   leftHeaderWidth, 0,
+                                   drawableWidth - leftHeaderWidth, headerHeight);
+            DrawPresentationRegion(32, 16, 384, 448,
+                                   0, headerHeight, drawableWidth,
+                                   drawableHeight - headerHeight);
+        }
+        else
+        {
+            DrawPresentationRegion(0, 0, 640, 480,
+                                   viewportX, viewportY, viewportWidth, viewportHeight);
+        }
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
         glPopAttrib();
 
+#ifdef TH08_IOS
+        th08::modern::ios::DrawVirtualControls();
+#endif
         glFlush();
+#ifdef TH08_IOS
+        glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(defaultRenderbuffer));
+#endif
         SDL_GL_SwapWindow(window);
 
         g_framebufferApi.bindFramebuffer(GL_FRAMEBUFFER, renderFramebuffer);
@@ -551,7 +663,8 @@ class LinuxDevice : public IDirect3DDevice8
                 memcpy(destination.pixels + (point.y + y) * destination.pitch + point.x * bytes,
                        source.pixels + (rect.top + y) * source.pitch + rect.left * bytes, copyWidth * bytes);
         }
-        th08_linux_surface_changed(destinationRaw); return S_OK;
+        th08_linux_surface_changed(destinationRaw);
+        return S_OK;
     }
     HRESULT BeginScene()
     {
@@ -713,7 +826,9 @@ class LinuxDevice : public IDirect3DDevice8
 
         g_framebufferApi.genRenderbuffers(1, &renderDepthBuffer);
         g_framebufferApi.bindRenderbuffer(GL_RENDERBUFFER, renderDepthBuffer);
-        g_framebufferApi.renderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+        // Depth24 is optional on GLES2.  iOS guarantees the 16-bit OES depth
+        // format, which is sufficient for the original D3D8 depth range.
+        g_framebufferApi.renderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT16, width, height);
 
         g_framebufferApi.genFramebuffers(1, &renderFramebuffer);
         g_framebufferApi.bindFramebuffer(GL_FRAMEBUFFER, renderFramebuffer);
@@ -746,10 +861,10 @@ class LinuxDevice : public IDirect3DDevice8
         const UINT width = backbuffer->width;
         const UINT height = backbuffer->height;
         glPushAttrib(GL_ALL_ATTRIB_BITS);
-        glDisable(GL_ALPHA_TEST); glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
-        glDisable(GL_DEPTH_TEST); glDisable(GL_LIGHTING); glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
+        glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_FALSE);
-        glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D, dialogueSnapshotTexture);
+        glBindTexture(GL_TEXTURE_2D, dialogueSnapshotTexture);
         glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity();
         glOrtho(0.0, width, height, 0.0, -1.0, 1.0);
@@ -829,8 +944,7 @@ class LinuxDevice : public IDirect3DDevice8
         { glEnable(GL_BLEND); glBlendFunc(BlendFunction(renderStates[D3DRS_SRCBLEND]), BlendFunction(renderStates[D3DRS_DESTBLEND])); }
         else glDisable(GL_BLEND);
         if (renderStates[D3DRS_ALPHATESTENABLE])
-        { glEnable(GL_ALPHA_TEST); glAlphaFunc(CompareFunction(renderStates[D3DRS_ALPHAFUNC]), (renderStates[D3DRS_ALPHAREF] & 255) / 255.0f); }
-        else glDisable(GL_ALPHA_TEST);
+        { /* GLES2 has no fixed-function alpha test; the shader supplies alpha. */ }
         if (renderStates[D3DRS_ZENABLE]) { glEnable(GL_DEPTH_TEST); glDepthFunc(CompareFunction(renderStates[D3DRS_ZFUNC])); }
         else glDisable(GL_DEPTH_TEST);
         glDepthMask(renderStates[D3DRS_ZWRITEENABLE] ? GL_TRUE : GL_FALSE);
@@ -847,7 +961,6 @@ class LinuxDevice : public IDirect3DDevice8
             GLfloat fogStart, fogEnd;
             memcpy(&fogStart, &renderStates[D3DRS_FOGSTART], sizeof(fogStart));
             memcpy(&fogEnd, &renderStates[D3DRS_FOGEND], sizeof(fogEnd));
-            glEnable(GL_FOG);
             glFogi(GL_FOG_MODE, GL_LINEAR);
             glFogi(GL_FOG_COORDINATE_SOURCE, GL_FOG_COORDINATE);
             glFogfv(GL_FOG_COLOR, fogColor);
@@ -856,7 +969,6 @@ class LinuxDevice : public IDirect3DDevice8
         }
         else
         {
-            glDisable(GL_FOG);
         }
         const bool colorUsesTexture = TextureOperationUsesTexture(
             textureStates[D3DTSS_COLOROP], textureStates[D3DTSS_COLORARG1],
@@ -866,7 +978,7 @@ class LinuxDevice : public IDirect3DDevice8
             textureStates[D3DTSS_ALPHAARG2]);
         if (texture != NULL && (colorUsesTexture || alphaUsesTexture))
         {
-            texture->Upload(); glEnable(GL_TEXTURE_2D); glBindTexture(GL_TEXTURE_2D, texture->glName);
+            texture->Upload(); glBindTexture(GL_TEXTURE_2D, texture->glName);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureStates[D3DTSS_MINFILTER] == D3DTEXF_LINEAR ? GL_LINEAR : GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureStates[D3DTSS_MAGFILTER] == D3DTEXF_LINEAR ? GL_LINEAR : GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, textureStates[D3DTSS_ADDRESSU] == D3DTADDRESS_CLAMP ? GL_CLAMP : GL_REPEAT);
@@ -891,7 +1003,13 @@ class LinuxDevice : public IDirect3DDevice8
             };
             glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, constantColor);
         }
-        else glDisable(GL_TEXTURE_2D);
+        else
+        {
+            // The GLES2 immediate wrapper treats a bound texture as the
+            // authoritative texture-enable state. D3D8 untextured primitives
+            // (notably the dialogue box) must not sample the preceding sprite.
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
     }
     D3DCOLOR EffectiveColor(D3DCOLOR diffuse)
     {
@@ -966,6 +1084,8 @@ class LinuxDevice : public IDirect3DDevice8
     GLuint renderFramebuffer, renderColorTexture, renderDepthBuffer, dialogueSnapshotTexture;
     bool framebufferReady, dialogueSnapshotReady, wasDialogPresent;
     unsigned long presentCount;
+    GLint defaultFramebuffer;
+    GLint defaultRenderbuffer;
     DWORD renderStates[256], textureStates[32];
     D3DMATRIX world, view, projection, textureTransform;
     D3DVIEWPORT8 viewport;
@@ -1000,7 +1120,10 @@ bool th08_linux_surface_access(IDirect3DSurface8 *surfaceRaw, LinuxSurfaceAccess
 {
     if (surfaceRaw == NULL || access == NULL) return false;
     LinuxSurface *surface = static_cast<LinuxSurface *>(surfaceRaw);
-    if (surface->backbuffer || readBackbuffer) surface->ReadBackbuffer();
+    // Only read GPU pixels when the caller explicitly requests a source
+    // snapshot.  Reading a destination backbuffer before every CopyRects call
+    // turns one 640x480 blit into a full GPU->CPU round trip per frame.
+    if (readBackbuffer) surface->ReadBackbuffer();
     access->pixels = surface->pixels.empty() ? NULL : &surface->pixels[0];
     access->width = surface->width; access->height = surface->height;
     access->pitch = surface->pitch; access->format = surface->format; return true;

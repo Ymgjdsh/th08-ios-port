@@ -1,6 +1,14 @@
 #include "th_pch.h"
 
 #include "EclManager.hpp"
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+#include "AsciiManager.hpp"
+#include "Background.hpp"
+#include "EnemyManager.hpp"
+#include "GameManager.hpp"
+#include "Spellcard.hpp"
+#include "Supervisor.hpp"
+#endif
 #include "EclOperands.hpp"
 
 namespace th08
@@ -97,6 +105,15 @@ DIFFABLE_STATIC_ARRAY_ASSIGN(void *, 32, g_EclExInsn) = {
     reinterpret_cast<void *>(&FUN_00425390),
 };
 
+#if defined(TH08_MODERN_WEB) || defined(TH08_MODERN_IOS)
+i32 &g_EclCallbackPublishedEnemyField24 = g_AsciiManager.unk_16f08;
+i32 &g_EclCallbackPublishedEnemyField56 = *reinterpret_cast<i32 *>(&g_AsciiManager.unk_16f04);
+i32 &g_EclGlobal004EA290 = g_Background.unk6260;
+i32 &g_EclGlobal004ECCA8 = g_Spellcard.scoreLimit;
+i8 &g_EclScriptedGlobalUpdateFreeze = g_GameManager.unk2C;
+f32 &g_EclGameTimeScale = g_Supervisor.framerateMultiplier;
+u32 &g_EclGameTimeScaleFlags = *reinterpret_cast<u32 *>(&g_Supervisor.flags);
+#else
 DIFFABLE_STATIC(i32, g_EclCallbackPublishedEnemyField24);
 DIFFABLE_STATIC(i32, g_EclCallbackPublishedEnemyField56);
 DIFFABLE_STATIC(i32, g_EclGlobal004EA290);
@@ -104,12 +121,21 @@ DIFFABLE_STATIC(i32, g_EclGlobal004ECCA8);
 DIFFABLE_STATIC(i8, g_EclScriptedGlobalUpdateFreeze);
 DIFFABLE_STATIC(f32, g_EclGameTimeScale);
 DIFFABLE_STATIC(u32, g_EclGameTimeScaleFlags);
+#endif
 DIFFABLE_STATIC(EclManager, g_EclManager);
 
 namespace EclRunLowProposal
 {
 DIFFABLE_STATIC(EclCallParameterCopy, g_EclCallParameters);
+#if defined(TH08_MODERN_WEB)
+EclOperands::EnemyOverlay *(&g_EclEnemyTableF54CC0)[92] =
+    *reinterpret_cast<EclOperands::EnemyOverlay *(*)[92]>(
+        reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCDA0);
+#elif defined(TH08_MODERN_IOS)
+IosPtr32<EclOperands::EnemyOverlay> g_EclEnemyTableF54CC0[92] = {};
+#else
 DIFFABLE_STATIC_ARRAY(EclOperands::EnemyOverlay *, 92, g_EclEnemyTableF54CC0);
+#endif
 } // namespace EclRunLowProposal
 
 } // namespace th08

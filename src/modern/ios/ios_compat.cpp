@@ -6,6 +6,9 @@
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_ttf.h>
+#ifdef TH08_IOS
+#include <CoreFoundation/CoreFoundation.h>
+#endif
 #include <dinput.h>
 #include <dsound.h>
 
@@ -28,6 +31,85 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include <vector>
+
+namespace
+{
+struct IosPointerRegistry
+{
+    IosPointerRegistry()
+    {
+        pthread_mutex_init(&this->mutex, NULL);
+        this->pointers.push_back(0);
+    }
+
+    ~IosPointerRegistry()
+    {
+        pthread_mutex_destroy(&this->mutex);
+    }
+
+    pthread_mutex_t mutex;
+    std::map<uintptr_t, DWORD> handles;
+    std::vector<uintptr_t> pointers;
+};
+
+IosPointerRegistry &GetIosPointerRegistry()
+{
+    static IosPointerRegistry registry;
+    return registry;
+}
+} // namespace
+
+DWORD TH08IosStorePointer(uintptr_t pointerValue)
+{
+    if (pointerValue == 0)
+        return 0;
+
+    IosPointerRegistry &registry = GetIosPointerRegistry();
+    pthread_mutex_lock(&registry.mutex);
+    std::map<uintptr_t, DWORD>::const_iterator existing = registry.handles.find(pointerValue);
+    if (existing != registry.handles.end())
+    {
+        const DWORD handle = existing->second;
+        pthread_mutex_unlock(&registry.mutex);
+        return handle;
+    }
+
+    const DWORD handle = static_cast<DWORD>(registry.pointers.size());
+    registry.pointers.push_back(pointerValue);
+    registry.handles[pointerValue] = handle;
+    pthread_mutex_unlock(&registry.mutex);
+    return handle;
+}
+
+uintptr_t TH08IosLoadPointer(DWORD handle)
+{
+    if (handle == 0)
+        return 0;
+
+    IosPointerRegistry &registry = GetIosPointerRegistry();
+    pthread_mutex_lock(&registry.mutex);
+    const uintptr_t pointerValue = handle < registry.pointers.size() ? registry.pointers[handle] : 0;
+    pthread_mutex_unlock(&registry.mutex);
+    return pointerValue;
+}
+
+void TH08IosForgetPointer(uintptr_t pointerValue)
+{
+    if (pointerValue == 0)
+        return;
+
+    IosPointerRegistry &registry = GetIosPointerRegistry();
+    pthread_mutex_lock(&registry.mutex);
+    std::map<uintptr_t, DWORD>::iterator existing = registry.handles.find(pointerValue);
+    if (existing != registry.handles.end())
+    {
+        const DWORD handle = existing->second;
+        if (handle < registry.pointers.size())
+            registry.pointers[handle] = 0;
+        registry.handles.erase(existing);
+    }
+    pthread_mutex_unlock(&registry.mutex);
+}
 
 namespace
 {
@@ -170,6 +252,31 @@ DWORD CurrentThreadIdImpl()
 std::string ConvertCp932ToUtf8(const char *text, size_t length)
 {
     if (text == NULL || length == 0) return std::string();
+#ifdef TH08_IOS
+    // SDL's built-in iconv on iOS only guarantees Unicode encodings. The
+    // original game data is CP932, so asking SDL_iconv for CP932 can silently
+    // return the source bytes and SDL_ttf then renders Japanese as boxes.
+    CFStringRef decoded = CFStringCreateWithBytes(
+        kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(text),
+        static_cast<CFIndex>(length), kCFStringEncodingDOSJapanese, false);
+    if (decoded == NULL)
+    {
+        decoded = CFStringCreateWithBytes(
+            kCFAllocatorDefault, reinterpret_cast<const UInt8 *>(text),
+            static_cast<CFIndex>(length), kCFStringEncodingShiftJIS, false);
+    }
+    if (decoded != NULL)
+    {
+        const CFIndex utf8Size =
+            CFStringGetMaximumSizeForEncoding(CFStringGetLength(decoded), kCFStringEncodingUTF8) + 1;
+        std::vector<char> output(static_cast<size_t>(utf8Size), 0);
+        const Boolean converted = CFStringGetCString(
+            decoded, &output[0], utf8Size, kCFStringEncodingUTF8);
+        CFRelease(decoded);
+        if (converted)
+            return std::string(&output[0]);
+    }
+#endif
     SDL_iconv_t converter = SDL_iconv_open("UTF-8", "CP932");
     if (converter == reinterpret_cast<SDL_iconv_t>(-1)) return std::string(text, length);
 
@@ -350,6 +457,73 @@ void FillKeyboard(BYTE *state, bool directInput)
     }
 #undef MAP_KEY
 }
+
+bool IsAbsolutePath(const char *path)
+{
+    return path != NULL && path[0] == '/';
+}
+
+std::string IosUserDataPath(const char *path)
+{
+    if (path == NULL || IsAbsolutePath(path))
+        return path != NULL ? std::string(path) : std::string();
+
+    const char *homePath = getenv("HOME");
+    if (homePath == NULL || homePath[0] == '\0')
+        return std::string(path);
+
+    while (path[0] == '.' && (path[1] == '/' || path[1] == '\\'))
+        path += 2;
+
+    std::string result(homePath);
+    result += "/Documents/";
+    for (; *path != '\0'; ++path)
+        result += *path == '\\' ? '/' : *path;
+    return result;
+}
+
+void EnsureParentDirectories(const std::string &path)
+{
+    // Every redirected path is rooted below the app's Documents directory.
+    // Create intermediate directories so replay and snapshot writes work on a
+    // clean install without requiring a separate Win32 mkdir compatibility API.
+    for (std::string::size_type slash = path.find('/', 1);
+         slash != std::string::npos;
+         slash = path.find('/', slash + 1))
+    {
+        const std::string directory = path.substr(0, slash);
+        if (!directory.empty())
+            mkdir(directory.c_str(), 0755);
+    }
+}
+
+int OpenIosFile(const char *path, int flags, mode_t mode, bool writing)
+{
+    if (path == NULL || path[0] == '\0')
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (writing && !IsAbsolutePath(path))
+    {
+        const std::string userPath = IosUserDataPath(path);
+        EnsureParentDirectories(userPath);
+        if (strcmp(path, "th08.cfg") == 0)
+            th08::modern::LogStartup("ios-files: config write redirected to Documents");
+        return open(userPath.c_str(), flags, mode);
+    }
+
+    int fd = open(path, flags, mode);
+    if (fd >= 0 || writing || IsAbsolutePath(path))
+        return fd;
+
+    const std::string userPath = IosUserDataPath(path);
+    fd = open(userPath.c_str(), flags, mode);
+    if (fd >= 0 && strcmp(path, "th08.cfg") == 0)
+        th08::modern::LogStartup("ios-files: config read from Documents");
+    return fd;
+}
 } // namespace
 
 extern "C" SDL_Window *th08_linux_get_window() { return g_window; }
@@ -362,7 +536,9 @@ HANDLE CreateFileA(LPCSTR path, DWORD access, DWORD, LPVOID, DWORD disposition, 
     if (access & FILE_APPEND_DATA) flags |= O_APPEND;
     if (disposition == CREATE_ALWAYS) flags |= O_CREAT | O_TRUNC;
     if (disposition == OPEN_ALWAYS) flags |= O_CREAT;
-    int fd = open(path, flags, 0666);
+    const bool writing = (access & (GENERIC_WRITE | FILE_APPEND_DATA)) != 0 ||
+                         disposition == CREATE_ALWAYS || disposition == OPEN_ALWAYS;
+    int fd = OpenIosFile(path, flags, 0666, writing);
     if (fd < 0) { g_lastError = errno; return INVALID_HANDLE_VALUE; }
     return new FileHandle(fd);
 }
@@ -422,14 +598,27 @@ BOOL CloseHandle(HANDLE raw)
 }
 
 BOOL FlushFileBuffers(HANDLE raw) { return fsync(static_cast<FileHandle *>(raw)->fd) == 0; }
-BOOL DeleteFileA(LPCSTR path) { return unlink(path) == 0; }
+BOOL DeleteFileA(LPCSTR path)
+{
+    if (path == NULL)
+        return FALSE;
+    if (unlink(path) == 0)
+        return TRUE;
+    if (IsAbsolutePath(path))
+        return FALSE;
+    return unlink(IosUserDataPath(path).c_str()) == 0;
+}
 
 DWORD GetFileAttributesW(LPCWSTR path)
 {
     char converted[PATH_MAX];
     if (wcstombs(converted, path, sizeof(converted) - 1) == static_cast<size_t>(-1)) return INVALID_FILE_ATTRIBUTES;
     struct stat info;
-    if (stat(converted, &info) != 0) return INVALID_FILE_ATTRIBUTES;
+    if (stat(converted, &info) != 0)
+    {
+        if (IsAbsolutePath(converted) || stat(IosUserDataPath(converted).c_str(), &info) != 0)
+            return INVALID_FILE_ATTRIBUTES;
+    }
     return S_ISDIR(info.st_mode) ? FILE_ATTRIBUTE_DIRECTORY : FILE_ATTRIBUTE_NORMAL;
 }
 
@@ -443,7 +632,13 @@ BOOL SetCurrentDirectoryW(LPCWSTR path)
 HANDLE FindFirstFileA(LPCSTR pattern, WIN32_FIND_DATAA *data)
 {
     glob_t result;
-    if (glob(pattern, 0, NULL, &result) != 0) return INVALID_HANDLE_VALUE;
+    int globResult = glob(pattern, 0, NULL, &result);
+    if (globResult != 0 && !IsAbsolutePath(pattern))
+    {
+        const std::string userPattern = IosUserDataPath(pattern);
+        globResult = glob(userPattern.c_str(), 0, NULL, &result);
+    }
+    if (globResult != 0) return INVALID_HANDLE_VALUE;
     FindHandle *handle = new FindHandle();
     for (size_t i = 0; i < result.gl_pathc; ++i) handle->paths.push_back(result.gl_pathv[i]);
     globfree(&result);
@@ -542,7 +737,17 @@ UINT_PTR SetTimer(HWND, UINT_PTR id, UINT, void *) { return id != 0 ? id : 1; }
 BOOL KillTimer(HWND, UINT_PTR) { return TRUE; }
 HANDLE CreateMutexA(LPVOID, BOOL, LPCSTR) { g_lastError = 0; return new MutexHandle(); }
 DWORD GetLastError(void) { return g_lastError; }
-void InitializeCriticalSection(CRITICAL_SECTION *value) { pthread_mutex_init(value, NULL); }
+void InitializeCriticalSection(CRITICAL_SECTION *value)
+{
+    // Win32 critical sections are recursive. A default pthread mutex is not,
+    // which can permanently stall the game when one compatibility operation
+    // re-enters a subsystem lock on the same thread.
+    pthread_mutexattr_t attributes;
+    pthread_mutexattr_init(&attributes);
+    pthread_mutexattr_settype(&attributes, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(value, &attributes);
+    pthread_mutexattr_destroy(&attributes);
+}
 void DeleteCriticalSection(CRITICAL_SECTION *value) { pthread_mutex_destroy(value); }
 void EnterCriticalSection(CRITICAL_SECTION *value) { pthread_mutex_lock(value); }
 void LeaveCriticalSection(CRITICAL_SECTION *value) { pthread_mutex_unlock(value); }
@@ -573,11 +778,37 @@ HWND CreateWindowExA(DWORD, LPCSTR, LPCSTR title, DWORD style, int, int, int wid
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 #endif
     Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN;
+#ifdef TH08_IOS
+    // UIKit owns the top-level window.  SDL's UIKit backend sizes a normal
+    // resizable view to the display and handles rotation; asking it to enter
+    // desktop fullscreen here can leave a landscape drawable inside a
+    // portrait view on iPadOS.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS,
+                "LandscapeLeft LandscapeRight Portrait PortraitUpsideDown");
+    flags |= SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    width = 640;
+    height = 480;
+#else
     if (style == WS_OVERLAPPEDWINDOW) flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
     else { width = 640; height = 480; }
+#endif
     g_window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height, flags);
     if (g_window == NULL) fprintf(stderr, "th08-modern: SDL_CreateWindow failed: %s\n", SDL_GetError());
-    else SetApplicationIcon(g_window);
+    else
+    {
+#ifdef TH08_IOS
+        int windowWidth = 0, windowHeight = 0, drawableWidth = 0, drawableHeight = 0;
+        SDL_GetWindowSize(g_window, &windowWidth, &windowHeight);
+        SDL_GL_GetDrawableSize(g_window, &drawableWidth, &drawableHeight);
+        char windowMessage[192];
+        SDL_snprintf(windowMessage, sizeof(windowMessage),
+                     "ios: window=%dx%d drawable=%dx%d flags=0x%08x",
+                     windowWidth, windowHeight, drawableWidth, drawableHeight,
+                     static_cast<unsigned>(flags));
+        th08::modern::LogStartup(windowMessage);
+#endif
+        SetApplicationIcon(g_window);
+    }
     return reinterpret_cast<HWND>(g_window);
 }
 

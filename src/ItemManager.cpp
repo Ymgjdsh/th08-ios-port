@@ -196,13 +196,13 @@ void ItemManager::OnUpdate()
     f32 angle;
     i32 soundIndex = 0;
     Item *item = this->itemListHead.next;
-    Float3 itemBox(*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.primaryShtFile) + 0x18),
-                   *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.primaryShtFile) + 0x18), 16.0f);
+    Float3 itemBox(*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetPrimaryShtFile()) + 0x18),
+                   *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetPrimaryShtFile()) + 0x18), 16.0f);
 
     this->itemCount = 0;
     speed = *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(&g_Player) + 3)
-                ? *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.secondaryShtFile) + 0x34)
-                : *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.primaryShtFile) + 0x34);
+                ? *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetSecondaryShtFile()) + 0x34)
+                : *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetPrimaryShtFile()) + 0x34);
     speed *= g_EclGameTimeScale;
 
     while (item != NULL)
@@ -266,7 +266,7 @@ void ItemManager::OnUpdate()
         else
         {
             if (item->state == ITEM_STATE_AUTOCOLLECT ||
-                (g_Player.position.y < g_Player.primaryShtFile->pointItemValueLine &&
+                (g_Player.position.y < g_Player.GetPrimaryShtFile()->pointItemValueLine &&
                  (g_GameManager.GetPower() >= 0.0 ||
                   *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(&g_Player) + 3) != 0 ||
                   g_GameManager.shotType == 1 || g_GameManager.shotType == 6)))
@@ -275,7 +275,7 @@ void ItemManager::OnUpdate()
                 {
                     angle = g_Player.FUN_0044c1b0(&item->currentPosition);
                     item->startPositionOrVelocity.FromAngleMagnitude(
-                        angle, *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.primaryShtFile) + 0x14));
+                        angle, *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(g_Player.GetPrimaryShtFile()) + 0x14));
                     item->state = ITEM_STATE_AUTOCOLLECT;
                     item->currentPosition += item->startPositionOrVelocity * g_EclGameTimeScale;
                     goto pickup;
@@ -310,7 +310,7 @@ moveItem:
 pickup:
         if (item->state != ITEM_STATE_UNK3 && g_Player.CalcItemBoxCollision(&item->currentPosition, &itemBox))
         {
-            *reinterpret_cast<u16 *>(reinterpret_cast<u8 *>(g_ReplayManager) + 0xda) |= 0x40;
+            g_ReplayManager->flags |= 0x40;
             switch (item->itemType)
             {
             case ITEM_POWER_SMALL:
@@ -458,10 +458,10 @@ void Item::CollectPoint()
     i32 pointItemValueBase = g_GameManager.globals->pointItemValue;
     i32 currentPointItemValue;
 
-    currentPointItemValue = static_cast<ZunBool>(this->currentPosition.y < g_Player.primaryShtFile->pointItemValueLine)
+    currentPointItemValue = static_cast<ZunBool>(this->currentPosition.y < g_Player.GetPrimaryShtFile()->pointItemValueLine)
                                 ? pointItemValueBase
                                 : pointItemValueBase / 2 -
-                                      (i32)(this->currentPosition.y - g_Player.primaryShtFile->pointItemValueLine) *
+                                      (i32)(this->currentPosition.y - g_Player.GetPrimaryShtFile()->pointItemValueLine) *
                                           (g_GameManager.globals->pointItemValue / 1000);
     if (this->isMaxValue == 1)
     {
@@ -516,10 +516,10 @@ void Item::CollectPointSmall()
     i32 pointItemValueBase = g_GameManager.globals->pointItemValue;
     i32 currentPointItemValue;
 
-    currentPointItemValue = static_cast<ZunBool>(this->currentPosition.y < g_Player.primaryShtFile->pointItemValueLine)
+    currentPointItemValue = static_cast<ZunBool>(this->currentPosition.y < g_Player.GetPrimaryShtFile()->pointItemValueLine)
                                 ? pointItemValueBase
                                 : pointItemValueBase / 2 -
-                                      (i32)(this->currentPosition.y - g_Player.primaryShtFile->pointItemValueLine) *
+                                      (i32)(this->currentPosition.y - g_Player.GetPrimaryShtFile()->pointItemValueLine) *
                                           (g_GameManager.globals->pointItemValue / 1000);
     if (this->isMaxValue == 1)
     {

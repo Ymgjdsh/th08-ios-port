@@ -567,12 +567,21 @@ void __fastcall FUN_0040d100(Player *player)
 
         for (i = 0; i < 8; i++)
         {
+#if defined(TH08_MODERN_IOS)
+            Enemy *iosEnemy = reinterpret_cast<Enemy *>(
+                EclRunLowProposal::EclEnemySlot(i));
+            if (iosEnemy != NULL)
+            {
+                *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(iosEnemy) + 0x3324) &= ~0x40u;
+            }
+#else
             if (reinterpret_cast<Enemy **>(reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCDA0)[i] != NULL)
             {
                 *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(
                     reinterpret_cast<Enemy **>(reinterpret_cast<u8 *>(&g_EnemyManager) + 0x9DCDA0)[i]) + 0x3324) &=
                     ~0x40u;
             }
+#endif
         }
     }
 }
@@ -1410,7 +1419,7 @@ void __fastcall FUN_0040fcd0(Player *player)
 
     if (bomb->timer >= 0 && bomb->timer <= 60)
     {
-        reinterpret_cast<Effect *>(bomb->workItems[0].effect)->vector0 = player->position;
+        reinterpret_cast<Effect *>(bomb->workItems[0].GetEffect())->vector0 = player->position;
     }
 
     if (bomb->timer >= 20 && bomb->timer < 116)
@@ -1534,7 +1543,7 @@ void __fastcall FUN_004103f0(Player *player)
 
     if (bomb->timer >= 0 && bomb->timer <= 60)
     {
-        reinterpret_cast<Effect *>(bomb->workItems[0].effect)->vector0 = player->position;
+        reinterpret_cast<Effect *>(bomb->workItems[0].GetEffect())->vector0 = player->position;
     }
 
     if (bomb->timer >= 20 && bomb->timer < 148)
@@ -1783,7 +1792,11 @@ i32 __fastcall FUN_004114e0(AnmVm *effect)
             Float3 position;
             g_AnmManager->FUN_00464b00(
                 effect,
+                #ifdef TH08_IOS
+                reinterpret_cast<VertexTex1DiffuseXyzrhw *>(GetIosEffectResource(effect)),
+                #else
                 reinterpret_cast<VertexTex1DiffuseXyzrhw *>(*reinterpret_cast<void **>(reinterpret_cast<u8 *>(effect) + 0x358)),
+                #endif
                 2 * *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) + 2);
             for (i = 0; i < 4; i++)
             {
@@ -2152,7 +2165,11 @@ i32 __fastcall FUN_004117b0(AnmVm *effect)
             Float3 position;
             g_AnmManager->FUN_00464b00(
                 effect,
+                #ifdef TH08_IOS
+                reinterpret_cast<VertexTex1DiffuseXyzrhw *>(GetIosEffectResource(effect)),
+                #else
                 reinterpret_cast<VertexTex1DiffuseXyzrhw *>(*reinterpret_cast<void **>(reinterpret_cast<u8 *>(effect) + 0x358)),
+                #endif
                 2 * *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) + 2);
             for (i = 0; i < 4; i++)
             {
@@ -2187,7 +2204,11 @@ i32 __fastcall FUN_00411720(AnmVm *effect)
     g_EffectManager.FUN_004259e0(35, reinterpret_cast<D3DXVECTOR3 *>(&position),
                                  reinterpret_cast<D3DXVECTOR3 *>(&velocity),
                                  *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x328), 1, -1);
+    #ifdef TH08_IOS
+    SetIosEffectUpdateCallback(effect, FUN_004114e0);
+    #else
     *reinterpret_cast<void **>(reinterpret_cast<u8 *>(effect) + 0x348) = reinterpret_cast<void *>(FUN_004114e0);
+    #endif
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) = 44;
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x320) = 4.0f;
     return 0;
@@ -2203,7 +2224,11 @@ i32 __fastcall FUN_00411a80(AnmVm *effect)
     g_EffectManager.FUN_004259e0(35, reinterpret_cast<D3DXVECTOR3 *>(&position),
                                  reinterpret_cast<D3DXVECTOR3 *>(&velocity),
                                  *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x328), 1, -1);
+    #ifdef TH08_IOS
+    SetIosEffectUpdateCallback(effect, FUN_004117b0);
+    #else
     *reinterpret_cast<void **>(reinterpret_cast<u8 *>(effect) + 0x348) = reinterpret_cast<void *>(FUN_004117b0);
+    #endif
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(effect) + 0x324) = 54;
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(effect) + 0x320) = 6.0f;
     return 0;

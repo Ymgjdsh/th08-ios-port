@@ -100,6 +100,7 @@ elseif(APPLE)
         src/modern/ios/ios_runtime.cpp
         src/modern/ios/ios_d3d8_compat.cpp
         src/modern/ios/ios_d3dx8_compat.cpp
+        src/modern/ios/ios_gl_legacy.cpp
         src/modern/ios/ios_touch.cpp)
     add_executable(th08-modern MACOSX_BUNDLE ${TH08_GAME_SOURCES})
 else()
@@ -332,19 +333,22 @@ elseif(APPLE)
         "${CMAKE_SOURCE_DIR}/src/modern/ios"
         "${SDL2_SOURCE_DIR}/include")
     target_link_libraries(th08-modern PRIVATE
-        SDL2::SDL2-static SDL2_image::SDL2_image SDL2_mixer::SDL2_mixer
+        SDL2::SDL2main SDL2::SDL2-static
+        SDL2_image::SDL2_image SDL2_mixer::SDL2_mixer
         SDL2_ttf::SDL2_ttf
         "-framework OpenGLES" "-framework UIKit" "-framework Foundation"
-        "-framework CoreGraphics" "-framework QuartzCore" "-framework AudioToolbox"
+        "-framework CoreFoundation" "-framework CoreGraphics" "-framework QuartzCore" "-framework AudioToolbox"
         "-framework AVFoundation" "-framework CoreAudio")
     if(EXISTS "${CMAKE_SOURCE_DIR}/ios/LaunchScreen.storyboard")
         target_sources(th08-modern PRIVATE ios/LaunchScreen.storyboard)
         set_source_files_properties(ios/LaunchScreen.storyboard PROPERTIES
             MACOSX_PACKAGE_LOCATION Resources)
     endif()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/ios/LaunchImage.png")
-        target_sources(th08-modern PRIVATE ios/LaunchImage.png)
-        set_source_files_properties(ios/LaunchImage.png PROPERTIES
+    set(TH08_IOS_LAUNCH_ICON
+        "${CMAKE_SOURCE_DIR}/ios/Assets.xcassets/AppIcon.appiconset/Icon-1024.png")
+    if(EXISTS "${TH08_IOS_LAUNCH_ICON}")
+        target_sources(th08-modern PRIVATE "${TH08_IOS_LAUNCH_ICON}")
+        set_source_files_properties("${TH08_IOS_LAUNCH_ICON}" PROPERTIES
             MACOSX_PACKAGE_LOCATION Resources)
     endif()
     if(EXISTS "${CMAKE_SOURCE_DIR}/ios/Assets.xcassets")
@@ -363,4 +367,6 @@ else()
     message(FATAL_ERROR "The modern Windows target currently supports MSVC and MinGW.")
 endif()
 
-set_target_properties(th08-modern PROPERTIES OUTPUT_NAME "th08-modern")
+if(NOT IOS)
+    set_target_properties(th08-modern PROPERTIES OUTPUT_NAME "th08-modern")
+endif()
