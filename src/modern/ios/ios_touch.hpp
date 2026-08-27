@@ -33,6 +33,10 @@ void ProcessEvent(const SDL_Event &event);
 void ResetTouchState();
 void DrawVirtualControls();
 bool IsDeveloperInvincible();
+bool IsAutoBombEnabled();
+bool ConsumeDragDelta(f32 *dx, f32 *dy);
+void SetPresentationShake(f32 x, f32 y);
+void GetPresentationShake(f32 *x, f32 *y);
 
 } // namespace ios
 } // namespace modern

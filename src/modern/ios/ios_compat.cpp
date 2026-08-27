@@ -314,8 +314,12 @@ const char *ResolveJapaneseFont()
     {
         path = std::string(basePath) + "msgothic.ttc";
         if (access(path.c_str(), R_OK) == 0)
+        {
+            th08::modern::LogStartup("font: bundled Japanese font ready");
             return path.c_str();
+        }
     }
+    th08::modern::LogStartup("font: ERROR bundled msgothic.ttc is missing");
     return NULL;
 #else
     if (!FcInit()) return NULL;

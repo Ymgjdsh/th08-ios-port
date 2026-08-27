@@ -7,9 +7,76 @@
 #include "MusicRoom.hpp"
 #include "SoundPlayer.hpp"
 #include "i18n.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
+
+namespace
+{
+
+bool IsCp932LeadByte(unsigned char value)
+{
+    return (value >= 0x81 && value <= 0x9f) ||
+           (value >= 0xe0 && value <= 0xfc);
+}
+
+bool IsCp932TrailByte(unsigned char value)
+{
+    return (value >= 0x40 && value <= 0x7e) ||
+           (value >= 0x80 && value <= 0xfc);
+}
+
+size_t CompleteCp932Length(const char *text, size_t available)
+{
+    size_t offset = 0;
+    size_t complete = 0;
+    while (offset < available && text[offset] != '\0')
+    {
+        const unsigned char value = static_cast<unsigned char>(text[offset]);
+        if (IsCp932LeadByte(value))
+        {
+            if (offset + 1 >= available || text[offset + 1] == '\0' ||
+                !IsCp932TrailByte(static_cast<unsigned char>(text[offset + 1])))
+                break;
+            offset += 2;
+        }
+        else
+        {
+            ++offset;
+        }
+        complete = offset;
+    }
+    return complete;
+}
+
+void CopyCp932Text(char *destination, size_t destinationSize, const char *source)
+{
+    if (destination == NULL || destinationSize == 0)
+        return;
+    destination[0] = '\0';
+    if (source == NULL)
+        return;
+
+    const size_t length = CompleteCp932Length(source, destinationSize - 1);
+    if (length != 0)
+        memcpy(destination, source, length);
+    destination[length] = '\0';
+}
+
+void TerminateParsedCp932Text(char *text, size_t textSize, size_t bytesCopied)
+{
+    if (text == NULL || textSize == 0)
+        return;
+    if (bytesCopied >= textSize)
+        bytesCopied = textSize - 1;
+    text[bytesCopied] = '\0';
+    text[CompleteCp932Length(text, bytesCopied)] = '\0';
+}
+
+} // namespace
 
 const char *g_BgmNotUnlockedWarning[] = {
     TH_WARN_BGM_NOT_UNLOCKED0, TH_WARN_BGM_NOT_UNLOCKED1, TH_WARN_BGM_NOT_UNLOCKED2, TH_WARN_BGM_NOT_UNLOCKED3,
@@ -172,11 +239,12 @@ i32 MusicRoom::ProcessInput()
 
             if (this->selectedSongIndex == this->cursor || this->bgmUnlocked[this->cursor])
             {
-                memcpy(buf1, this->trackDescriptors[this->cursor].descriptors[i], 64);
+                CopyCp932Text(buf1, sizeof(buf1),
+                              this->trackDescriptors[this->cursor].descriptors[i]);
             }
             else
             {
-                memcpy(buf1, g_BgmNotUnlockedWarning[i], 64);
+                CopyCp932Text(buf1, sizeof(buf1), g_BgmNotUnlockedWarning[i]);
             }
 
             if (buf1[0] != '\0')
@@ -209,7 +277,8 @@ i32 MusicRoom::ProcessInput()
 
         memset(buf2, 0, sizeof(buf2));
 
-        memcpy(buf2, this->trackDescriptors[this->cursor].descriptors[0], 64);
+        CopyCp932Text(buf2, sizeof(buf2),
+                      this->trackDescriptors[this->cursor].descriptors[0]);
 
         g_AnmManager->DrawTextLeft(&this->descriptionVms[7], 0xffe0c0, 0x300000, buf2);
     }
@@ -429,11 +498,19 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
         {
             ptr++;
             i++;
+            if (i >= 32)
+            {
+#ifdef TH08_IOS
+                modern::LogStartup("music-room: descriptor limit reached; remaining data ignored");
+#endif
+                goto out;
+            }
             charIdx = 0;
 
             while (*ptr != '\n' && *ptr != '\r')
             {
-                musicRoom->trackDescriptors[i].path[charIdx] = *ptr;
+                if (charIdx + 1 < sizeof(musicRoom->trackDescriptors[i].path))
+                    musicRoom->trackDescriptors[i].path[charIdx] = *ptr;
 
                 ptr++;
                 charIdx++;
@@ -443,6 +520,9 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
                     goto out;
                 }
             }
+            musicRoom->trackDescriptors[i].path[
+                charIdx < sizeof(musicRoom->trackDescriptors[i].path)
+                    ? charIdx : sizeof(musicRoom->trackDescriptors[i].path) - 1] = '\0';
 
             while (*ptr == '\n' || *ptr == '\r')
             {
@@ -458,7 +538,8 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
 
             while (*ptr != '\n' && *ptr != '\r')
             {
-                musicRoom->trackDescriptors[i].title[charIdx] = *ptr;
+                if (charIdx + 1 < sizeof(musicRoom->trackDescriptors[i].title))
+                    musicRoom->trackDescriptors[i].title[charIdx] = *ptr;
 
                 ptr++;
                 charIdx++;
@@ -468,6 +549,10 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
                     goto out;
                 }
             }
+            TerminateParsedCp932Text(
+                musicRoom->trackDescriptors[i].title,
+                sizeof(musicRoom->trackDescriptors[i].title),
+                charIdx);
 
             while (*ptr == '\n' || *ptr == '\r')
             {
@@ -493,7 +578,8 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
 
                 while (*ptr != '\n' && *ptr != '\r')
                 {
-                    musicRoom->trackDescriptors[i].descriptors[currentLine][charIdx] = *ptr;
+                    if (charIdx + 1 < sizeof(musicRoom->trackDescriptors[i].descriptors[currentLine]))
+                        musicRoom->trackDescriptors[i].descriptors[currentLine][charIdx] = *ptr;
 
                     ptr++;
                     charIdx++;
@@ -503,6 +589,10 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
                         goto out;
                     }
                 }
+                TerminateParsedCp932Text(
+                    musicRoom->trackDescriptors[i].descriptors[currentLine],
+                    sizeof(musicRoom->trackDescriptors[i].descriptors[currentLine]),
+                    charIdx);
 
                 while (*ptr == '\n' || *ptr == '\r')
                 {
@@ -523,6 +613,29 @@ ZunResult MusicRoom::AddedCallback(MusicRoom *musicRoom)
 
 out:
     musicRoom->numDescriptors = i + 1;
+
+#ifdef TH08_IOS
+    const char *smokeTest = SDL_getenv("TH08_IOS_SMOKE_TEST");
+    if (smokeTest != NULL && strcmp(smokeTest, "musicroom") == 0 &&
+        musicRoom->numDescriptors > 2)
+    {
+        for (int line = 0; line < 7; ++line)
+        {
+            const u8 *raw = reinterpret_cast<const u8 *>(
+                musicRoom->trackDescriptors[2].descriptors[line]);
+            char message[224];
+            int written = SDL_snprintf(message, sizeof(message),
+                                       "music-room/raw track=3 line=%d bytes=", line + 1);
+            for (int byteIndex = 0; byteIndex < 66 && raw[byteIndex] != 0 &&
+                 written > 0 && written + 3 < static_cast<int>(sizeof(message)); ++byteIndex)
+            {
+                written += SDL_snprintf(message + written, sizeof(message) - written,
+                                        "%02X", static_cast<unsigned int>(raw[byteIndex]));
+            }
+            modern::LogStartup(message);
+        }
+    }
+#endif
 
     for (i = 0; i < musicRoom->numDescriptors; i++)
     {
@@ -557,6 +670,15 @@ out:
     }
 
     g_ZunMemory.Free(musicCmtFile);
+
+    // TitleScreen starts the loading overlay before handing control to the
+    // Music Room. Unlike the other asynchronous screens, MusicRoom has no
+    // setup thread to dismiss it, so leaving state 1 active draws the
+    // "Now Loading" / "少女祈祷中" VMs forever over the ready screen.
+    g_Supervisor.HideLoadingVms();
+#ifdef TH08_IOS
+    modern::LogStartup("music-room: ready; loading overlay dismissed");
+#endif
 
     return ZUN_SUCCESS;
 }

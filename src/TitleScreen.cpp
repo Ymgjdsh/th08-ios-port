@@ -314,7 +314,14 @@ ChainCallbackResult TitleScreen::OnUpdateStartMenu()
             {
                 if (g_AnmManager->LoadSurface(0, "title/title00.png") != ZUN_SUCCESS)
                 {
+#ifdef TH08_IOS
+                    // Keep the title job alive so a transient archive failure
+                    // cannot turn the rest of the session into a black screen.
+                    modern::LogStartup("title/recovery: title00 reload failed; retrying");
+                    return CHAIN_CALLBACK_RESULT_CONTINUE;
+#else
                     return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
+#endif
                 }
             }
 
@@ -578,13 +585,24 @@ ChainCallbackResult TitleScreen::OnUpdateStartMenu()
 
                 return CHAIN_CALLBACK_RESULT_CONTINUE;
             case TITLE_MENU_ITEM_START_MUSIC_ROOM:
+            {
+                // The iOS renderer clears the frame before each draw. Capture
+                // the title now so the loading transition has valid content
+                // instead of exposing a black frame.
+                Float3 capturePosition(500.0f, 440.0f, 0.0f);
+                g_Supervisor.SetupLoadingVmsAndInitCapture(&capturePosition);
                 g_Supervisor.curState = SupervisorState_MusicRoom;
                 this->currentHelpTextVm->SetInterrupt(2);
                 return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
+            }
             case TITLE_MENU_ITEM_START_RESULT:
+            {
+                Float3 capturePosition(500.0f, 440.0f, 0.0f);
+                g_Supervisor.SetupLoadingVmsAndInitCapture(&capturePosition);
                 g_Supervisor.curState = SupervisorState_ResultScreen;
                 this->currentHelpTextVm->SetInterrupt(2);
                 return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
+            }
             case TITLE_MENU_ITEM_START_OPTION:
                 /* ??? */
                 this->currentScreenState = TitleCurrentScreenState_Init;
@@ -1787,6 +1805,21 @@ ChainCallbackResult TitleScreen::OnUpdateCharacterSelect()
             if (this->currentScreen != TitleCurrentScreen_CharacterSelectExtra)
             {
                 g_GameManager.currentStage = STAGE1;
+#ifdef TH08_IOS
+                const char *smokeStage = getenv("TH08_IOS_SMOKE_STAGE");
+                if (smokeStage != NULL && smokeStage[0] != '\0')
+                {
+                    const int requestedStage = atoi(smokeStage);
+                    if (requestedStage >= STAGE1 && requestedStage <= EXTRASTAGE)
+                    {
+                        g_GameManager.currentStage = requestedStage;
+                        char message[96];
+                        SDL_snprintf(message, sizeof(message),
+                                     "smoke-stage: starting directly at stage=%d", requestedStage);
+                        modern::LogStartup(message);
+                    }
+                }
+#endif
             }
             else
             {
@@ -3284,14 +3317,25 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
             }
 
             _mkdir("./replay");
+#ifdef TH08_IOS
+            // iOS keeps user replays in Documents. Do not chdir from the
+            // read-only app bundle: the original unconditional ../ would
+            // strand the process outside the bundle and break th08.dat opens.
+            firstFile = FindFirstFileA("./replay/th8_ud????.rpy", &findData);
+#else
             _chdir("./replay");
-
             firstFile = FindFirstFileA("th8_ud????.rpy", &findData);
+#endif
             if (firstFile != INVALID_HANDLE_VALUE)
             {
                 for (i = 0; i < 45; i++)
                 {
+#ifdef TH08_IOS
+                    snprintf(path, sizeof(path), "./replay/%s", findData.cFileName);
+                    replayData = (ReplayData *)FileSystem::OpenFile(path, &fileSize, TRUE);
+#else
                     replayData = (ReplayData *)FileSystem::OpenFile(findData.cFileName, &fileSize, TRUE);
+#endif
                     if (replayData == NULL)
                     {
                         continue;
@@ -3302,7 +3346,12 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
                     {
                         this->replays[replayCount] = *replayData;
 
+#ifdef TH08_IOS
+                        snprintf(this->replayFilePaths[replayCount], sizeof(this->replayFilePaths[replayCount]),
+                                 "./replay/%s", findData.cFileName);
+#else
                         sprintf(this->replayFilePaths[replayCount], "./replay/%s", findData.cFileName);
+#endif
                         sprintf(this->replayNumbers[replayCount], "User ");
 
                         g_ZunMemory.Free(replayData);
@@ -3321,7 +3370,9 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
              * doesn't do anything really if it's invalid.
              */
             FindClose(firstFile);
+#ifndef TH08_IOS
             _chdir("../");
+#endif
             this->replayCount = replayCount;
             this->unk0xc284 = 0;
         }
@@ -3380,6 +3431,20 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
             this->currentReplay =
                 (ReplayData *)FileSystem::OpenFile(this->replayFilePaths[this->selectedReplay], &fileSize2, TRUE);
             this->currentReplay = ReplayManager::LoadReplayData(this->currentReplay, fileSize2);
+
+#ifdef TH08_IOS
+            if (this->currentReplay == NULL)
+            {
+                g_SoundPlayer.PlaySoundByIdx(SOUND_INVALID_ACTION, 0);
+                this->currentScreenState = (TitleCurrentScreenState)1;
+                this->stateTimer = 0;
+                this->stateTimer2 = 0;
+                this->cursor = this->selectedReplay;
+                g_AnmManager->SetInterruptArray(this->vms, this->vmCount, 14);
+                modern::LogStartup("title/replay: rejected unreadable replay without leaving menu");
+                break;
+            }
+#endif
 
             for (i = 0; i < MAX_STAGES; i++)
             {
@@ -3547,9 +3612,23 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
     case 4:
         if (this->stateTimer >= 30)
         {
+            if (this->currentReplay != NULL)
+            {
+                g_ZunMemory.Free(this->currentReplay);
+                this->currentReplay = NULL;
+            }
             this->ChangeCurrentScreen(TitleCurrentScreen_StartMenu);
             this->cursor = TITLE_MENU_ITEM_START_REPLAY;
 
+#ifdef TH08_IOS
+            // Do not recursively update the new screen in the same frame.
+            // Replay has its own VM and help-text state; letting the ordinary
+            // start-menu initialization run on the following frame ensures
+            // title00.png is restored before a frame can be drawn.
+            this->currentHelpTextVm = NULL;
+            this->cursor2 = -1;
+            modern::LogStartup("title/replay: cancel transition queued for clean title rebuild");
+#endif
             return CHAIN_CALLBACK_RESULT_CONTINUE;
         }
         break;

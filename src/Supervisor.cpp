@@ -102,6 +102,9 @@ ChainCallbackResult Supervisor::OnUpdate(Supervisor *s)
     g_AnmManager->ClearCameraSettings();
     g_AnmManager->SetMixColorDefault();
     g_AnmManager->screenShakeOffset.x = g_AnmManager->screenShakeOffset.y = 0.0f;
+#ifdef TH08_IOS
+    modern::ios::SetPresentationShake(0.0f, 0.0f);
+#endif
 
     g_AnmManager->ExecuteScriptArray(g_SupervisorLoadingVms, ARRAY_SIZE(g_SupervisorLoadingVms));
 
@@ -1499,6 +1502,16 @@ ZunResult Supervisor::LoadConfig(char *configFile)
     }
 
     g_Supervisor.cfg.opts.useSwTextureBlending = true; // Bit ignored from PCB onwards (HW blending always used)
+#ifdef TH08_IOS
+    // A desktop frameskip value of 2 renders one frame in three (about 20
+    // visible FPS). Persisted configs made title/options look much slower
+    // than gameplay on iOS, so the mobile port always presents every tick.
+    if (g_Supervisor.cfg.frameskipConfig != 0)
+    {
+        modern::LogStartup("config: cleared desktop frameskip for iOS 60 FPS menus");
+        g_Supervisor.cfg.frameskipConfig = 0;
+    }
+#endif
     if (this->cfg.opts.dontUseVertexBuf != false)
     {
         g_GameErrorContext.Log(TH_ERR_NO_VERTEX_BUFFER);

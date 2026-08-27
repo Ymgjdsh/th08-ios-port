@@ -411,6 +411,41 @@ bool TextureOperationUsesTexture(DWORD operation, DWORD argument1, DWORD argumen
            (argument2 & D3DTA_SELECTMASK) == D3DTA_TEXTURE;
 }
 
+DWORD TextureArgumentModifier(DWORD argument, DWORD diffuse, DWORD factor)
+{
+    switch (argument & D3DTA_SELECTMASK)
+    {
+    case D3DTA_TEXTURE: return 0xffffffffu;
+    case D3DTA_TFACTOR: return factor;
+    default: return diffuse;
+    }
+}
+
+BYTE MultiplyColorComponent(BYTE left, BYTE right)
+{
+    return static_cast<BYTE>((static_cast<UINT>(left) * right + 127u) / 255u);
+}
+
+DWORD MultiplyColors(DWORD left, DWORD right)
+{
+    return
+        (static_cast<DWORD>(MultiplyColorComponent((left >> 24) & 255, (right >> 24) & 255)) << 24) |
+        (static_cast<DWORD>(MultiplyColorComponent((left >> 16) & 255, (right >> 16) & 255)) << 16) |
+        (static_cast<DWORD>(MultiplyColorComponent((left >> 8) & 255, (right >> 8) & 255)) << 8) |
+        static_cast<DWORD>(MultiplyColorComponent(left & 255, right & 255));
+}
+
+DWORD TextureOperationModifier(DWORD operation, DWORD argument1, DWORD argument2,
+                               DWORD diffuse, DWORD factor)
+{
+    const DWORD first = TextureArgumentModifier(argument1, diffuse, factor);
+    if (operation == D3DTOP_SELECTARG1)
+        return first;
+    if (operation == D3DTOP_MODULATE)
+        return MultiplyColors(first, TextureArgumentModifier(argument2, diffuse, factor));
+    return diffuse;
+}
+
 GLenum TextureArgumentSource(DWORD argument)
 {
     switch (argument & D3DTA_SELECTMASK)
@@ -576,6 +611,22 @@ class LinuxDevice : public IDirect3DDevice8
         glOrtho(0.0, drawableWidth, drawableHeight, 0.0, -1.0, 1.0);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
         glColor4ub(255, 255, 255, 255);
+#ifdef TH08_IOS
+        f32 sourceShakeX = 0.0f;
+        f32 sourceShakeY = 0.0f;
+        th08::modern::ios::GetPresentationShake(&sourceShakeX, &sourceShakeY);
+        const float presentationScale =
+            drawableWidth / 640.0f < drawableHeight / 480.0f
+                ? drawableWidth / 640.0f
+                : drawableHeight / 480.0f;
+        const int presentationShakeX = static_cast<int>(sourceShakeX * presentationScale +
+                                                        (sourceShakeX >= 0.0f ? 0.5f : -0.5f));
+        const int presentationShakeY = static_cast<int>(sourceShakeY * presentationScale +
+                                                        (sourceShakeY >= 0.0f ? 0.5f : -0.5f));
+#else
+        const int presentationShakeX = 0;
+        const int presentationShakeY = 0;
+#endif
         if (portraitGameplay)
         {
             const int headerHeight = viewportY;
@@ -584,18 +635,21 @@ class LinuxDevice : public IDirect3DDevice8
             // 224x224 HUD columns to its right. Recompose those regions so
             // portrait gameplay fills the display without black bands.
             DrawPresentationRegion(416, 16, 224, 224,
-                                   0, 0, leftHeaderWidth, headerHeight);
+                                   presentationShakeX, presentationShakeY,
+                                   leftHeaderWidth, headerHeight);
             DrawPresentationRegion(416, 240, 224, 224,
-                                   leftHeaderWidth, 0,
+                                   leftHeaderWidth + presentationShakeX, presentationShakeY,
                                    drawableWidth - leftHeaderWidth, headerHeight);
             DrawPresentationRegion(32, 16, 384, 448,
-                                   0, headerHeight, drawableWidth,
+                                   presentationShakeX, headerHeight + presentationShakeY, drawableWidth,
                                    drawableHeight - headerHeight);
         }
         else
         {
             DrawPresentationRegion(0, 0, 640, 480,
-                                   viewportX, viewportY, viewportWidth, viewportHeight);
+                                   viewportX + presentationShakeX,
+                                   viewportY + presentationShakeY,
+                                   viewportWidth, viewportHeight);
         }
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
         glPopAttrib();
@@ -669,10 +723,21 @@ class LinuxDevice : public IDirect3DDevice8
     HRESULT BeginScene()
     {
         const bool dialogPresent = th08::g_Gui.IsDialogPresent() != 0;
-        if (dialogPresent && !wasDialogPresent)
-            CaptureDialogueSnapshot();
-        if (dialogPresent && dialogueSnapshotReady)
-            RestoreDialogueSnapshot();
+#ifndef TH08_IOS
+        if (dialogPresent && !wasDialogPresent) CaptureDialogueSnapshot();
+        if (dialogPresent && dialogueSnapshotReady) RestoreDialogueSnapshot();
+#else
+        // The desktop compatibility path freezes the previous frame because
+        // the original game suppresses stage-background drawing in dialogue.
+        // On iOS that snapshot also freezes bullets and can be restored after
+        // the FBO has changed, producing stale projectiles and black frames.
+        // Background.cpp redraws the unchanged stage state instead.
+        if (dialogPresent != wasDialogPresent)
+            th08::modern::LogStartup(dialogPresent
+                                         ? "render/dialogue: clean background redraw enabled"
+                                         : "render/dialogue: normal gameplay redraw restored");
+        dialogueSnapshotReady = false;
+#endif
         wasDialogPresent = dialogPresent;
         return S_OK;
     }
@@ -943,13 +1008,20 @@ class LinuxDevice : public IDirect3DDevice8
         if (renderStates[D3DRS_ALPHABLENDENABLE])
         { glEnable(GL_BLEND); glBlendFunc(BlendFunction(renderStates[D3DRS_SRCBLEND]), BlendFunction(renderStates[D3DRS_DESTBLEND])); }
         else glDisable(GL_BLEND);
+        GLfloat alphaThreshold = -1.0f;
         if (renderStates[D3DRS_ALPHATESTENABLE])
-        { /* GLES2 has no fixed-function alpha test; the shader supplies alpha. */ }
+        {
+            if (renderStates[D3DRS_ALPHAFUNC] == D3DCMP_GREATEREQUAL)
+                alphaThreshold = (renderStates[D3DRS_ALPHAREF] & 255) / 255.0f;
+            else if (renderStates[D3DRS_ALPHAFUNC] == D3DCMP_NEVER)
+                alphaThreshold = 2.0f;
+        }
+        IosLegacySetAlphaThreshold(alphaThreshold);
         if (renderStates[D3DRS_ZENABLE]) { glEnable(GL_DEPTH_TEST); glDepthFunc(CompareFunction(renderStates[D3DRS_ZFUNC])); }
         else glDisable(GL_DEPTH_TEST);
         glDepthMask(renderStates[D3DRS_ZWRITEENABLE] ? GL_TRUE : GL_FALSE);
         if (renderStates[D3DRS_FOGENABLE] &&
-            renderStates[D3DRS_FOGVERTEXMODE] == D3DFOG_LINEAR && g_fogCoordf != NULL)
+            renderStates[D3DRS_FOGVERTEXMODE] == D3DFOG_LINEAR)
         {
             const DWORD color = renderStates[D3DRS_FOGCOLOR];
             const GLfloat fogColor[4] = {
@@ -961,14 +1033,11 @@ class LinuxDevice : public IDirect3DDevice8
             GLfloat fogStart, fogEnd;
             memcpy(&fogStart, &renderStates[D3DRS_FOGSTART], sizeof(fogStart));
             memcpy(&fogEnd, &renderStates[D3DRS_FOGEND], sizeof(fogEnd));
-            glFogi(GL_FOG_MODE, GL_LINEAR);
-            glFogi(GL_FOG_COORDINATE_SOURCE, GL_FOG_COORDINATE);
-            glFogfv(GL_FOG_COLOR, fogColor);
-            glFogf(GL_FOG_START, fogStart);
-            glFogf(GL_FOG_END, fogEnd);
+            IosLegacySetFog(GL_TRUE, fogColor[0], fogColor[1], fogColor[2], fogStart, fogEnd);
         }
         else
         {
+            IosLegacySetFog(GL_FALSE, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f);
         }
         const bool colorUsesTexture = TextureOperationUsesTexture(
             textureStates[D3DTSS_COLOROP], textureStates[D3DTSS_COLORARG1],
@@ -976,6 +1045,8 @@ class LinuxDevice : public IDirect3DDevice8
         const bool alphaUsesTexture = TextureOperationUsesTexture(
             textureStates[D3DTSS_ALPHAOP], textureStates[D3DTSS_ALPHAARG1],
             textureStates[D3DTSS_ALPHAARG2]);
+        IosLegacySetTextureUsage(colorUsesTexture ? GL_TRUE : GL_FALSE,
+                                 alphaUsesTexture ? GL_TRUE : GL_FALSE);
         if (texture != NULL && (colorUsesTexture || alphaUsesTexture))
         {
             texture->Upload(); glBindTexture(GL_TEXTURE_2D, texture->glName);
@@ -1013,28 +1084,14 @@ class LinuxDevice : public IDirect3DDevice8
     }
     D3DCOLOR EffectiveColor(D3DCOLOR diffuse)
     {
-        if (texture != NULL &&
-            (TextureOperationUsesTexture(textureStates[D3DTSS_COLOROP],
-                                         textureStates[D3DTSS_COLORARG1],
-                                         textureStates[D3DTSS_COLORARG2]) ||
-             TextureOperationUsesTexture(textureStates[D3DTSS_ALPHAOP],
-                                         textureStates[D3DTSS_ALPHAARG1],
-                                         textureStates[D3DTSS_ALPHAARG2])))
-            return diffuse;
-        DWORD factor = renderStates[D3DRS_TEXTUREFACTOR];
-        DWORD colorOp = textureStates[D3DTSS_COLOROP], alphaOp = textureStates[D3DTSS_ALPHAOP];
-        DWORD colorArg1 = textureStates[D3DTSS_COLORARG1] & D3DTA_SELECTMASK;
-        DWORD colorArg2 = textureStates[D3DTSS_COLORARG2] & D3DTA_SELECTMASK;
-        DWORD alphaArg1 = textureStates[D3DTSS_ALPHAARG1] & D3DTA_SELECTMASK;
-        DWORD alphaArg2 = textureStates[D3DTSS_ALPHAARG2] & D3DTA_SELECTMASK;
-        DWORD modifier = colorArg2 == D3DTA_TFACTOR ? factor : diffuse;
-        DWORD alphaModifier = alphaArg2 == D3DTA_TFACTOR ? factor : diffuse;
-        DWORD rgb = modifier & 0x00ffffffu, alpha = alphaModifier & 0xff000000u;
-        if (colorOp == D3DTOP_SELECTARG1 && colorArg1 == D3DTA_TEXTURE) rgb = 0x00ffffffu;
-        else if (colorOp == D3DTOP_SELECTARG1 && colorArg1 == D3DTA_DIFFUSE) rgb = diffuse & 0x00ffffffu;
-        if (alphaOp == D3DTOP_SELECTARG1 && alphaArg1 == D3DTA_TEXTURE) alpha = 0xff000000u;
-        else if (alphaOp == D3DTOP_SELECTARG1 && alphaArg1 == D3DTA_DIFFUSE) alpha = diffuse & 0xff000000u;
-        return alpha | rgb;
+        const DWORD factor = renderStates[D3DRS_TEXTUREFACTOR];
+        const DWORD colorModifier = TextureOperationModifier(
+            textureStates[D3DTSS_COLOROP], textureStates[D3DTSS_COLORARG1],
+            textureStates[D3DTSS_COLORARG2], diffuse, factor);
+        const DWORD alphaModifier = TextureOperationModifier(
+            textureStates[D3DTSS_ALPHAOP], textureStates[D3DTSS_ALPHAARG1],
+            textureStates[D3DTSS_ALPHAARG2], diffuse, factor);
+        return (alphaModifier & 0xff000000u) | (colorModifier & 0x00ffffffu);
     }
     HRESULT Draw(D3DPRIMITIVETYPE type, UINT primitiveCount, const BYTE *data, UINT stride)
     {
@@ -1067,9 +1124,13 @@ class LinuxDevice : public IDirect3DDevice8
                 glTexCoord2f(u, v);
             }
             glColor4ub((color >> 16) & 255, (color >> 8) & 255, color & 255, (color >> 24) & 255);
-            if (g_fogCoordf != NULL)
-                g_fogCoordf(fogCoordinate);
-            glVertex3f(x, y, 1.0f - 2.0f * z);
+            IosLegacySetFogCoordinate(fogCoordinate);
+            // TransformPosition returns D3D's [0, 1] post-transform depth.
+            // Unlike the desktop fixed-function path, the iOS GLES2 shader
+            // does not apply glOrtho's Z negation, so map D3D near/far to
+            // GLES clip space directly. Reversing this value lets distant
+            // floor quads overwrite nearer scenery such as Stage 1 trees.
+            glVertex3f(x, y, 2.0f * z - 1.0f);
         }
         glEnd(); return S_OK;
     }

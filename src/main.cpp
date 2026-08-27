@@ -353,6 +353,11 @@ stop:
 RenderResult GameWindow::Render()
 {
     i32 calcChainResult;
+#ifdef TH08_IOS
+    const Uint64 iosFrameStart = SDL_GetPerformanceCounter();
+    Uint64 iosCalcEnd = iosFrameStart;
+    Uint64 iosDrawEnd = iosFrameStart;
+#endif
 
     this->curTimestamp = this->GetTimestamp();
 
@@ -383,6 +388,9 @@ RenderResult GameWindow::Render()
 
         calcChainResult = g_Chain.RunCalcChain();
         g_SoundPlayer.ProcessQueues();
+#ifdef TH08_IOS
+        iosCalcEnd = SDL_GetPerformanceCounter();
+#endif
 
 #ifdef TH08_IOS
         // The simulator's software OpenGL translation is much slower than a
@@ -426,6 +434,19 @@ RenderResult GameWindow::Render()
         if (g_Supervisor.cfg.frameskipConfig <= this->framesSinceRedraw)
         {
             g_Supervisor.d3dDevice->BeginScene();
+#ifdef TH08_IOS
+            // Clear the entire presentation surface before drawing. The game
+            // viewport is smaller than the iOS FBO, so stale HUD/depth pixels
+            // otherwise survive between Bomb cut-ins and menu transitions.
+            g_Supervisor.viewport.X = 0;
+            g_Supervisor.viewport.Y = 0;
+            g_Supervisor.viewport.Width = GAME_WINDOW_WIDTH;
+            g_Supervisor.viewport.Height = GAME_WINDOW_HEIGHT;
+            g_Supervisor.d3dDevice->SetViewport(&g_Supervisor.viewport);
+            g_Supervisor.d3dDevice->Clear(
+                0, NULL, D3DCLEAR_TARGET | D3DCLEAR_ZBUFFER,
+                COLOR_BLACK, 1.0f, 0);
+#endif
             g_AnmManager->ClearVertexBuffer();
             g_Supervisor.fogState = FOG_UNSET;
             g_Supervisor.DisableFog();
@@ -435,9 +456,41 @@ RenderResult GameWindow::Render()
             g_Supervisor.d3dDevice->EndScene();
             this->framesSinceRedraw = 0;
         }
+#ifdef TH08_IOS
+        iosDrawEnd = SDL_GetPerformanceCounter();
+#endif
 
         this->curTimestamp = this->GetTimestamp();
         Present();
+#ifdef TH08_IOS
+        const Uint64 iosPresentEnd = SDL_GetPerformanceCounter();
+        static Uint64 iosCalcTotal;
+        static Uint64 iosDrawTotal;
+        static Uint64 iosPresentTotal;
+        static Uint64 iosWorstFrame;
+        static u32 iosProfileFrames;
+        const Uint64 frequency = SDL_GetPerformanceFrequency();
+        iosCalcTotal += iosCalcEnd - iosFrameStart;
+        iosDrawTotal += iosDrawEnd - iosCalcEnd;
+        iosPresentTotal += iosPresentEnd - iosDrawEnd;
+        const Uint64 frameTicks = iosPresentEnd - iosFrameStart;
+        if (frameTicks > iosWorstFrame) iosWorstFrame = frameTicks;
+        if (++iosProfileFrames >= 300 && frequency != 0)
+        {
+            char message[224];
+            SDL_snprintf(message, sizeof(message),
+                         "frame/profile: state=%d avg calc=%.2f draw=%.2f present=%.2f ms worst=%.2f ms frameskip=%u",
+                         static_cast<int>(g_Supervisor.curState),
+                         iosCalcTotal * 1000.0 / frequency / iosProfileFrames,
+                         iosDrawTotal * 1000.0 / frequency / iosProfileFrames,
+                         iosPresentTotal * 1000.0 / frequency / iosProfileFrames,
+                         iosWorstFrame * 1000.0 / frequency,
+                         static_cast<unsigned>(g_Supervisor.cfg.frameskipConfig));
+            modern::LogStartup(message);
+            iosCalcTotal = iosDrawTotal = iosPresentTotal = iosWorstFrame = 0;
+            iosProfileFrames = 0;
+        }
+#endif
     }
     else
     {

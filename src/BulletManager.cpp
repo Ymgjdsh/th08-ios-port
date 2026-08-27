@@ -1558,8 +1558,35 @@ ChainCallbackResult BulletManager::OnDraw(BulletManager *bulletManager)
         laser->vm0.pos.operator float *()[1] =
             laser->position.operator float *()[1] + sine * halfLength;
         laser->vm0.pos.operator float *()[2] = 0.06f;
+#ifdef TH08_IOS
+        // The recovered expression below targets Laser::color (an i16) with
+        // a 32-bit ARGB mask. It cannot preserve vm0 alpha and leaves laser
+        // sprites with the script's transient RGB/alpha on GLES. The original
+        // draw intent is to keep the VM alpha while making the beam white.
+        laser->vm0.color1.d3dColor =
+            (laser->vm0.color1.d3dColor & 0xff000000u) | 0x00ffffffu;
+
+        static u32 iosLaserDiagnosticCount;
+        if (iosLaserDiagnosticCount < 32 || (iosLaserDiagnosticCount % 600) == 0)
+        {
+            AnmLoadedSprite *sprite = laser->vm0.loadedSprite;
+            char message[256];
+            snprintf(message, sizeof(message),
+                     "laser/draw: slot=%d stage=%d state=%u timer=%d offsets=%.1f..%.1f width=%.1f current=%.1f scale=%.2f,%.2f sprite=%.1fx%.1f alpha=%u tex=%p",
+                     i, g_GameManager.currentStage, static_cast<unsigned>(laser->state),
+                     static_cast<int>(laser->timer), laser->startOffset, laser->endOffset,
+                     laser->width, laser->currentWidth, laser->vm0.scale.x,
+                     laser->vm0.scale.y, sprite != NULL ? sprite->widthPx : 0.0f,
+                     sprite != NULL ? sprite->heightPx : 0.0f,
+                     static_cast<unsigned>(laser->vm0.color1.a),
+                     sprite != NULL ? sprite->texture : NULL);
+            modern::LogStartup(message);
+        }
+        ++iosLaserDiagnosticCount;
+#else
         *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(laser) + 0x596) =
             (*reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(laser) + 0x596) & 0xff000000) | 0xffffff;
+#endif
         laser->vm0.pos.x += g_GameManager.arcadeRegionTopLeftPos.x;
         laser->vm0.pos.y += g_GameManager.arcadeRegionTopLeftPos.y;
         g_AnmManager->Draw2D(&laser->vm0);

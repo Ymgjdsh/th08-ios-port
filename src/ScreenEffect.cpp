@@ -4,9 +4,37 @@
 #include "AnmManager.hpp"
 #include "EclManager.hpp"
 #include "GameManager.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
+
+#ifdef TH08_IOS
+static f32 ClampIosShakeAmount(f32 amount, const char *source)
+{
+    // One source pixel is enlarged several times on Retina and portrait
+    // presentation. A 1.25 px cap keeps the impact visible without exposing
+    // independently clipped stage layers at the playfield boundary.
+    const f32 limit = 1.25f;
+    if (amount <= limit && amount >= -limit)
+        return amount;
+
+    static u32 clampCount;
+    if (clampCount < 4 || (clampCount % 120) == 0)
+    {
+        char message[144];
+        snprintf(message, sizeof(message),
+                 "render/shake: %s raw=%.2f capped=%.2f count=%u",
+                 source, amount, amount < 0.0f ? -limit : limit,
+                 static_cast<unsigned>(clampCount + 1));
+        modern::LogStartup(message);
+    }
+    clampCount++;
+    return amount < 0.0f ? -limit : limit;
+}
+#endif
 
 DIFFABLE_STATIC(i32, g_ScreenEffectCounter);
 DIFFABLE_STATIC(ScreenEffect, g_ScreenEffect);
@@ -433,6 +461,9 @@ ChainCallbackResult ScreenEffect::CalcShake(ScreenEffect *screenEffect)
                    *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(screenEffect) + 0x18));
     shakeAmount = shakeAmount / screenEffect->duration;
     shakeAmount = *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(screenEffect) + 0x18) + shakeAmount;
+#ifdef TH08_IOS
+    shakeAmount = ClampIosShakeAmount(shakeAmount, "normal");
+#endif
 
     switch (g_Rng.GetRandomU32InRange(3))
     {
@@ -459,6 +490,16 @@ ChainCallbackResult ScreenEffect::CalcShake(ScreenEffect *screenEffect)
         g_AnmManager->screenShakeOffset.y = -shakeAmount;
         break;
     }
+
+#ifdef TH08_IOS
+    modern::ios::SetPresentationShake(g_AnmManager->screenShakeOffset.x,
+                                      g_AnmManager->screenShakeOffset.y);
+    // Apply shake once to the completed FBO during presentation. Moving each
+    // 2D/3D layer here gives separately clipped layers different visible
+    // edges and produces the vertical splits seen during Marisa shockwaves.
+    g_AnmManager->screenShakeOffset.x = 0.0f;
+    g_AnmManager->screenShakeOffset.y = 0.0f;
+#endif
 
     return CHAIN_CALLBACK_RESULT_CONTINUE;
 }
@@ -512,6 +553,9 @@ ChainCallbackResult ScreenEffect::FUN_0045bf10(ScreenEffect *screenEffect)
     }
 
     shakeAmount = (f32)screenEffect->duration * shakeAmount;
+#ifdef TH08_IOS
+    shakeAmount = ClampIosShakeAmount(shakeAmount, "shockwave");
+#endif
 
     switch (g_Rng.GetRandomU32InRange(3))
     {
@@ -538,6 +582,13 @@ ChainCallbackResult ScreenEffect::FUN_0045bf10(ScreenEffect *screenEffect)
         g_AnmManager->screenShakeOffset.y = -shakeAmount;
         break;
     }
+
+#ifdef TH08_IOS
+    modern::ios::SetPresentationShake(g_AnmManager->screenShakeOffset.x,
+                                      g_AnmManager->screenShakeOffset.y);
+    g_AnmManager->screenShakeOffset.x = 0.0f;
+    g_AnmManager->screenShakeOffset.y = 0.0f;
+#endif
 
     return CHAIN_CALLBACK_RESULT_CONTINUE;
 }

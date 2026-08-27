@@ -15,9 +15,26 @@
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 namespace th08
 {
+#ifdef TH08_IOS
+namespace
+{
+bool IsIosChainTraceEnabled()
+{
+    static int enabled = -1;
+    if (enabled < 0)
+    {
+        const char *value = getenv("TH08_IOS_TRACE_CHAINS");
+        enabled = value != NULL && value[0] != '\0' && value[0] != '0';
+    }
+    return enabled != 0;
+}
+} // namespace
+#endif
+
 DIFFABLE_STATIC(Rng, g_Rng)
 DIFFABLE_STATIC(u16, g_CurFrameInput);
 DIFFABLE_STATIC(u16, g_LastFrameInput);
@@ -170,7 +187,7 @@ restart_from_first_job:
         {
 #ifdef TH08_IOS
             static unsigned calcLogCount;
-            if (calcLogCount < 1200)
+            if (IsIosChainTraceEnabled() && calcLogCount < 1200)
             {
                 char message[192];
                 snprintf(message, sizeof(message), "calc: elem=%p cb=%p arg=%p priority=%d count=%u",
@@ -184,7 +201,7 @@ restart_from_first_job:
             result = current->callback(current->arg);
             g_Supervisor.EnterCriticalSectionWrapper(0);
 #ifdef TH08_IOS
-            if (calcLogCount < 1200)
+            if (IsIosChainTraceEnabled() && calcLogCount < 1200)
             {
                 char message[128];
                 snprintf(message, sizeof(message), "calc: result=%u elem=%p next=%p",
@@ -256,7 +273,7 @@ int Chain::RunDrawChain()
         {
 #ifdef TH08_IOS
             static unsigned drawLogCount;
-            if (drawLogCount < 240)
+            if (IsIosChainTraceEnabled() && drawLogCount < 240)
             {
                 char message[192];
                 snprintf(message, sizeof(message), "draw: elem=%p cb=%p arg=%p priority=%d heap=%u count=%u",

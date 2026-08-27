@@ -5,10 +5,13 @@
 #include "GameManager.hpp"
 #include "Gui.hpp"
 #include "Player.hpp"
+#include "SoundPlayer.hpp"
 #include "Supervisor.hpp"
 
 #include <SDL.h>
 #include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 namespace th08
@@ -30,20 +33,100 @@ struct TouchState
     float moveY;
     float moveDx;
     float moveDy;
+    float dragDeltaX;
+    float dragDeltaY;
+    bool moveIsDrag;
     u16 buttons;
     u16 keyboardButtons;
     float sensitivity;
     TouchState()
         : moveFinger(-1), shotFinger(-1), bombFinger(-1), focusFinger(-1), menuFinger(-1),
-          moveX(0), moveY(0), moveDx(0), moveDy(0), buttons(0), keyboardButtons(0), sensitivity(1.0f)
+          moveX(0), moveY(0), moveDx(0), moveDy(0), dragDeltaX(0), dragDeltaY(0),
+          moveIsDrag(false), buttons(0), keyboardButtons(0), sensitivity(1.0f)
     {
     }
 };
 
 TouchState g_state;
 PresentationLayout g_layout = {640, 480, 0, 0, 640, 480};
+f32 g_presentationShakeX = 0.0f;
+f32 g_presentationShakeY = 0.0f;
 bool g_developerOpen = false;
 bool g_developerInvincible = false;
+
+enum ControlMode
+{
+    CONTROL_JOYSTICK = 0,
+    CONTROL_DRAG = 1,
+    CONTROL_HYBRID = 2
+};
+
+enum PerformanceMode
+{
+    PERFORMANCE_FULL = 0,
+    PERFORMANCE_BALANCED = 1,
+    PERFORMANCE_SPEED = 2
+};
+
+enum ControlIndex
+{
+    CONTROL_INDEX_JOYSTICK = 0,
+    CONTROL_INDEX_SHOOT,
+    CONTROL_INDEX_BOMB,
+    CONTROL_INDEX_FOCUS,
+    CONTROL_INDEX_MENU,
+    CONTROL_INDEX_COUNT
+};
+
+struct NormalizedLayout
+{
+    float x[CONTROL_INDEX_COUNT];
+    float y[CONTROL_INDEX_COUNT];
+};
+
+struct MobileConfig
+{
+    u32 magic;
+    u32 version;
+    i32 controlMode;
+    float buttonScale;
+    float dragSensitivity;
+    float opacity;
+    u8 showButtons;
+    u8 shootToggle;
+    u8 focusToggle;
+    u8 autoBomb;
+    u8 customized[2];
+    u8 performanceMode;
+    u8 dragAutoShoot;
+    NormalizedLayout layouts[2];
+};
+
+const u32 MOBILE_CONFIG_MAGIC = 0x38424f4d; // MOB8
+const u32 MOBILE_CONFIG_VERSION = 3;
+MobileConfig g_config = {};
+bool g_configLoaded = false;
+bool g_settingsOpen = false;
+bool g_performanceOpen = false;
+bool g_layoutEdit = false;
+bool g_shootLatched = false;
+bool g_focusLatched = false;
+bool g_backgroundPausePending = false;
+bool g_appInBackground = false;
+u16 g_pulseButtons = 0;
+SDL_FingerID g_settingsFinger = -1;
+int g_settingsRow = -1;
+SDL_FingerID g_layoutFinger = -1;
+int g_layoutControl = -1;
+MobileConfig g_layoutBackup = {};
+SDL_FingerID g_menuGestureFinger = -1;
+float g_menuGestureStartX = 0.0f;
+float g_menuGestureStartY = 0.0f;
+float g_menuGestureX = 0.0f;
+float g_menuGestureY = 0.0f;
+bool g_menuGestureCancelled = false;
+int g_activeTouchCount = 0;
+bool g_settingsNeedsSave = false;
 
 struct RectGeometry
 {
@@ -60,12 +143,144 @@ struct ControlGeometry
     float radius;
 };
 
-ControlGeometry MakeControl(float x, float y, float radiusScale)
+float ClampFloat(float value, float minimum, float maximum)
 {
+    if (value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+int LayoutOrientation()
+{
+    return g_layout.drawableHeight > g_layout.drawableWidth ? 1 : 0;
+}
+
+void SetDefaultLayout(NormalizedLayout *layout, bool portrait)
+{
+    layout->x[CONTROL_INDEX_JOYSTICK] = portrait ? 0.18f : 0.15f;
+    layout->y[CONTROL_INDEX_JOYSTICK] = portrait ? 0.82f : 0.78f;
+    layout->x[CONTROL_INDEX_SHOOT] = portrait ? 0.86f : 0.90f;
+    layout->y[CONTROL_INDEX_SHOOT] = portrait ? 0.73f : 0.69f;
+    layout->x[CONTROL_INDEX_BOMB] = portrait ? 0.72f : 0.81f;
+    layout->y[CONTROL_INDEX_BOMB] = portrait ? 0.86f : 0.84f;
+    layout->x[CONTROL_INDEX_FOCUS] = portrait ? 0.68f : 0.74f;
+    layout->y[CONTROL_INDEX_FOCUS] = portrait ? 0.68f : 0.66f;
+    layout->x[CONTROL_INDEX_MENU] = 0.92f;
+    layout->y[CONTROL_INDEX_MENU] = portrait ? 0.08f : 0.12f;
+}
+
+void SetDefaultConfig()
+{
+    memset(&g_config, 0, sizeof(g_config));
+    g_config.magic = MOBILE_CONFIG_MAGIC;
+    g_config.version = MOBILE_CONFIG_VERSION;
+    g_config.controlMode = CONTROL_HYBRID;
+    g_config.buttonScale = 1.0f;
+    g_config.dragSensitivity = 1.0f;
+    g_config.opacity = 0.62f;
+    g_config.showButtons = 1;
+    g_config.dragAutoShoot = 1;
+    g_config.performanceMode = PERFORMANCE_FULL;
+    SetDefaultLayout(&g_config.layouts[0], false);
+    SetDefaultLayout(&g_config.layouts[1], true);
+}
+
+void ApplyPerformanceMode()
+{
+    if (g_config.performanceMode > PERFORMANCE_SPEED)
+        g_config.performanceMode = PERFORMANCE_FULL;
+
+    // main.cpp clears the complete render target every frame on iOS to avoid
+    // stale bullets and dialogue fragments. The static HUD must therefore be
+    // explicitly redrawn as well, otherwise its cleared region becomes black.
+    g_Supervisor.cfg.opts.redrawHUDEveryFrame = 1;
+    g_Supervisor.cfg.opts.displayMinimumGraphics = 0;
+    if (g_config.performanceMode == PERFORMANCE_SPEED)
+    {
+        g_Supervisor.cfg.effectQuality = MINIMUM;
+        g_Supervisor.cfg.opts.disableFog = 1;
+    }
+    else if (g_config.performanceMode == PERFORMANCE_BALANCED)
+    {
+        g_Supervisor.cfg.effectQuality = MODERATE;
+        g_Supervisor.cfg.opts.disableFog = 0;
+    }
+    else
+    {
+        g_Supervisor.cfg.effectQuality = MAXIMUM;
+        g_Supervisor.cfg.opts.disableFog = 0;
+    }
+    g_Supervisor.fogState = FOG_UNSET;
+}
+
+bool GetMobileConfigPath(char *path, size_t size)
+{
+    const char *home = SDL_getenv("HOME");
+    if (home == NULL || home[0] == '\0') return false;
+    SDL_snprintf(path, size, "%s/Documents/mobile.cfg", home);
+    return true;
+}
+
+void SaveMobileConfig()
+{
+    char path[1024];
+    if (!GetMobileConfigPath(path, sizeof(path))) return;
+    FILE *file = fopen(path, "wb");
+    if (file == NULL)
+    {
+        modern::LogStartup("touch/config: save failed");
+        return;
+    }
+    const bool saved = fwrite(&g_config, sizeof(g_config), 1, file) == 1;
+    fclose(file);
+    modern::LogStartup(saved ? "touch/config: saved" : "touch/config: short write");
+}
+
+void EnsureMobileConfig()
+{
+    if (g_configLoaded) return;
+    g_configLoaded = true;
+    SetDefaultConfig();
+    char path[1024];
+    if (GetMobileConfigPath(path, sizeof(path)))
+    {
+        FILE *file = fopen(path, "rb");
+        MobileConfig stored = {};
+        if (file != NULL)
+        {
+            const bool loaded = fread(&stored, sizeof(stored), 1, file) == 1;
+            fclose(file);
+            if (loaded && stored.magic == MOBILE_CONFIG_MAGIC &&
+                (stored.version >= 1 && stored.version <= MOBILE_CONFIG_VERSION))
+            {
+                const u32 storedVersion = stored.version;
+                g_config = stored;
+                g_config.version = MOBILE_CONFIG_VERSION;
+                if (storedVersion < 3)
+                    g_config.dragAutoShoot = 1;
+            }
+        }
+    }
+    g_config.controlMode = g_config.controlMode < CONTROL_JOYSTICK ||
+                                   g_config.controlMode > CONTROL_HYBRID
+                               ? CONTROL_HYBRID
+                               : g_config.controlMode;
+    g_config.buttonScale = ClampFloat(g_config.buttonScale, 0.65f, 1.45f);
+    g_config.dragSensitivity = ClampFloat(g_config.dragSensitivity, 0.40f, 2.00f);
+    g_config.opacity = ClampFloat(g_config.opacity, 0.20f, 1.00f);
+    ApplyPerformanceMode();
+    modern::LogStartup("touch/config: ready");
+}
+
+ControlGeometry MakeControl(int index, float radiusScale)
+{
+    EnsureMobileConfig();
     const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
     const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
     const float scale = width < height ? width : height;
-    ControlGeometry geometry = {x * width, y * height, radiusScale * scale};
+    const NormalizedLayout &layout = g_config.layouts[LayoutOrientation()];
+    ControlGeometry geometry = {layout.x[index] * width, layout.y[index] * height,
+                                radiusScale * scale * g_config.buttonScale};
     return geometry;
 }
 
@@ -79,11 +294,11 @@ bool HitControl(const SDL_TouchFingerEvent &finger, const ControlGeometry &contr
     return dx * dx + dy * dy <= radius * radius;
 }
 
-ControlGeometry JoystickGeometry() { return MakeControl(0.15f, 0.78f, 0.105f); }
-ControlGeometry ShotGeometry() { return MakeControl(0.90f, 0.69f, 0.075f); }
-ControlGeometry BombGeometry() { return MakeControl(0.81f, 0.84f, 0.065f); }
-ControlGeometry FocusGeometry() { return MakeControl(0.74f, 0.66f, 0.060f); }
-ControlGeometry MenuGeometry() { return MakeControl(0.92f, 0.12f, 0.052f); }
+ControlGeometry JoystickGeometry() { return MakeControl(CONTROL_INDEX_JOYSTICK, 0.105f); }
+ControlGeometry ShotGeometry() { return MakeControl(CONTROL_INDEX_SHOOT, 0.075f); }
+ControlGeometry BombGeometry() { return MakeControl(CONTROL_INDEX_BOMB, 0.065f); }
+ControlGeometry FocusGeometry() { return MakeControl(CONTROL_INDEX_FOCUS, 0.060f); }
+ControlGeometry MenuGeometry() { return MakeControl(CONTROL_INDEX_MENU, 0.052f); }
 
 RectGeometry DeveloperButtonGeometry()
 {
@@ -119,6 +334,56 @@ RectGeometry DeveloperRowGeometry(int row)
     return result;
 }
 
+RectGeometry SettingsButtonGeometry()
+{
+    const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
+    const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
+    const float scale = width < height ? width : height;
+    RectGeometry result = {scale * 0.035f, scale * 0.035f, scale * 0.17f, scale * 0.075f};
+    return result;
+}
+
+RectGeometry PerformanceButtonGeometry()
+{
+    RectGeometry result = SettingsButtonGeometry();
+    result.y += result.height * 1.22f;
+    return result;
+}
+
+RectGeometry SettingsPanelGeometry()
+{
+    const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
+    const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
+    const bool portrait = height > width;
+    const float panelWidth = width * (portrait ? 0.92f : 0.72f);
+    const float panelHeight = height * (portrait ? 0.84f : 0.92f);
+    RectGeometry result = {(width - panelWidth) * 0.5f, (height - panelHeight) * 0.5f,
+                           panelWidth, panelHeight};
+    return result;
+}
+
+RectGeometry SettingsRowGeometry(int row)
+{
+    const RectGeometry panel = SettingsPanelGeometry();
+    const float top = panel.y + panel.height * 0.14f;
+    const float pitch = panel.height * 0.073f;
+    RectGeometry result = {panel.x + panel.width * 0.055f, top + row * pitch,
+                           panel.width * 0.89f, pitch * 0.78f};
+    return result;
+}
+
+RectGeometry LayoutToolGeometry(int index)
+{
+    const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
+    const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
+    const float scale = width < height ? width : height;
+    const float toolWidth = scale * 0.18f;
+    const float toolHeight = scale * 0.075f;
+    RectGeometry result = {width * 0.5f + (index - 1.0f) * toolWidth * 1.08f - toolWidth * 0.5f,
+                           scale * 0.03f, toolWidth, toolHeight};
+    return result;
+}
+
 bool HitRect(const SDL_TouchFingerEvent &finger, const RectGeometry &rect)
 {
     const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
@@ -129,9 +394,164 @@ bool HitRect(const SDL_TouchFingerEvent &finger, const RectGeometry &rect)
            y >= rect.y && y <= rect.y + rect.height;
 }
 
+bool ContainsPoint(const RectGeometry &rect, float x, float y)
+{
+    return x >= rect.x && x <= rect.x + rect.width &&
+           y >= rect.y && y <= rect.y + rect.height;
+}
+
+void FingerPixels(const SDL_TouchFingerEvent &finger, float *x, float *y)
+{
+    const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
+    const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
+    *x = finger.x * width;
+    *y = finger.y * height;
+}
+
+int SettingsRowAt(float x, float y)
+{
+    const int rowCount = g_performanceOpen ? 4 : 11;
+    for (int row = 0; row < rowCount; ++row)
+        if (ContainsPoint(SettingsRowGeometry(row), x, y)) return row;
+    return -1;
+}
+
+int HitLayoutControl(const SDL_TouchFingerEvent &finger)
+{
+    if (HitControl(finger, JoystickGeometry(), 1.35f)) return CONTROL_INDEX_JOYSTICK;
+    if (HitControl(finger, ShotGeometry(), 1.35f)) return CONTROL_INDEX_SHOOT;
+    if (HitControl(finger, BombGeometry(), 1.35f)) return CONTROL_INDEX_BOMB;
+    if (HitControl(finger, FocusGeometry(), 1.35f)) return CONTROL_INDEX_FOCUS;
+    if (HitControl(finger, MenuGeometry(), 1.45f)) return CONTROL_INDEX_MENU;
+    return -1;
+}
+
+void ClearTransientTouchState()
+{
+    g_state.moveFinger = -1;
+    g_state.shotFinger = -1;
+    g_state.bombFinger = -1;
+    g_state.focusFinger = -1;
+    g_state.menuFinger = -1;
+    g_state.moveDx = g_state.moveDy = 0.0f;
+    g_state.dragDeltaX = g_state.dragDeltaY = 0.0f;
+    g_state.moveIsDrag = false;
+    g_state.buttons = 0;
+    g_settingsFinger = -1;
+    g_settingsRow = -1;
+    g_layoutFinger = -1;
+    g_layoutControl = -1;
+    g_menuGestureFinger = -1;
+    g_menuGestureCancelled = false;
+    g_activeTouchCount = 0;
+    g_settingsNeedsSave = false;
+}
+
+void QueuePulse(u16 buttons)
+{
+    g_pulseButtons |= buttons;
+}
+
+void ActivateSettingsRow(int row, float x)
+{
+    EnsureMobileConfig();
+    if (row < 0) return;
+    if (g_performanceOpen)
+    {
+        if (row >= 0 && row <= 2)
+        {
+            g_config.performanceMode = static_cast<u8>(row);
+            ApplyPerformanceMode();
+            SaveMobileConfig();
+            modern::LogStartup(row == PERFORMANCE_FULL
+                                   ? "touch/performance: full"
+                                   : (row == PERFORMANCE_BALANCED
+                                          ? "touch/performance: balanced"
+                                          : "touch/performance: speed"));
+        }
+        else if (row == 3)
+        {
+            g_settingsOpen = false;
+            g_performanceOpen = false;
+            ClearTransientTouchState();
+            SaveMobileConfig();
+            modern::LogStartup("touch/performance: closed");
+        }
+        return;
+    }
+    const RectGeometry rect = SettingsRowGeometry(row);
+    switch (row)
+    {
+    case 0:
+        g_config.controlMode = (g_config.controlMode + 1) % 3;
+        break;
+    case 1:
+        g_config.showButtons = !g_config.showButtons;
+        break;
+    case 2:
+        g_config.buttonScale = 0.65f + ClampFloat((x - rect.x) / rect.width, 0.0f, 1.0f) * 0.80f;
+        g_settingsNeedsSave = true;
+        break;
+    case 3:
+        g_config.dragSensitivity = 0.40f + ClampFloat((x - rect.x) / rect.width, 0.0f, 1.0f) * 1.60f;
+        g_settingsNeedsSave = true;
+        break;
+    case 4:
+        g_config.opacity = 0.20f + ClampFloat((x - rect.x) / rect.width, 0.0f, 1.0f) * 0.80f;
+        g_settingsNeedsSave = true;
+        break;
+    case 5:
+        g_config.dragAutoShoot = !g_config.dragAutoShoot;
+        break;
+    case 6:
+        g_config.shootToggle = !g_config.shootToggle;
+        if (!g_config.shootToggle) g_shootLatched = false;
+        break;
+    case 7:
+        g_config.focusToggle = !g_config.focusToggle;
+        if (!g_config.focusToggle) g_focusLatched = false;
+        break;
+    case 8:
+        g_config.autoBomb = !g_config.autoBomb;
+        break;
+    case 9:
+        g_layoutBackup = g_config;
+        g_layoutEdit = true;
+        g_settingsOpen = false;
+        g_performanceOpen = false;
+        ClearTransientTouchState();
+        modern::LogStartup("touch/layout: edit opened");
+        return;
+    case 10:
+        g_settingsOpen = false;
+        ClearTransientTouchState();
+        SaveMobileConfig();
+        modern::LogStartup("touch/settings: closed");
+        return;
+    default:
+        return;
+    }
+    if (row < 2 || row > 4)
+        SaveMobileConfig();
+}
+
 bool IsGameplayReady()
 {
     return g_Supervisor.curState == SupervisorState_GameManager && g_GameManager.globals != NULL;
+}
+
+bool IsStageClearSequenceActive()
+{
+    // The result screen runs while the supervisor is still in gameplay. The
+    // original game allows a manually held Z to speed up the clock tally, but
+    // mobile toggle/drag shooting must not hold Z through the entire result.
+    return IsGameplayReady() && g_GameManager.flags.unk9 != 0;
+}
+
+bool IsGameplayMenuOpen()
+{
+    return IsGameplayReady() &&
+           (g_GameManager.isInGameMenu != 0 || g_GameManager.showRetryMenu != 0);
 }
 
 void ClearGameplayTouches()
@@ -249,8 +669,12 @@ u16 PollSmokeTestButtons()
     static f32 bombUsageBefore;
     static int developerStage;
     static int musicRoomStep = -1;
+    static int replayStep = -1;
+    static bool replayCancelSent;
+    static bool replayReturnLogged;
     static int invincibilityTestStage;
     static bool finalDeathTriggered;
+    static bool autoBombTriggered;
     static int campaignLastState = -999;
     static int campaignLastStage = -999;
     static unsigned long campaignStageFrames;
@@ -259,6 +683,9 @@ u16 PollSmokeTestButtons()
     static bool campaignSawEnding;
     static bool campaignCompleted;
     static bool campaignBombVerified;
+    static int stageClearInputTestStage;
+    static Uint32 stageClearInputTestStartedAt;
+    static int stageTransitionTestState;
 
     const char *enabled = SDL_getenv("TH08_IOS_SMOKE_TEST");
     if (enabled == NULL || enabled[0] == '\0' || enabled[0] == '0')
@@ -280,9 +707,34 @@ u16 PollSmokeTestButtons()
     const bool testBomb = strcmp(enabled, "bomb") == 0;
     const bool testDeveloper = strcmp(enabled, "developer") == 0;
     const bool testMusicRoom = strcmp(enabled, "musicroom") == 0;
+    const bool testReplay = strcmp(enabled, "replay") == 0;
     const bool testInvincible = strcmp(enabled, "invincible") == 0;
     const bool testRetry = strcmp(enabled, "retry") == 0;
+    const bool testAutoBomb = strcmp(enabled, "autobomb") == 0;
     const bool testCampaign = strcmp(enabled, "campaign") == 0;
+    const bool testStageClearInput = strcmp(enabled, "stageclear-input") == 0;
+    const bool testStageTransition = strcmp(enabled, "stage-transition") == 0;
+
+    if (testStageTransition && elapsed >= 35000 && stageTransitionTestState == 0 &&
+        IsGameplayReady() && g_GameManager.currentStage == STAGE1 &&
+        g_GameManager.unk38 == 0)
+    {
+        stageTransitionTestState = 1;
+        g_GameManager.flags.unk9 = 1;
+        g_GameManager.flags.unk5_6 = 2;
+        th08::modern::LogStartup(
+            "smoke-stage-transition: requested authentic GameManager reinit from stage 1");
+        return 0;
+    }
+    if (testStageTransition && stageTransitionTestState == 1 &&
+        IsGameplayReady() && g_GameManager.currentStage == STAGE2 &&
+        g_GameManager.unk38 == 0)
+    {
+        stageTransitionTestState = 2;
+        th08::modern::LogStartup(
+            "smoke-stage-transition: PASS - stage 2 gameplay became ready");
+        return 0;
+    }
 
     if (testCampaign)
     {
@@ -354,6 +806,9 @@ u16 PollSmokeTestButtons()
 
             ++campaignStageFrames;
             ++campaignInputFrames;
+            if (IsStageClearSequenceActive())
+                return 0;
+
             if (bombTriggered && !campaignBombVerified &&
                 g_GameManager.globals->bombsUsed > bombUsageBefore)
             {
@@ -398,6 +853,62 @@ u16 PollSmokeTestButtons()
             }
             th08::modern::LogStartup("smoke-musicroom: opening music room");
             return TH_BUTTON_SHOOT;
+        }
+        return 0;
+    }
+
+    if (testReplay)
+    {
+        // On a clean save, Extra and Spell Practice are skipped, so two
+        // downward edges reach Replay. Cancel after its entry animation, then
+        // leave a marker proving the main loop continued after the rebuild.
+        if (elapsed < 8000)
+            return 0;
+        const int step = static_cast<int>((elapsed - 8000) / 800);
+        if (step <= 2 && step != replayStep)
+        {
+            replayStep = step;
+            if (step < 2)
+            {
+                th08::modern::LogStartup("smoke-replay: moving cursor down");
+                return TH_BUTTON_DOWN;
+            }
+            th08::modern::LogStartup("smoke-replay: opening replay menu");
+            return TH_BUTTON_SHOOT;
+        }
+        if (elapsed >= 14000 && !replayCancelSent)
+        {
+            replayCancelSent = true;
+            th08::modern::LogStartup("smoke-replay: requesting title return");
+            return TH_BUTTON_BOMB;
+        }
+        if (elapsed >= 18000 && !replayReturnLogged)
+        {
+            replayReturnLogged = true;
+            th08::modern::LogStartup("smoke-replay: main loop responsive after return");
+        }
+        return 0;
+    }
+
+    if (testStageClearInput && elapsed >= 40000 && stageClearInputTestStage == 0 &&
+        IsGameplayReady())
+    {
+        stageClearInputTestStage = 1;
+        stageClearInputTestStartedAt = elapsed;
+        g_shootLatched = true;
+        g_GameManager.flags.unk9 = 1;
+        th08::modern::LogStartup(
+            "smoke-stage-clear-input: simulated result with Z toggle active");
+        return 0;
+    }
+    if (testStageClearInput && stageClearInputTestStage == 1)
+    {
+        if (elapsed - stageClearInputTestStartedAt >= 1500)
+        {
+            g_GameManager.flags.unk9 = 0;
+            g_shootLatched = false;
+            stageClearInputTestStage = 2;
+            th08::modern::LogStartup("smoke-stage-clear-input: state restored");
         }
         return 0;
     }
@@ -447,6 +958,20 @@ u16 PollSmokeTestButtons()
         g_GameManager.RandomizeAntiTamper();
         g_Player.Die();
         th08::modern::LogStartup("smoke-retry: forced final death");
+        return 0;
+    }
+    if (testAutoBomb && elapsed >= 40000 && !autoBombTriggered && IsGameplayReady())
+    {
+        autoBombTriggered = true;
+        g_config.autoBomb = 1;
+        g_GameManager.SetBombCount(3);
+        const i32 bombsBefore = g_GameManager.GetBombsRemaining();
+        g_GameManager.RandomizeAntiTamper();
+        g_Player.Die();
+        th08::modern::LogStartup(g_GameManager.GetBombsRemaining() < bombsBefore &&
+                                     g_Player.playerState != PLAYER_STATE_SPAWNING
+                                     ? "smoke-auto-bomb: PASS - miss was intercepted"
+                                     : "smoke-auto-bomb: FAILED");
         return 0;
     }
     if ((testRestart || testTitle) && elapsed >= 60000)
@@ -531,8 +1056,125 @@ void SetDirectional(float dx, float dy)
     if (normalizedY >= diagonalThreshold) g_state.buttons |= TH_BUTTON_DOWN;
 }
 
+void AccumulateDragMotion(const SDL_TouchFingerEvent &finger)
+{
+    const float width = g_layout.drawableWidth > 0 ? static_cast<float>(g_layout.drawableWidth) : 640.0f;
+    const float height = g_layout.drawableHeight > 0 ? static_cast<float>(g_layout.drawableHeight) : 480.0f;
+    const float pixelDx = (finger.x - g_state.moveX) * width;
+    const float pixelDy = (finger.y - g_state.moveY) * height;
+    float gameDx;
+    float gameDy;
+    if (height > width && IsGameplayReady())
+    {
+        const float viewWidth = g_layout.viewportWidth > 0 ? static_cast<float>(g_layout.viewportWidth) : width;
+        const float viewHeight = g_layout.viewportHeight > 0 ? static_cast<float>(g_layout.viewportHeight) : height;
+        gameDx = pixelDx * 384.0f / viewWidth;
+        gameDy = pixelDy * 448.0f / viewHeight;
+    }
+    else
+    {
+        const float viewWidth = g_layout.viewportWidth > 0 ? static_cast<float>(g_layout.viewportWidth) : width;
+        const float viewHeight = g_layout.viewportHeight > 0 ? static_cast<float>(g_layout.viewportHeight) : height;
+        gameDx = pixelDx * 640.0f / viewWidth;
+        gameDy = pixelDy * 480.0f / viewHeight;
+    }
+    gameDx = ClampFloat(gameDx * g_config.dragSensitivity, -64.0f, 64.0f);
+    gameDy = ClampFloat(gameDy * g_config.dragSensitivity, -64.0f, 64.0f);
+    g_state.dragDeltaX += gameDx;
+    g_state.dragDeltaY += gameDy;
+    g_state.moveDx = finger.x - g_state.moveX;
+    g_state.moveDy = finger.y - g_state.moveY;
+    g_state.moveX = finger.x;
+    g_state.moveY = finger.y;
+}
+
+void BeginGameplayMove(const SDL_TouchFingerEvent &finger, bool directDrag)
+{
+    g_state.moveFinger = finger.fingerId;
+    g_state.moveX = finger.x;
+    g_state.moveY = finger.y;
+    g_state.moveDx = g_state.moveDy = 0.0f;
+    g_state.moveIsDrag = directDrag;
+    if (!directDrag) SetDirectional(0.0f, 0.0f);
+}
+
+void BeginMenuGesture(const SDL_TouchFingerEvent &finger)
+{
+    g_menuGestureFinger = finger.fingerId;
+    g_menuGestureStartX = g_menuGestureX = finger.x;
+    g_menuGestureStartY = g_menuGestureY = finger.y;
+    g_menuGestureCancelled = false;
+}
+
+void FinishMenuGesture(const SDL_TouchFingerEvent &finger)
+{
+    if (finger.fingerId != g_menuGestureFinger) return;
+    const float dx = g_menuGestureX - g_menuGestureStartX;
+    const float dy = g_menuGestureY - g_menuGestureStartY;
+    if (!g_menuGestureCancelled)
+    {
+        const float absX = fabsf(dx);
+        const float absY = fabsf(dy);
+        if (absX < 0.035f && absY < 0.035f)
+            QueuePulse(TH_BUTTON_SELECTMENU);
+        else
+        {
+            const bool vertical = absY >= absX;
+            const u16 direction = vertical
+                                      ? (dy < 0.0f ? TH_BUTTON_UP : TH_BUTTON_DOWN)
+                                      : (dx < 0.0f ? TH_BUTTON_LEFT : TH_BUTTON_RIGHT);
+            QueuePulse(direction);
+        }
+    }
+    g_menuGestureFinger = -1;
+}
+
 void HandleFingerDown(const SDL_TouchFingerEvent &finger)
 {
+    EnsureMobileConfig();
+    ++g_activeTouchCount;
+    float px, py;
+    FingerPixels(finger, &px, &py);
+
+    if (g_layoutEdit)
+    {
+        if (HitRect(finger, LayoutToolGeometry(0)))
+        {
+            g_layoutEdit = false;
+            g_config.customized[LayoutOrientation()] = 1;
+            ClearTransientTouchState();
+            SaveMobileConfig();
+            modern::LogStartup("touch/layout: saved");
+            return;
+        }
+        if (HitRect(finger, LayoutToolGeometry(1)))
+        {
+            SetDefaultLayout(&g_config.layouts[LayoutOrientation()], LayoutOrientation() != 0);
+            g_config.customized[LayoutOrientation()] = 0;
+            SaveMobileConfig();
+            return;
+        }
+        if (HitRect(finger, LayoutToolGeometry(2)))
+        {
+            g_config = g_layoutBackup;
+            g_layoutEdit = false;
+            ClearTransientTouchState();
+            modern::LogStartup("touch/layout: cancelled");
+            return;
+        }
+        g_layoutControl = HitLayoutControl(finger);
+        if (g_layoutControl >= 0) g_layoutFinger = finger.fingerId;
+        return;
+    }
+
+    if (g_settingsOpen)
+    {
+        g_settingsFinger = finger.fingerId;
+        g_settingsRow = SettingsRowAt(px, py);
+        ActivateSettingsRow(g_settingsRow, px);
+        return;
+    }
+
     if (g_developerOpen)
     {
         for (int row = 0; row < 8; ++row)
@@ -546,6 +1188,44 @@ void HandleFingerDown(const SDL_TouchFingerEvent &finger)
         return;
     }
 
+    if (g_Supervisor.curState == SupervisorState_TitleScreen &&
+        HitRect(finger, SettingsButtonGeometry()))
+    {
+        g_performanceOpen = false;
+        g_settingsOpen = true;
+        ClearTransientTouchState();
+        g_settingsFinger = finger.fingerId;
+        modern::LogStartup("touch/settings: opened from title");
+        return;
+    }
+
+    if (g_Supervisor.curState == SupervisorState_TitleScreen &&
+        HitRect(finger, PerformanceButtonGeometry()))
+    {
+        g_performanceOpen = true;
+        g_settingsOpen = true;
+        ClearTransientTouchState();
+        g_settingsFinger = finger.fingerId;
+        modern::LogStartup("touch/performance: opened from title");
+        return;
+    }
+
+    // Pause and retry menus keep the gameplay supervisor state. Route their
+    // touches through the menu gesture mapper before Drag mode can capture
+    // the finger as player movement.
+    if (IsGameplayMenuOpen())
+    {
+        if (g_menuGestureFinger >= 0)
+        {
+            g_menuGestureCancelled = true;
+            QueuePulse(TH_BUTTON_RETURNMENU);
+            modern::LogStartup("touch/menu: two-finger return requested");
+            return;
+        }
+        BeginMenuGesture(finger);
+        return;
+    }
+
     if (IsGameplayReady() && HitRect(finger, DeveloperButtonGeometry()))
     {
         g_developerOpen = true;
@@ -554,55 +1234,133 @@ void HandleFingerDown(const SDL_TouchFingerEvent &finger)
         return;
     }
 
-    if (g_state.shotFinger < 0 && HitControl(finger, ShotGeometry(), 1.35f))
+    if (IsGameplayReady() && g_config.showButtons &&
+        g_state.shotFinger < 0 && HitControl(finger, ShotGeometry(), 1.35f))
     {
-        g_state.shotFinger = finger.fingerId;
-        g_state.buttons |= TH_BUTTON_SHOOT;
+        if (g_config.shootToggle)
+            g_shootLatched = !g_shootLatched;
+        else
+        {
+            g_state.shotFinger = finger.fingerId;
+            g_state.buttons |= TH_BUTTON_SHOOT;
+        }
         return;
     }
-    if (g_state.bombFinger < 0 && HitControl(finger, BombGeometry(), 1.35f))
+    if (IsGameplayReady() && g_config.showButtons &&
+        g_state.bombFinger < 0 && HitControl(finger, BombGeometry(), 1.35f))
     {
         g_state.bombFinger = finger.fingerId;
         g_state.buttons |= TH_BUTTON_BOMB;
         return;
     }
-    if (g_state.focusFinger < 0 && HitControl(finger, FocusGeometry(), 1.35f))
+    if (IsGameplayReady() && g_config.showButtons &&
+        g_state.focusFinger < 0 && HitControl(finger, FocusGeometry(), 1.35f))
     {
-        g_state.focusFinger = finger.fingerId;
-        g_state.buttons |= TH_BUTTON_FOCUS;
+        if (g_config.focusToggle)
+            g_focusLatched = !g_focusLatched;
+        else
+        {
+            g_state.focusFinger = finger.fingerId;
+            g_state.buttons |= TH_BUTTON_FOCUS;
+        }
         return;
     }
-    if (g_state.menuFinger < 0 && HitControl(finger, MenuGeometry(), 1.45f))
+    if (IsGameplayReady() && g_config.showButtons &&
+        g_state.menuFinger < 0 && HitControl(finger, MenuGeometry(), 1.45f))
     {
         g_state.menuFinger = finger.fingerId;
-        g_state.buttons |= TH_BUTTON_MENU;
+        QueuePulse(TH_BUTTON_MENU);
         return;
     }
 
-    if (finger.x < 0.48f && finger.y > 0.42f && g_state.moveFinger < 0)
+    if (IsGameplayReady())
     {
-        g_state.moveFinger = finger.fingerId;
-        g_state.moveX = finger.x;
-        g_state.moveY = finger.y;
-        SetDirectional(0.0f, 0.0f);
+        if (g_state.moveFinger < 0)
+        {
+            const bool useDrag = g_config.controlMode == CONTROL_DRAG ||
+                                 (g_config.controlMode == CONTROL_HYBRID &&
+                                  !HitControl(finger, JoystickGeometry(), 1.55f));
+            BeginGameplayMove(finger, useDrag);
+            return;
+        }
+        if (g_state.focusFinger < 0)
+        {
+            // Buttonless mode: the second finger bombs immediately and then
+            // acts as focus while it remains held.
+            g_state.focusFinger = finger.fingerId;
+            g_state.buttons |= TH_BUTTON_FOCUS;
+            QueuePulse(TH_BUTTON_BOMB);
+            return;
+        }
+        QueuePulse(TH_BUTTON_MENU);
+        return;
     }
+
+    if (g_menuGestureFinger >= 0)
+    {
+        g_menuGestureCancelled = true;
+        QueuePulse(TH_BUTTON_RETURNMENU);
+        return;
+    }
+    BeginMenuGesture(finger);
 }
 
 void HandleFingerMotion(const SDL_TouchFingerEvent &finger)
 {
-    if (finger.fingerId != g_state.moveFinger)
+    float px, py;
+    FingerPixels(finger, &px, &py);
+    if (g_layoutEdit && finger.fingerId == g_layoutFinger && g_layoutControl >= 0)
+    {
+        NormalizedLayout &layout = g_config.layouts[LayoutOrientation()];
+        layout.x[g_layoutControl] = ClampFloat(finger.x, 0.06f, 0.94f);
+        layout.y[g_layoutControl] = ClampFloat(finger.y, 0.08f, 0.94f);
         return;
-    SetDirectional(finger.x - g_state.moveX, finger.y - g_state.moveY);
+    }
+    if (g_settingsOpen && finger.fingerId == g_settingsFinger &&
+        g_settingsRow >= 2 && g_settingsRow <= 4)
+    {
+        ActivateSettingsRow(g_settingsRow, px);
+        return;
+    }
+    if (finger.fingerId == g_menuGestureFinger)
+    {
+        g_menuGestureX = finger.x;
+        g_menuGestureY = finger.y;
+        return;
+    }
+    if (finger.fingerId != g_state.moveFinger) return;
+    if (g_state.moveIsDrag) AccumulateDragMotion(finger);
+    else SetDirectional(finger.x - g_state.moveX, finger.y - g_state.moveY);
 }
 
 void HandleFingerUp(const SDL_TouchFingerEvent &finger)
 {
+    if (g_activeTouchCount > 0) --g_activeTouchCount;
+    if (finger.fingerId == g_layoutFinger)
+    {
+        g_layoutFinger = -1;
+        g_layoutControl = -1;
+    }
+    if (finger.fingerId == g_settingsFinger)
+    {
+        if (g_settingsNeedsSave)
+        {
+            SaveMobileConfig();
+            g_settingsNeedsSave = false;
+        }
+        g_settingsFinger = -1;
+        g_settingsRow = -1;
+    }
+    FinishMenuGesture(finger);
     if (finger.fingerId == g_state.moveFinger)
     {
         g_state.moveFinger = -1;
         g_state.buttons &= (u16)~TH_BUTTON_DIRECTION;
+        if (g_config.controlMode == CONTROL_DRAG)
+            g_state.buttons &= (u16)~TH_BUTTON_SHOOT;
         g_state.moveDx = 0.0f;
         g_state.moveDy = 0.0f;
+        g_state.moveIsDrag = false;
     }
     if (finger.fingerId == g_state.shotFinger)
     {
@@ -622,7 +1380,6 @@ void HandleFingerUp(const SDL_TouchFingerEvent &finger)
     if (finger.fingerId == g_state.menuFinger)
     {
         g_state.menuFinger = -1;
-        g_state.buttons &= (u16)~TH_BUTTON_MENU;
     }
 }
 
@@ -642,12 +1399,13 @@ void DrawCircle(float x, float y, float radius, GLubyte red, GLubyte green, GLub
 
 void DrawGlyph(char glyph, float x, float y, float radius)
 {
+    EnsureMobileConfig();
     const float left = x - radius * 0.34f;
     const float right = x + radius * 0.34f;
     const float top = y - radius * 0.38f;
     const float bottom = y + radius * 0.38f;
     const float middle = y;
-    glColor4ub(255, 255, 255, 235);
+    glColor4ub(255, 255, 255, static_cast<GLubyte>(235.0f * g_config.opacity));
     glLineWidth(radius * 0.10f < 2.0f ? 2.0f : radius * 0.10f);
     glBegin(GL_LINES);
     if (glyph == 'Z')
@@ -674,7 +1432,8 @@ void DrawGlyph(char glyph, float x, float y, float radius)
 
 void DrawMenuGlyph(float x, float y, float radius)
 {
-    glColor4ub(255, 255, 255, 235);
+    EnsureMobileConfig();
+    glColor4ub(255, 255, 255, static_cast<GLubyte>(235.0f * g_config.opacity));
     glLineWidth(radius * 0.10f < 2.0f ? 2.0f : radius * 0.10f);
     glBegin(GL_LINES);
     for (int row = -1; row <= 1; ++row)
@@ -687,12 +1446,15 @@ void DrawMenuGlyph(float x, float y, float radius)
 
 void DrawActionButton(const ControlGeometry &geometry, bool pressed, char glyph)
 {
+    EnsureMobileConfig();
+    const GLubyte outerAlpha = static_cast<GLubyte>((pressed ? 220.0f : 150.0f) * g_config.opacity);
+    const GLubyte innerAlpha = static_cast<GLubyte>((pressed ? 210.0f : 120.0f) * g_config.opacity);
     DrawCircle(geometry.x, geometry.y, geometry.radius,
                pressed ? 242 : 34, pressed ? 112 : 42, pressed ? 132 : 54,
-               pressed ? 220 : 150);
+               outerAlpha);
     DrawCircle(geometry.x, geometry.y, geometry.radius * 0.82f,
                pressed ? 190 : 92, pressed ? 38 : 20, pressed ? 64 : 38,
-               pressed ? 210 : 120);
+               innerAlpha);
     if (glyph == 'M')
         DrawMenuGlyph(geometry.x, geometry.y, geometry.radius);
     else
@@ -852,6 +1614,142 @@ void DrawDeveloperPanel()
         }
     }
 }
+
+void DrawSettingsButton()
+{
+    const RectGeometry button = SettingsButtonGeometry();
+    DrawRect(button, 38, 22, 58, 215);
+    DrawRectOutline(button, button.height * 0.055f, 202, 144, 222, 230);
+    const float pixel = FitTextPixel("CFG", button.height * 0.105f, button.width * 0.72f);
+    DrawText("CFG", button.x + button.width * 0.22f,
+             button.y + (button.height - pixel * 7.0f) * 0.5f,
+             pixel, 255, 236, 255, 250);
+}
+
+void DrawPerformanceButton()
+{
+    const RectGeometry button = PerformanceButtonGeometry();
+    DrawRect(button, 29, 36, 55, 215);
+    DrawRectOutline(button, button.height * 0.055f, 140, 191, 218, 230);
+    const float pixel = FitTextPixel("PERF", button.height * 0.105f, button.width * 0.72f);
+    DrawText("PERF", button.x + button.width * 0.14f,
+             button.y + (button.height - pixel * 7.0f) * 0.5f,
+             pixel, 225, 245, 255, 250);
+}
+
+void DrawSlider(const RectGeometry &row, float normalized)
+{
+    normalized = ClampFloat(normalized, 0.0f, 1.0f);
+    RectGeometry track = {row.x + row.width * 0.55f, row.y + row.height * 0.38f,
+                          row.width * 0.39f, row.height * 0.24f};
+    DrawRect(track, 42, 30, 50, 235);
+    RectGeometry fill = track;
+    fill.width *= normalized;
+    DrawRect(fill, 224, 116, 194, 245);
+    DrawRectOutline(track, row.height * 0.025f, 246, 205, 236, 220);
+}
+
+void DrawSettingsPanel()
+{
+    EnsureMobileConfig();
+    static const char *labels[11] = {
+        "CONTROL", "BUTTONS", "BUTTON SIZE", "DRAG SENS", "OPACITY",
+        "DRAG AUTO Z", "Z TOGGLE", "S TOGGLE", "AUTO BOMB", "EDIT LAYOUT", "CLOSE"};
+    static const char *performanceLabels[4] = {
+        "FULL QUALITY", "BALANCED", "SPEED", "CLOSE"};
+    const RectGeometry panel = SettingsPanelGeometry();
+    DrawRect(panel, 17, 9, 29, 247);
+    DrawRectOutline(panel, panel.width * 0.005f, 192, 119, 181, 242);
+
+    RectGeometry title = {panel.x + panel.width * 0.025f, panel.y + panel.height * 0.022f,
+                          panel.width * 0.95f, panel.height * 0.092f};
+    DrawRect(title, 61, 20, 64, 242);
+    const char *panelTitle = g_performanceOpen ? "PERFORMANCE" : "MOBILE CONTROL";
+    const float titlePixel = FitTextPixel(panelTitle, title.height * 0.105f, title.width * 0.88f);
+    DrawText(panelTitle, title.x + title.width * 0.06f,
+             title.y + (title.height - titlePixel * 7.0f) * 0.5f,
+             titlePixel, 255, 222, 247, 255);
+
+    const int rowCount = g_performanceOpen ? 4 : 11;
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
+    {
+        const RectGeometry row = SettingsRowGeometry(rowIndex);
+        const bool command = rowIndex == rowCount - 1 || (!g_performanceOpen && rowIndex == 9);
+        DrawRect(row, command ? 75 : 39, command ? 18 : 20, command ? 50 : 55, 230);
+        DrawRectOutline(row, row.height * 0.025f, 184, 108, 171, 195);
+        const char *label = g_performanceOpen ? performanceLabels[rowIndex] : labels[rowIndex];
+        const float pixel = FitTextPixel(label, row.height * 0.103f, row.width * 0.46f);
+        DrawText(label, row.x + row.width * 0.035f,
+                 row.y + (row.height - pixel * 7.0f) * 0.5f,
+                 pixel, 255, 229, 248, 250);
+
+        const char *value = NULL;
+        char numeric[24];
+        if (g_performanceOpen && rowIndex < 3)
+            value = g_config.performanceMode == rowIndex ? "ACTIVE" : "SELECT";
+        else if (!g_performanceOpen && rowIndex == 0)
+            value = g_config.controlMode == CONTROL_JOYSTICK ? "JOYSTICK" :
+                    (g_config.controlMode == CONTROL_DRAG ? "DRAG" : "HYBRID");
+        else if (!g_performanceOpen && rowIndex == 1) value = g_config.showButtons ? "ON" : "OFF";
+        else if (!g_performanceOpen && rowIndex == 2)
+        {
+            SDL_snprintf(numeric, sizeof(numeric), "%d%%", static_cast<int>(g_config.buttonScale * 100.0f));
+            value = numeric;
+            DrawSlider(row, (g_config.buttonScale - 0.65f) / 0.80f);
+        }
+        else if (!g_performanceOpen && rowIndex == 3)
+        {
+            SDL_snprintf(numeric, sizeof(numeric), "%d%%", static_cast<int>(g_config.dragSensitivity * 100.0f));
+            value = numeric;
+            DrawSlider(row, (g_config.dragSensitivity - 0.40f) / 1.60f);
+        }
+        else if (!g_performanceOpen && rowIndex == 4)
+        {
+            SDL_snprintf(numeric, sizeof(numeric), "%d%%", static_cast<int>(g_config.opacity * 100.0f));
+            value = numeric;
+            DrawSlider(row, (g_config.opacity - 0.20f) / 0.80f);
+        }
+        else if (!g_performanceOpen && rowIndex == 5) value = g_config.dragAutoShoot ? "ON" : "OFF";
+        else if (!g_performanceOpen && rowIndex == 6) value = g_config.shootToggle ? "ON" : "OFF";
+        else if (!g_performanceOpen && rowIndex == 7) value = g_config.focusToggle ? "ON" : "OFF";
+        else if (!g_performanceOpen && rowIndex == 8) value = g_config.autoBomb ? "ON" : "OFF";
+
+        if (value != NULL && (g_performanceOpen ||
+                             (rowIndex != 2 && rowIndex != 3 && rowIndex != 4)))
+        {
+            const float valuePixel = FitTextPixel(value, pixel, row.width * 0.38f);
+            const float valueWidth = strlen(value) * valuePixel * 6.0f;
+            DrawText(value, row.x + row.width - valueWidth - row.width * 0.035f,
+                     row.y + (row.height - valuePixel * 7.0f) * 0.5f,
+                     valuePixel, 240, 181, 226, 255);
+        }
+    }
+}
+
+void DrawLayoutEditor()
+{
+    static const char *tools[3] = {"SAVE", "RESET", "CANCEL"};
+    for (int index = 0; index < 3; ++index)
+    {
+        const RectGeometry tool = LayoutToolGeometry(index);
+        DrawRect(tool, index == 2 ? 91 : 44, index == 2 ? 18 : 25,
+                 index == 2 ? 48 : 62, 235);
+        DrawRectOutline(tool, tool.height * 0.04f, 229, 154, 211, 230);
+        const float pixel = FitTextPixel(tools[index], tool.height * 0.105f, tool.width * 0.82f);
+        const float textWidth = strlen(tools[index]) * pixel * 6.0f;
+        DrawText(tools[index], tool.x + (tool.width - textWidth) * 0.5f,
+                 tool.y + (tool.height - pixel * 7.0f) * 0.5f,
+                 pixel, 255, 231, 250, 255);
+    }
+
+    const ControlGeometry joystick = JoystickGeometry();
+    DrawCircle(joystick.x, joystick.y, joystick.radius, 40, 48, 58, 185);
+    DrawCircle(joystick.x, joystick.y, joystick.radius * 0.42f, 226, 170, 214, 220);
+    DrawActionButton(ShotGeometry(), false, 'Z');
+    DrawActionButton(BombGeometry(), false, 'X');
+    DrawActionButton(FocusGeometry(), false, 'S');
+    DrawActionButton(MenuGeometry(), false, 'M');
+}
 }
 
 void SetPresentationLayout(const PresentationLayout &layout)
@@ -864,9 +1762,53 @@ PresentationLayout GetPresentationLayout()
     return g_layout;
 }
 
+void SetPresentationShake(f32 x, f32 y)
+{
+    g_presentationShakeX = x;
+    g_presentationShakeY = y;
+}
+
+void GetPresentationShake(f32 *x, f32 *y)
+{
+    if (x != NULL) *x = g_presentationShakeX;
+    if (y != NULL) *y = g_presentationShakeY;
+}
+
 void ProcessEvent(const SDL_Event &event)
 {
-    if (event.type == SDL_FINGERDOWN)
+    if (event.type == SDL_APP_WILLENTERBACKGROUND || event.type == SDL_APP_DIDENTERBACKGROUND)
+    {
+        if (!g_appInBackground)
+        {
+            g_appInBackground = true;
+            g_SoundPlayer.Pause();
+            g_SoundPlayer.ProcessQueues();
+            if (IsGameplayReady() && g_GameManager.isInGameMenu == 0 && !g_GameManager.showRetryMenu)
+                g_backgroundPausePending = true;
+            ClearTransientTouchState();
+            g_shootLatched = false;
+            g_focusLatched = false;
+            modern::LogStartup("lifecycle: background entered; audio paused");
+        }
+    }
+    else if (event.type == SDL_APP_WILLENTERFOREGROUND || event.type == SDL_APP_DIDENTERFOREGROUND)
+    {
+        if (g_appInBackground)
+        {
+            g_appInBackground = false;
+            if (!IsGameplayReady())
+            {
+                g_SoundPlayer.UnPause();
+                g_SoundPlayer.ProcessQueues();
+                modern::LogStartup("lifecycle: foreground entered; menu audio resumed");
+            }
+            else
+            {
+                modern::LogStartup("lifecycle: foreground entered; gameplay remains paused");
+            }
+        }
+    }
+    else if (event.type == SDL_FINGERDOWN)
         HandleFingerDown(event.tfinger);
     else if (event.type == SDL_FINGERMOTION)
         HandleFingerMotion(event.tfinger);
@@ -901,26 +1843,105 @@ void ProcessEvent(const SDL_Event &event)
 
 u16 PollButtons()
 {
+    EnsureMobileConfig();
     SDL_Event event;
     while (SDL_PollEvent(&event))
         ProcessEvent(event);
 
+    if (g_backgroundPausePending && IsGameplayReady())
+    {
+        QueuePulse(TH_BUTTON_MENU);
+        g_backgroundPausePending = false;
+        modern::LogStartup("lifecycle: pause menu requested");
+    }
+
+    const bool stageClearActive = IsStageClearSequenceActive();
+    static bool stageClearWasActive;
+    static Uint32 stageClearStartedAt;
+    static int stageClearStage = -1;
+    if (stageClearActive && !stageClearWasActive)
+    {
+        stageClearStartedAt = SDL_GetTicks();
+        stageClearStage = g_GameManager.currentStage;
+        char message[128];
+        SDL_snprintf(message, sizeof(message),
+                     "stage-clear/input: stage=%d automatic Z released", stageClearStage);
+        modern::LogStartup(message);
+    }
+    else if (!stageClearActive && stageClearWasActive)
+    {
+        char message[160];
+        SDL_snprintf(message, sizeof(message),
+                     "stage-clear/input: stage=%d ended after %u ms",
+                     stageClearStage,
+                     static_cast<unsigned int>(SDL_GetTicks() - stageClearStartedAt));
+        modern::LogStartup(message);
+        stageClearStage = -1;
+    }
+    stageClearWasActive = stageClearActive;
+
     const u16 smokeButtons = PollSmokeTestButtons();
-    u16 result = g_developerOpen ? 0 : static_cast<u16>(g_state.buttons | g_state.keyboardButtons);
-    if (!g_developerOpen)
+    const bool overlayOpen = g_developerOpen || g_settingsOpen || g_layoutEdit;
+    u16 result = overlayOpen ? 0 : static_cast<u16>(g_state.buttons | g_state.keyboardButtons);
+    if (!overlayOpen)
+    {
         result |= smokeButtons;
+        result |= g_pulseButtons;
+        if (g_shootLatched && !stageClearActive) result |= TH_BUTTON_SHOOT;
+        if (g_focusLatched) result |= TH_BUTTON_FOCUS;
+        if (g_config.dragAutoShoot && !stageClearActive && IsGameplayReady() && !IsGameplayMenuOpen() &&
+            g_state.moveFinger >= 0 && g_state.moveIsDrag &&
+            (g_config.controlMode == CONTROL_DRAG || !g_config.showButtons))
+            result |= TH_BUTTON_SHOOT;
+
+    }
+    static bool stageClearInputGateVerified;
+    const char *smokeTest = SDL_getenv("TH08_IOS_SMOKE_TEST");
+    if (!stageClearInputGateVerified && stageClearActive && g_shootLatched &&
+        smokeTest != NULL && strcmp(smokeTest, "stageclear-input") == 0)
+    {
+        stageClearInputGateVerified = true;
+        modern::LogStartup((result & TH_BUTTON_SHOOT) == 0
+                               ? "smoke-stage-clear-input: PASS - automatic Z suppressed"
+                               : "smoke-stage-clear-input: FAILED - Z remained active");
+    }
+    g_pulseButtons = 0;
     return result;
 }
 
 void ResetTouchState()
 {
-    g_state = TouchState();
+    ClearTransientTouchState();
+    g_state.keyboardButtons = 0;
+    g_pulseButtons = 0;
+    g_shootLatched = false;
+    g_focusLatched = false;
     g_developerOpen = false;
+    g_settingsOpen = false;
+    g_performanceOpen = false;
+    g_layoutEdit = false;
 }
 
 bool IsDeveloperInvincible()
 {
     return g_developerInvincible;
+}
+
+bool IsAutoBombEnabled()
+{
+    EnsureMobileConfig();
+    return g_config.autoBomb != 0;
+}
+
+bool ConsumeDragDelta(f32 *dx, f32 *dy)
+{
+    if (dx == NULL || dy == NULL)
+        return false;
+    *dx = g_state.dragDeltaX;
+    *dy = g_state.dragDeltaY;
+    g_state.dragDeltaX = 0.0f;
+    g_state.dragDeltaY = 0.0f;
+    return *dx != 0.0f || *dy != 0.0f;
 }
 
 void DrawVirtualControls()
@@ -956,40 +1977,66 @@ void DrawVirtualControls()
     glDisable(GL_SCISSOR_TEST);
     glDepthMask(GL_FALSE);
 
+    EnsureMobileConfig();
+
     if (g_developerOpen && !IsGameplayReady())
     {
         g_developerOpen = false;
         ClearGameplayTouches();
     }
 
-    if (g_developerOpen)
+    if (g_layoutEdit)
+    {
+        DrawLayoutEditor();
+    }
+    else if (g_settingsOpen)
+    {
+        DrawSettingsPanel();
+    }
+    else if (g_developerOpen)
     {
         DrawDeveloperPanel();
     }
-    else
+    else if (IsGameplayReady())
     {
-        const u16 pressed = g_state.buttons | g_state.keyboardButtons;
-        const ControlGeometry joystick = JoystickGeometry();
-        DrawCircle(joystick.x, joystick.y, joystick.radius, 28, 34, 42, 130);
-        DrawCircle(joystick.x, joystick.y, joystick.radius * 0.78f, 70, 78, 90, 80);
-        const float maxOffset = joystick.radius * 0.42f;
-        float dx = g_state.moveDx * static_cast<float>(g_layout.drawableWidth);
-        float dy = g_state.moveDy * static_cast<float>(g_layout.drawableHeight);
-        const float length = sqrtf(dx * dx + dy * dy);
-        if (length > maxOffset && length > 0.0f)
+        u16 pressed = g_state.buttons | g_state.keyboardButtons;
+        if (g_shootLatched) pressed |= TH_BUTTON_SHOOT;
+        if (g_focusLatched) pressed |= TH_BUTTON_FOCUS;
+        if (g_config.controlMode != CONTROL_DRAG)
         {
-            dx = dx * maxOffset / length;
-            dy = dy * maxOffset / length;
+            const ControlGeometry joystick = JoystickGeometry();
+            const GLubyte outerAlpha = static_cast<GLubyte>(130.0f * g_config.opacity);
+            const GLubyte innerAlpha = static_cast<GLubyte>(80.0f * g_config.opacity);
+            DrawCircle(joystick.x, joystick.y, joystick.radius, 28, 34, 42, outerAlpha);
+            DrawCircle(joystick.x, joystick.y, joystick.radius * 0.78f, 70, 78, 90, innerAlpha);
+            const float maxOffset = joystick.radius * 0.42f;
+            float dx = g_state.moveDx * static_cast<float>(g_layout.drawableWidth);
+            float dy = g_state.moveDy * static_cast<float>(g_layout.drawableHeight);
+            const float length = sqrtf(dx * dx + dy * dy);
+            if (length > maxOffset && length > 0.0f)
+            {
+                dx = dx * maxOffset / length;
+                dy = dy * maxOffset / length;
+            }
+            DrawCircle(joystick.x + dx, joystick.y + dy, joystick.radius * 0.39f,
+                       230, 235, 242,
+                       static_cast<GLubyte>((g_state.moveFinger >= 0 ? 210.0f : 145.0f) *
+                                            g_config.opacity));
         }
-        DrawCircle(joystick.x + dx, joystick.y + dy, joystick.radius * 0.39f,
-                   230, 235, 242, g_state.moveFinger >= 0 ? 210 : 145);
 
-        DrawActionButton(ShotGeometry(), (pressed & TH_BUTTON_SHOOT) != 0, 'Z');
-        DrawActionButton(BombGeometry(), (pressed & TH_BUTTON_BOMB) != 0, 'X');
-        DrawActionButton(FocusGeometry(), (pressed & TH_BUTTON_FOCUS) != 0, 'S');
-        DrawActionButton(MenuGeometry(), (pressed & TH_BUTTON_MENU) != 0, 'M');
-        if (IsGameplayReady())
-            DrawDeveloperButton();
+        if (g_config.showButtons)
+        {
+            DrawActionButton(ShotGeometry(), (pressed & TH_BUTTON_SHOOT) != 0, 'Z');
+            DrawActionButton(BombGeometry(), (pressed & TH_BUTTON_BOMB) != 0, 'X');
+            DrawActionButton(FocusGeometry(), (pressed & TH_BUTTON_FOCUS) != 0, 'S');
+            DrawActionButton(MenuGeometry(), (pressed & TH_BUTTON_MENU) != 0, 'M');
+        }
+        DrawDeveloperButton();
+    }
+    else if (g_Supervisor.curState == SupervisorState_TitleScreen)
+    {
+        DrawSettingsButton();
+        DrawPerformanceButton();
     }
 
     glDepthMask(depthMask);

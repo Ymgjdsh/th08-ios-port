@@ -1228,6 +1228,23 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
     }
 
     g_Supervisor.FUN_00448972();
+#ifdef TH08_IOS
+    // The retail loading screen waits for a fresh Z/skip edge before it
+    // releases stageTransitionState.  Mobile toggle/drag shooting is
+    // deliberately suppressed throughout the stage-clear tally, so relying
+    // on that edge deadlocks the next stage on a black loading frame.  At
+    // this point all stage resources are loaded and the minimum loading time
+    // has elapsed, so complete only stage-clear initiated transitions.
+    if (gameManager->flags.unk5_6 == 1 && gameManager->flags.unk9)
+    {
+        char message[160];
+        snprintf(message, sizeof(message),
+                 "stage-transition: resources ready stage=%d waitFrames=%d; auto-advancing",
+                 gameManager->currentStage, gameManager->unk3c);
+        modern::LogStartup(message);
+        gameManager->flags.unk5_6 = 0;
+    }
+#endif
     while (gameManager->flags.unk5_6 != 0)
         Sleep(17);
 
@@ -1237,6 +1254,16 @@ void __fastcall GameManager::GameplaySetupThread(void *unused)
     g_Supervisor.unk290 = FALSE;
     g_Supervisor.unk174 = 60;
     GM_U32(gameManager, 0x3DBAC) &= ~0x200U;
+#ifdef TH08_IOS
+    {
+        char message[128];
+        snprintf(message, sizeof(message),
+                 "stage-transition: gameplay ready stage=%d flags=%08x",
+                 gameManager->currentStage,
+                 static_cast<unsigned int>(GM_U32(gameManager, 0x3DBAC)));
+        modern::LogStartup(message);
+    }
+#endif
     g_Supervisor.unk16c = 0;
     g_ScreenEffectCounter = 2;
     goto thread_done;

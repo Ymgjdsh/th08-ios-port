@@ -932,6 +932,19 @@ i32 GuiImpl::RunMsg()
             reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->resultState = 1;
             g_GameManager.flags.unk9 = 1;
 
+            #ifdef TH08_IOS
+            {
+                GuiStageResultUpdateOverlay *stageClear =
+                    reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this) + 0x22DEC);
+                char message[192];
+                snprintf(message, sizeof(message),
+                         "stage-clear/gui: begin stage=%d start=%d target=%d increment=%d",
+                         g_GameManager.currentStage, stageClear->clockDisplayStart,
+                         stageClear->clockDisplayTarget, stageClear->clockIncrement);
+                modern::LogStartup(message);
+            }
+            #endif
+
             if (g_GameManager.currentStage != STAGE6A && g_GameManager.currentStage != STAGE6B &&
                 g_GameManager.currentStage != EXTRASTAGE)
             {
@@ -1407,6 +1420,18 @@ void Gui::FUN_00435900()
             reinterpret_cast<GuiStageResultUpdateOverlay *>(reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec)->clockDisplayTarget &&
         g_GameManager.flags.unk5_6 == 0)
     {
+        #ifdef TH08_IOS
+        {
+            GuiStageResultUpdateOverlay *stageClear = reinterpret_cast<GuiStageResultUpdateOverlay *>(
+                reinterpret_cast<u8 *>(this->GetImpl()) + 0x22dec);
+            char message[160];
+            snprintf(message, sizeof(message),
+                     "stage-clear/gui: tally complete stage=%d timer=%d target=%d",
+                     g_GameManager.currentStage, stageClear->clockDisplayTimer,
+                     stageClear->clockDisplayTarget);
+            modern::LogStartup(message);
+        }
+        #endif
         g_GameManager.flags.unk5_6 = 2;
     }
 

@@ -1488,11 +1488,35 @@ i32 Spellcard::OnUpdateImpl()
         }
     }
 
+#ifdef TH08_IOS
+    // The player bomb cut-in reads too quickly on the 60 Hz mobile path.
+    // Advance only its five visual VMs at 3/4 speed. This cadence must not use
+    // GameManager::unk3de08: that counter can stop while a bomb freezes
+    // gameplay and would leave the portrait as a permanent faint afterimage.
+    static u32 iosPlayerCutInCadence;
+    ++iosPlayerCutInCadence;
+    const bool playerCutInVisible = this->vm120.IsVisible() ||
+                                    this->vm668.IsVisible() ||
+                                    this->vmBB0.IsVisible() ||
+                                    this->vm10F8.IsVisible() ||
+                                    this->vm1B88.IsVisible();
+    const bool advancePlayerCutIn = !playerCutInVisible ||
+                                    (iosPlayerCutInCadence & 3) != 0;
+    if (advancePlayerCutIn)
+    {
+        g_AnmManager->ExecuteScript(&this->vm120);
+        g_AnmManager->ExecuteScript(&this->vm668);
+        g_AnmManager->ExecuteScript(&this->vmBB0);
+        g_AnmManager->ExecuteScript(&this->vm10F8);
+        g_AnmManager->ExecuteScript(&this->vm1B88);
+    }
+#else
     g_AnmManager->ExecuteScript(&this->vm120);
     g_AnmManager->ExecuteScript(&this->vm668);
     g_AnmManager->ExecuteScript(&this->vmBB0);
     g_AnmManager->ExecuteScript(&this->vm10F8);
     g_AnmManager->ExecuteScript(&this->vm1B88);
+#endif
     g_AnmManager->ExecuteScript(&this->vm3C4);
     g_AnmManager->ExecuteScript(&this->vm90C);
     g_AnmManager->ExecuteScript(&this->vmE54);

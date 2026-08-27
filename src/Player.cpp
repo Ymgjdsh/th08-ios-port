@@ -565,11 +565,8 @@ void Player::Die()
     utils::DebugPrint("player DEAD");
     g_EclScriptedGlobalUpdateFreeze = 0;
     g_GameManager.UpdateAntiTamper();
-    g_EffectManager.SpawnEffect(6, reinterpret_cast<D3DXVECTOR3 *>(&this->position), 16, -1);
     this->playerState = PLAYER_STATE_DYING;
     this->timer = 0;
-    g_SoundPlayer.PlaySoundPositionedByIdx(SOUND_PICHUN, this->position.x);
-    g_ReplayManager->flags |= 0x200;
 
     if (g_GameManager.flags.unk7 || g_GameManager.flags.unk8)
     {
@@ -646,6 +643,36 @@ void Player::Die()
         }
     }
 
+#ifdef TH08_IOS
+    // Auto Bomb is a deathbomb: attempt it after the normal deathbomb window
+    // has been prepared, but before committing the miss effect, replay flag,
+    // and hit sound. A successful Bomb must be indistinguishable from a
+    // manual deathbomb rather than a hit that was repaired afterwards.
+    if (modern::ios::IsAutoBombEnabled() &&
+        g_GameManager.GetBombsRemaining() > 0 &&
+        *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0xE2A68) != 0)
+    {
+        const u16 savedCurrentInput = g_GuiMessageInputCurrent;
+        const u16 savedPreviousInput = g_GuiMessageInputPrevious;
+        const i32 bombsBefore = g_GameManager.GetBombsRemaining();
+        g_GuiMessageInputCurrent |= TH_BUTTON_BOMB;
+        g_GuiMessageInputPrevious &= static_cast<u16>(~TH_BUTTON_BOMB);
+        this->FUN_0044c650();
+        g_GuiMessageInputCurrent = savedCurrentInput;
+        g_GuiMessageInputPrevious = savedPreviousInput;
+        if (g_GameManager.GetBombsRemaining() < bombsBefore)
+        {
+            modern::LogStartup("touch/auto-bomb: accepted before miss feedback");
+            g_ItemManager.CancelAutoCollect();
+            return;
+        }
+        modern::LogStartup("touch/auto-bomb: native acceptance rejected");
+    }
+#endif
+
+    g_EffectManager.SpawnEffect(6, reinterpret_cast<D3DXVECTOR3 *>(&this->position), 16, -1);
+    g_SoundPlayer.PlaySoundPositionedByIdx(SOUND_PICHUN, this->position.x);
+    g_ReplayManager->flags |= 0x200;
     g_ItemManager.CancelAutoCollect();
 }
 
@@ -855,6 +882,18 @@ i32 Player::FUN_0044aec0()
 
     horizontalSpeed *= *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(this) + 0x404);
     verticalSpeed *= *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(this) + 0x408);
+#ifdef TH08_IOS
+    // Route direct drag through the normal velocity path so the player lean
+    // animation sees the same horizontal/vertical speed as a joystick.
+    f32 touchDeltaX = 0.0f;
+    f32 touchDeltaY = 0.0f;
+    if (modern::ios::ConsumeDragDelta(&touchDeltaX, &touchDeltaY))
+    {
+        const f32 timeScale = g_EclGameTimeScale != 0.0f ? g_EclGameTimeScale : 1.0f;
+        horizontalSpeed = touchDeltaX / timeScale;
+        verticalSpeed = touchDeltaY / timeScale;
+    }
+#endif
 
 #define SET_PLAYER_SCRIPT(idx) \
     (ResolvePlayerAnmFile(this)->SetAndExecuteScriptIdx( \
@@ -917,7 +956,6 @@ i32 Player::FUN_0044aec0()
     *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(this) + 0x3FC) = verticalSpeed * g_EclGameTimeScale;
     this->position.operator float *()[0] += *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(this) + 0x3F8);
     this->position.operator float *()[1] += *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(this) + 0x3FC);
-
     if (this->position.operator float *()[0] < g_GameManager.playerMovementTopLeftPos.x)
         this->position.operator float *()[0] = g_GameManager.playerMovementTopLeftPos.x;
     else if (this->position.operator float *()[0] >
@@ -1332,6 +1370,21 @@ acceptBomb:
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0xE2A7C) = 1;
     *reinterpret_cast<ZunTimer *>(reinterpret_cast<u8 *>(this) + 0xFF4) = 0;
     *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0xFE4) = 999;
+
+#ifdef TH08_IOS
+    if (g_GameManager.currentStage == STAGE6A || g_GameManager.currentStage == STAGE6B)
+    {
+        char message[224];
+        snprintf(message, sizeof(message),
+                 "player-bomb/stage6: stage=%d shot=%d mode=%d player=%.1f,%.1f target=%.1f,%.1f valid=%d",
+                 g_GameManager.currentStage, static_cast<int>(g_GameManager.shotType),
+                 *reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(this) + 0xFE0),
+                 this->position.x, this->position.y,
+                 this->tailPosition0.x, this->tailPosition0.y,
+                 this->enemyTrackedPositionValid);
+        modern::LogStartup(message);
+    }
+#endif
 
     {
         PlayerBombCallback callback =

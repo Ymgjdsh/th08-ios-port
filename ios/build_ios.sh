@@ -11,6 +11,9 @@ IOS_SDK=${IOS_SDK:-iphoneos}
 IOS_ARCH=${IOS_ARCH:-arm64}
 IOS_DEPLOYMENT_TARGET=${IOS_DEPLOYMENT_TARGET:-14.0}
 DATA_DIR=${TH08_IOS_DATA_DIR:-}
+if [ -z "$DATA_DIR" ] && [ -d "$HOME/TH08-data" ]; then
+    DATA_DIR="$HOME/TH08-data"
+fi
 DEPS_DIR=${TH08_IOS_DEPS_DIR:-}
 OUTPUT_IPA=${OUTPUT_IPA:-"$BUILD_DIR/th08-ios-${IOS_VERSION}-${IOS_BUILD}.ipa"}
 LOG_DIR="$BUILD_DIR/logs"
@@ -28,6 +31,17 @@ command -v cmake >/dev/null 2>&1 || { echo "error: cmake is required"; exit 2; }
 command -v xcrun >/dev/null 2>&1 || { echo "error: xcrun is required"; exit 2; }
 SDK_PATH=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
 test -d "$SDK_PATH" || { echo "error: iPhoneOS SDK not found: $SDK_PATH"; exit 2; }
+
+test -n "$DATA_DIR" || {
+    echo "error: set TH08_IOS_DATA_DIR or create $HOME/TH08-data" >&2
+    exit 2
+}
+for REQUIRED_DATA_FILE in th08.dat thbgm.dat msgothic.ttc; do
+    test -s "$DATA_DIR/$REQUIRED_DATA_FILE" || {
+        echo "error: required iOS resource is missing: $DATA_DIR/$REQUIRED_DATA_FILE" >&2
+        exit 2
+    }
+done
 
 # CMake cannot change generators in an existing build tree.  Remove only the
 # generated tree when it was configured with a different generator; source
@@ -79,6 +93,18 @@ if [ -x "$APP_PATH/th08-modern" ]; then
 fi
 test -x "$APP_PATH/th08" || { echo "error: app was not produced: $APP_PATH"; exit 3; }
 rm -f "$APP_PATH/th08-modern"
+
+# Do this after the build as well as through CMake. A reused CMake tree can
+# retain an older TH08_IOS_DATA_DIR and silently produce an app without its
+# Japanese font, leaving Music Room and dialogue text blank.
+for REQUIRED_DATA_FILE in th08.dat thbgm.dat msgothic.ttc; do
+    cp -f "$DATA_DIR/$REQUIRED_DATA_FILE" "$APP_PATH/$REQUIRED_DATA_FILE"
+    test -s "$APP_PATH/$REQUIRED_DATA_FILE" || {
+        echo "error: failed to bundle $REQUIRED_DATA_FILE" >&2
+        exit 3
+    }
+done
+echo "Verified game archives and Japanese font in $APP_PATH"
 
 # A reused build tree can contain an older app under the alternate target
 # name. Refuse to package it when its plist does not match this invocation.

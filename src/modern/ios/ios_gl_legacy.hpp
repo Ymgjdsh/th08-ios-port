@@ -158,10 +158,15 @@ void glColor4ub(GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha);
 void glTexCoord2f(GLfloat u, GLfloat v);
 void glVertex2f(GLfloat x, GLfloat y);
 void glVertex3f(GLfloat x, GLfloat y, GLfloat z);
+void IosLegacySetFog(GLboolean enabled, GLfloat red, GLfloat green, GLfloat blue,
+                     GLfloat start, GLfloat end);
+void IosLegacySetFogCoordinate(GLfloat coordinate);
+void IosLegacySetAlphaThreshold(GLfloat threshold);
+void IosLegacySetTextureUsage(GLboolean useRgb, GLboolean useAlpha);
 inline void glDrawBuffer(GLenum) {}
 inline void glReadBuffer(GLenum) {}
 inline void glAlphaFunc(GLenum, GLclampf) {}
-inline void glFogCoordf(GLfloat) {}
+inline void glFogCoordf(GLfloat coordinate) { IosLegacySetFogCoordinate(coordinate); }
 inline void glFogf(GLenum, GLfloat) {}
 inline void glFogfv(GLenum, const GLfloat *) {}
 inline void glFogi(GLenum, GLint) {}
