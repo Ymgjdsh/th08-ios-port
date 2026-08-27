@@ -1,39 +1,39 @@
-build
-diff
-*.obj
-*.exe
-log.txt
-scripts/dls
-scripts/prefix
-build.ninja
-.ninja_deps
-.ninja_log
-vc70.pdb
-__pycache__
-.vscode
+# Build products and local diagnostics
+/build/
+/build-*/
+/build-ios*/
+/ios/build-ios-*.log
+*.ipa
+*.app
+*.dSYM
+*.log
 
-reccmp-user.yml
-reccmp-build.yml
-
-# Original game files are never distributed by this project.
+# Original copyrighted game data is never committed
+*.dat
 /resources/th08.exe
-/resources/*.dat
-/resources/*.zip
-/resources/*.rar
+/msgothic.ttc
 
-# Local adjacent-version sources and reverse-engineering state.
-/_references/
+# Local tools, editors, caches, and reverse-engineering state
 /.analysis/
 /.tools/
+/_references/
 /local/
 /.venv/
+/.vscode/
+/.idea/
 /compile_commands.json
+__pycache__/
+*.pyc
 *.gpr
 *.rep/
 *.idb
 *.i64
-*.pyc
 
-# Local iOS build products and diagnostics.
-/build-ios*/
-/ios/build-ios-*.log
+# CMake and Ninja files created in an accidental in-tree build
+/CMakeCache.txt
+/CMakeFiles/
+/Makefile
+/cmake_install.cmake
+/build.ninja
+/.ninja_deps
+/.ninja_log

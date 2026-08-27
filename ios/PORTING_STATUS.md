@@ -19,7 +19,7 @@ are not claims about the original executable.
 - bundled asset-catalog icons and a compiled launch storyboard.
 
 Original game archives are never stored in the repository. A build bundles
-only the user-provided `th08.dat`, `thbgm.dat`, and optional Japanese font.
+only the user-provided `th08.dat`, `thbgm.dat`, and required Japanese font.
 
 ## Validation checkpoint
 
@@ -35,6 +35,12 @@ smoke-campaign: COMPLETE - six-stage route and ending returned to title
 
 The corresponding fresh device build produced a signed arm64 IPA with
 `minos 14.0`, complete asset catalogs, and both required data archives.
+
+Build `0.3.9 (94)` additionally passed focused regressions for Music Room
+entry, Stage 1-to-2 resource reconstruction, direct Stage 6 gameplay and Bomb
+use. It also suppresses Stage 6 linked familiars and their alignment effects
+while their script position is parked at the playfield origin, with
+`stage6-corner-familiar` logging for real-device confirmation.
 
 ## Remaining coverage
 

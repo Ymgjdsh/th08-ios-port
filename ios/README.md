@@ -1,7 +1,8 @@
 # Building the TH08 iOS port
 
-Use a Mac with Xcode, CMake, and legally obtained copies of `th08.dat` and
-`thbgm.dat`. Put the data files and an optional `msgothic.ttc` in one directory:
+Use a Mac with Xcode, CMake, Python 3, and legally obtained copies of
+`th08.dat`, `thbgm.dat`, and `msgothic.ttc`. Put all three required files in
+one directory:
 
 ```sh
 git clone https://github.com/Ymgjdsh/th08-ios-port.git
@@ -9,12 +10,14 @@ cd th08-ios-port
 chmod +x ios/*.sh
 
 TH08_IOS_DATA_DIR="$HOME/TH08-data" \
-  IOS_VERSION=0.3.0 IOS_BUILD=85 \
+  IOS_VERSION=0.3.9 IOS_BUILD=94 \
   ./ios/build_ios.sh
 ```
 
 The initial configure downloads the pinned SDL2 family sources and therefore
-needs network access. For repeatable offline builds, set `TH08_IOS_DEPS_DIR`
+needs network access. `msgothic.ttc` is required for Japanese dialogue, menus,
+and Music Room text and is never stored in this repository. For repeatable
+offline builds, set `TH08_IOS_DEPS_DIR`
 to a directory containing these source trees:
 
 ```text

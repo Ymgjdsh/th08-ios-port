@@ -1,4 +1,0 @@
-[submodule "3rdparty/Detours"]
-	path = 3rdparty/Detours
-	url = https://github.com/roblabla/Detours
-	branch = msvc2002-compat

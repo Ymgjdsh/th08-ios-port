@@ -13,6 +13,3 @@
 *.yml text eol=lf
 *.md text eol=lf
 *.svg text eol=lf
-
-# Preserve vendored upstream release bytes exactly.
-3rdparty/** -text

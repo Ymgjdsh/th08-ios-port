@@ -1,216 +1,176 @@
-# 東方永夜抄 ～ Imperishable Night
-
-<h3 align="center">🌙「永夜已明」Authored reconstruction complete — Linux playable ✓ · Windows/macOS in progress · Web edition is the next spell card 💫</h3>
-
 <p align="center">
-  <img
-    src="resources/title-screen.png"
-    width="640"
-    alt="Original Japanese TH08 1.00d title screen">
+  <img src="ios/Assets.xcassets/AppIcon.appiconset/Icon-180.png" width="128" alt="TH08 iOS Port icon">
 </p>
 
-<p align="center">
-  <img src="resources/progress.svg" alt="TH08 exact-source and playable-platform progress">
-</p>
+# TH08 iOS Port
 
-## Platform guides
+《东方永夜抄 ～ Imperishable Night》1.00d 的非官方 iOS 移植工程。
 
-| Platform | Guide | Status |
-| --- | --- | --- |
-| Linux | **[Download, install, and play](docs/PLAY_LINUX.md)** | **Playable** |
-| Windows | [Native Windows guide](docs/PLAY_WINDOWS.md) | In progress |
-| macOS | [Native macOS guide](docs/PLAY_MACOS.md) | In progress |
+本仓库以社区重构源码为基础，把原本面向 Windows / DirectX 8 的游戏逻辑迁移到 arm64 iPhone 和 iPad。项目不是模拟器，也没有把 Windows 可执行文件装进 App；游戏 C++ 逻辑会直接编译为 iOS 原生程序，平台相关部分由 SDL2、OpenGL ES 兼容层和移动端输入系统承接。
 
-The independent arm64 iOS bring-up is under [`ios/PORTING_STATUS.md`](ios/PORTING_STATUS.md).
-It is intentionally separate from the exact VC7 and validated Linux products.
+> [!IMPORTANT]
+> 仓库不包含 `th08.dat`、`thbgm.dat`、`th08.exe`、商业字体或其他原版游戏数据。构建者必须使用自己合法持有的《东方永夜抄》日文 1.00d 数据。
 
-The Web edition is planned as a future playable target after the native
-desktop ports. It is not available yet.
+## 当前状态
 
-This project reconstructs the source code of the original Japanese
-`東方永夜抄 ～ Imperishable Night` version 1.00d executable. All 1,107 authored
-functions are now present in source, and 1,105 are accepted as byte-exact by
-reproducible comparison. The authored-source recovery milestone is complete;
-current work focuses on whole-image reconstruction, compiler/runtime libraries,
-and playable Windows, Linux, and macOS products.
-
-The repository continues the work of
-[GensokyoClub/th08](https://github.com/GensokyoClub/th08). Its complete Git
-history was imported rather than squashed, preserving the authorship and
-contribution record of the original project. New infrastructure and
-reconstruction work build on that baseline.
-
-The project remains active reconstruction and platform-engineering work.
-Existing source, symbol mappings, or generated progress artwork must not be
-interpreted as a new exact matching percentage without a reproducible report
-against the target binary. Current source-presence inventory is generated in
-[docs/PROGRESS.md](docs/PROGRESS.md) and is deliberately labeled separately
-from strict exact-match coverage.
-
-## Target executable
-
-Supply your own original executable as `resources/th08.exe`:
-
-| Property | Required value |
+| 项目 | 状态 |
 | --- | --- |
-| Version | Original Japanese 1.00d |
-| Size | `840,704` bytes |
-| SHA-256 | `330fbdbf58a710829d65277b4f312cfbb38d5448b3df523e79350b879213d924` |
-| PE image base | `0x00400000` |
-| Entry point | `0x004A619E` |
+| 目标平台 | arm64 iPhone / iPad |
+| 最低系统 | iOS 14.0 |
+| 当前验证节点 | `0.3.9 (94)` |
+| 主线流程 | 模拟器自动测试已完成 Normal 六面路线、结局和返回标题页 |
+| 输入 | 触摸、键盘、SDL 控制器 |
+| 画面 | 横屏和竖屏；iPhone / iPad 自适应布局 |
+| 安装包 | 可生成 ad-hoc 签名 IPA；仓库不发布含原作数据的 IPA |
 
-Localized or patched executables are different binaries and are intentionally
-out of scope. The executable and game data are copyrighted assets and are not
-included.
+目前版本已经可以进入标题页、选择角色并进行完整战斗。已完成的移动端功能包括：
 
-```bash
-python3 scripts/verify-target.py
-```
+- 跟手拖拽、虚拟摇杆、可移动和缩放的动作键；
+- 菜单直接点击、滑动选项、二指取消，以及键盘 / 手柄兼容；
+- 自动射击、Z/S 状态切换、仅在持有 Bomb 时触发的自动放 B；
+- iPhone / iPad 横竖屏布局和竖屏战斗区重排；
+- 性能选项、开发者菜单、无敌与调试功能；
+- App 进入后台时的生命周期处理；
+- 启动、渲染、关卡切换、Bomb 和崩溃诊断日志；
+- Replay、Music Room、结算和跨关卡资源重建的针对性修复。
 
-## Build
+这仍是测试移植，不代表所有角色、路线、难度、符卡、Replay 和设备组合都已经无缺陷。真机日志和可重复操作步骤仍然是修复问题的重要依据。
 
-Initialize the third-party submodules, then create the upstream Visual Studio
-.NET 2002/DirectX 8 environment. On Linux or macOS:
+## 技术实现
 
-```bash
-git submodule update --init --recursive
-./scripts/create_th08_prefix
-python3 ./scripts/build.py
-```
+### 渲染
 
-The prefix helper uses Wine by default; set `WINE` before invoking it when a
-different compatible runner is required. On Windows, use the upstream setup
-script directly:
+原作逻辑保留了 D3D8 形状的接口。iOS 端通过项目内的兼容层，把固定功能管线状态、纹理、顶点、混合、雾和 Render Target 操作转换为 OpenGL ES 2 调用，再交给 iOS GPU。当前实现不是 DXVK、MoltenVK 或 Metal 重写。
+
+为了兼容原作的 32 位对象布局，arm64 版本还使用四字节指针句柄和外部存储表，避免 64 位指针改变 Enemy、Player、ANM、Replay 等结构体中后续字段的偏移。
+
+### 输入和界面
+
+SDL2 负责窗口、事件、键盘和控制器。`src/modern/ios/ios_touch.cpp` 在此之上实现触摸命中、拖拽移动、摇杆、动作键、菜单手势、自动射击、自动放 B、开发者菜单和设置持久化。横竖屏合成由 iOS 渲染兼容层根据设备方向和安全区域动态计算。
+
+### 音频、文字和数据
+
+- SDL2_mixer 负责 BGM 和 WAV 音效；当前不提供 MIDI 输出。
+- SDL2_ttf 与构建者提供的 `msgothic.ttc` 用于日文菜单、对话和 Music Room 文字。
+- 游戏继续使用原作 PBG/LZSS 数据读取逻辑，从 `th08.dat` 和 `thbgm.dat` 读取资源。
+- Shift-JIS 文本在构建阶段通过 `scripts/generate_i18n.py` 和 `config/i18n.csv` 生成对应头文件。
+
+### 稳定性和测试
+
+工程包含可通过环境变量启用的模拟器 Smoke Test，覆盖标题菜单、Music Room、Replay 返回、Bomb、自动放 B、关卡结算、跨关卡重建和完整六面流程。App 还会在 Documents 中持续写入运行日志，便于定位只在真机出现的问题。
+
+验证节点 `0.3.9 (94)` 已通过：
+
+- 第六面直达和实际 Bomb 计数验证；
+- Music Room 进入与加载遮罩关闭；
+- 第一面到第二面的完整资源重建；
+- arm64、iOS 14.0 最低版本、签名、资源和 IPA 压缩完整性检查；
+- 第六面停在战斗区原点的附属使魔/光效抑制与诊断日志。
+
+## 构建 IPA
+
+### 环境
+
+- Intel 或 Apple Silicon Mac；
+- Xcode 和 iPhoneOS SDK；
+- CMake 3.20 或更高版本；
+- Python 3；
+- 合法取得的 `th08.dat`、`thbgm.dat` 和 `msgothic.ttc`。
+
+把三个数据文件放在同一目录，例如 `~/TH08-data`：
 
 ```text
-python scripts/create_devenv.py scripts/dls scripts/prefix
-python scripts/build.py
+~/TH08-data/
+  th08.dat
+  thbgm.dat
+  msgothic.ttc
 ```
 
-See [Build and exact matching](docs/BUILD_MATCHING.md) for dependency,
-build-mode, reccmp, and objdiff details.
+首次构建需要联网下载固定版本的 SDL 依赖：
 
-### Playable modern ports
+```sh
+git clone https://github.com/Ymgjdsh/th08-ios-port.git
+cd th08-ios-port
+chmod +x ios/*.sh
 
-An independent CMake target compiles the production-authored sources for
-modern hosts. It does not replace or make an exactness claim about the VC7
-build.
-
-| Platform | Status | Delivery |
-| --- | --- | --- |
-| Linux i386 | **Done** | Local one-command build/run and CI portable archive |
-| Windows x86 | **In progress** | Native startup and redistributable packaging are not complete |
-| macOS | **In progress** | Native backend and packaging remain to be implemented |
-
-For build dependencies, runtime asset expectations, `--data-dir`, and the
-remaining platform sequence, see
-[Playable reconstruction ports](docs/PORTING.md).
-
-For a source checkout on Debian or Ubuntu, the Linux quick start installs
-missing i386 dependencies, builds, and runs using only the original data
-directory:
-
-```bash
-scripts/setup-modern-linux.sh "/path/to/the/original/TH08 directory"
+TH08_IOS_DATA_DIR="$HOME/TH08-data" \
+IOS_VERSION=0.3.9 \
+IOS_BUILD=94 \
+./ios/build_ios.sh
 ```
 
-The [Portable Linux build workflow](.github/workflows/portable-linux.yml)
-also publishes `th08-modern-linux-i386.tar.gz` as a downloadable Actions
-artifact. Extract it and pass only the original game-data directory:
+默认输出位于 `build-ios/`。也可以指定输出路径：
 
-```bash
-./run-th08.sh "/path/to/the/original/TH08 directory"
+```sh
+TH08_IOS_DATA_DIR="$HOME/TH08-data" \
+OUTPUT_IPA="$HOME/Desktop/th08-ios.ipa" \
+./ios/build_ios.sh
 ```
 
-Neither path embeds the original executable or DAT archives.
+重复离线构建时，可通过 `TH08_IOS_DEPS_DIR` 指向下列已经下载的源码目录：
 
-The native i386 build has been exercised under both WSLg and a Kali Linux
-x86-64 virtual machine. The Kali recording below was made in a low-memory VM
-without 3D acceleration; its slow first 45 seconds are shown at 8x speed, while
-the remainder plays at the recorded speed.
-
-<p align="center">
-  <img
-    src="resources/kali-linux-port.gif"
-    width="800"
-    alt="TH08 native Linux reconstruction starting and running on Kali Linux">
-</p>
-
-Only `th08.dat` and `thbgm.dat` are runtime data requirements. The Linux port
-does not open or execute the original `th08.exe`. A clean two-DAT directory
-previously exposed a Linux compatibility bug during the first score-backup
-rotation: Win32 rejects an invalid search handle harmlessly, while the Linux
-backend tried to delete it and crashed. The corrected backend now creates the
-backup and continues into the title assets with an initially empty `backup/`
-directory. On a software-rendered VM, a fresh configuration's fullscreen
-FPS/vsync calibration can still be slow; reusing an existing `th08.cfg` is an
-optional startup convenience, not a data requirement.
-
-The portable Linux window uses the project-owned
-[`resources/modern-icon.png`](resources/modern-icon.png), derived from the
-Touhou Lab artwork supplied for this reconstruction. It is not an icon
-extracted from the original executable.
-
-#### Known Linux issue
-
-- During the Stage 4-to-5 transition, a dynamic text texture can still tile
-  across the outer frame and HUD (most visibly as repeated `Yakumo Yukari`
-  text). This is a known renderer/texture-state bug in the Linux port, not a
-  damaged DAT archive; gameplay testing can continue past it.
-
-<p align="center">
-  <img
-    src="resources/linux-stage5-texture-tiling.png"
-    width="640"
-    alt="Known Linux Stage 5 dynamic text texture tiling bug">
-</p>
-
-## Analysis status
-
-IDA MCP follows whichever database is active in the GUI; it has no reliable
-program selector. Use it for TH08 only after the active database passes the
-attestation in [IDA and analysis safety](docs/IDA_MCP.md). Otherwise use
-target-side `objdump`/`llvm-objdump`, the verified disposable Ghidra import, and
-the target-pinned repository tools.
-
-To see the live authored and library inventory instead of relying on prose:
-
-```bash
-python3 scripts/analysis/report-reconstruction-status.py --summary
+```text
+SDL-release-2.30.9
+SDL_image-release-2.8.2
+SDL_mixer-release-2.8.0
+SDL_ttf-release-2.22.0
 ```
 
-## Project map
+脚本会检查 App 版本、两个 DAT、日文字体、图标资源和可执行文件，随后执行 ad-hoc 签名并打包 IPA。ad-hoc 签名不等于 Apple 开发者签名；实际安装方式取决于设备和签名环境。
 
-- [Linux download, installation, and play guide](docs/PLAY_LINUX.md)
-- [Native Windows user guide and status](docs/PLAY_WINDOWS.md)
-- [Native macOS user guide and status](docs/PLAY_MACOS.md)
-- [Architecture and binary inventory](docs/ARCHITECTURE.md)
-- [Reverse-engineering workflow](docs/RE_WORKFLOW.md)
-- [IDA and analysis safety](docs/IDA_MCP.md)
-- [Build and exact matching](docs/BUILD_MATCHING.md)
-- [Playable reconstruction ports](docs/PORTING.md)
-- [Native Linux playable reconstruction](docs/LINUX_PORTING.md)
-- [Tool selection and command recipes](docs/TOOLS.md)
-- [Reusable knowledge map and contribution policy](docs/KNOWLEDGE_BASE.md)
-- [Current handoff and next milestones](docs/RE_HANDOFF.md)
-- [Generated reconstruction progress](docs/PROGRESS.md)
-- [Agent operating rules](AGENTS.md)
+## 日志
 
-## Credits and provenance
+发生黑屏、卡死或闪退时，请同时提供设备型号、iOS 版本、发生时间和完整操作路径。可从 App 的共享文件区域导出：
 
-This continuation exists because of the reconstruction and tooling work by
-the contributors to [GensokyoClub/th08](https://github.com/GensokyoClub/th08).
-Their commits retain their original author/committer metadata in this
-repository. The upstream project also credits @EstexNT for porting its
-`var_order` pragma to MSVC7.
+```text
+Documents/startup.log
+Documents/th08-startup.log
+Documents/startup.log.crash
+```
 
-The [N0zoM1z0/th07 reconstruction](https://github.com/N0zoM1z0/th07) supplies
-this repository's workflow, structure, target gates, matching, and
-documentation model. [GensokyoClub/th06](https://github.com/GensokyoClub/th06)
-is adjacent-engine corroboration only; neither reference overrides TH08 target
-evidence.
+日志中的 `stage-transition`、`smoke-*`、`player-bomb`、`stage6-corner-familiar` 和 `frame/profile` 可用于区分资源加载、脚本状态、输入、渲染和性能问题。
 
-## License
+## 仓库结构
 
-Repository code and documentation are provided under the included MIT License.
-This does not grant rights to the original game, executable, or game data.
+```text
+config/i18n.csv            构建期文本表
+ios/                       App 元数据、图标、启动页和 IPA 脚本
+resources/modern-icon.png  现代桌面后端保留的项目图标
+scripts/generate_i18n.py   文本头文件生成器
+src/                       游戏重构源码与平台兼容层
+src/modern/ios/            iOS 运行时、渲染和触摸实现
+src/modern/linux/include/  iOS 仍使用的 Win32 / D3D 类型兼容头
+CMakeLists.txt             现代平台构建入口
+```
+
+仓库已移除不参与 iOS 构建的 Agent 技能、Docker、Linux 发布 CI、VC7/reccmp 数据库、IDA/Ghidra 脚本、演示 GIF 和历史分析笔记。上游提交历史仍被保留，以维持原作者署名和来源可追溯性。
+
+## 参考项目与致谢
+
+本移植建立在社区多年工作的基础上，而不是从零独立完成：
+
+- [N0zoM1z0/th08](https://github.com/N0zoM1z0/th08)：当前主要 TH08 重构和可运行 Linux 基线；
+- [GensokyoClub/th08](https://github.com/GensokyoClub/th08)：更早的 TH08 反编译/重构基础及历史贡献；
+- [N0zoM1z0/th08-web](https://github.com/N0zoM1z0/th08-web)：WebAssembly、数据边界和跨平台渲染实现的重要参考；
+- [N0zoM1z0/th07](https://github.com/N0zoM1z0/th07)：相邻世代引擎结构、重构命名和行为参考；
+- [CNTianQi233/th06-sdl2](https://github.com/CNTianQi233/th06-sdl2)：TH06 SDL2 移植和相邻引擎行为参考；
+- 本地 TH06 / TH07 iOS 移植：触摸、按键布局、旋转、性能菜单和真机诊断经验来源；
+- [SDL2](https://github.com/libsdl-org/SDL)、[SDL_image](https://github.com/libsdl-org/SDL_image)、[SDL_mixer](https://github.com/libsdl-org/SDL_mixer)、[SDL_ttf](https://github.com/libsdl-org/SDL_ttf)：跨平台运行基础。
+
+感谢所有上游作者、测试者以及提供真机日志和复现步骤的玩家。Git 历史保留了导入仓库中的原始作者信息；本仓库不把上游重构成果重新声明为 iOS 移植维护者的个人作品。
+
+## AI / Vibe Coding 声明
+
+本项目的 iOS 专用兼容层、触摸系统、菜单与性能选项、诊断日志、回归脚本、部分稳定性修复和文档中，有大量内容通过 AI 辅助的迭代式 Vibe Coding 完成，主要使用 OpenAI Codex。
+
+人类参与者负责需求定义、原作资料准备、设备操作、真机测试、日志反馈、结果验收和发布决策；AI 负责代码分析、实现候选、构建自动化和问题定位。提交显示的维护者身份用于仓库管理，不表示每一行代码都由该账号逐字手写。
+
+所有 AI 生成或修改的内容都可能存在误判。已经编译或通过自动测试也不等于完全正确，尤其是反编译结构、64 位布局、Replay、符卡脚本和 GPU 状态。后续贡献应优先附带可重复测试、真机日志和清晰的行为证据。
+
+上游 TH08 重构工作有其独立作者和历史，不应被归类为本项目的 AI 产物。
+
+## 版权与许可证
+
+《东方Project》《东方永夜抄》及其角色、音乐、美术和原版数据的权利属于上海爱丽丝幻乐团 / ZUN。此项目与 ZUN、上海爱丽丝幻乐团或 Apple 无官方关系。
+
+仓库中的代码和文档按 [MIT License](LICENSE) 提供。MIT License 不授予任何原版游戏、商业字体、音乐、图像或数据文件的再分发权利。
