@@ -62,9 +62,39 @@ struct ReplayDataHeader
     i32 compressedSize;
     i32 decompressedSize;
 
+#ifdef TH08_IOS
+    // Replay files store these as 32-bit offsets from the decoded file base.
+    // A native arm64 pointer here would change the on-disk header size from
+    // 0x68 and make the compressed input stream start at the wrong address.
+    IosPtr32<StageReplayData> stageReplayData[MAX_STAGES];
+    IosPtr32<StageReplayData> stageReplayData2[MAX_STAGES];
+#else
     StageReplayData *stageReplayData[MAX_STAGES];
     StageReplayData *stageReplayData2[MAX_STAGES];
+#endif
 };
+
+#ifdef TH08_IOS
+inline StageReplayData *GetReplayStageData(const IosPtr32<StageReplayData> &pointer)
+{
+    return pointer.Get();
+}
+
+inline bool ReplayStagePresent(const IosPtr32<StageReplayData> &pointer)
+{
+    return pointer.Get() != NULL;
+}
+#else
+inline StageReplayData *GetReplayStageData(StageReplayData *pointer)
+{
+    return pointer;
+}
+
+inline bool ReplayStagePresent(StageReplayData *pointer)
+{
+    return pointer != NULL;
+}
+#endif
 
 struct ReplayData
 {
@@ -155,6 +185,7 @@ struct ReplayManager
 
     static void SaveReplay(const char *replayPath, const char *replayName);
     static ReplayData *LoadReplayData(void *replayData, int fileSize);
+    static void FreeReplayData(ReplayData *replayData);
     static void StopRecording();
 
     i32 IsDemo();

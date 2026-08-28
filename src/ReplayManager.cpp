@@ -9,6 +9,10 @@
 
 #include "pbg/Lzss.hpp"
 
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -47,8 +51,17 @@ ReplayData *ReplayManager::LoadReplayData(void *data, int fileSize)
     u8 *checksumCursor;
     u32 checksum;
     i32 i;
+    i32 decodedFileSize;
     ReplayData *decodedReplay;
     ReplayData *replayData = (ReplayData *)data;
+
+    // Keep malformed or truncated user replay files from reaching the
+    // decrypt/decompress loops.  The title menu scans arbitrary files in the
+    // Documents replay directory, so this is a normal input-validation path,
+    // not just a defensive assertion.
+    decodedReplay = NULL;
+    if (fileSize < (i32)sizeof(ReplayDataHeader))
+        goto err1;
 
     if (replayData == NULL)
     {
@@ -61,6 +74,12 @@ ReplayData *ReplayManager::LoadReplayData(void *data, int fileSize)
     }
 
     if (replayData->header.version != REPLAY_VERSION)
+    {
+        goto err1;
+    }
+
+    if (replayData->header.fileSize < (i32)sizeof(ReplayDataHeader) ||
+        replayData->header.fileSize > fileSize)
     {
         goto err1;
     }
@@ -88,18 +107,70 @@ ReplayData *ReplayManager::LoadReplayData(void *data, int fileSize)
         goto err1;
     }
 
+    // compressedSize/decompressedSize are decoded by the loop above.  Bound
+    // both values before doing size arithmetic or handing data to LZSS.
+    if (replayData->header.compressedSize < 0 ||
+        replayData->header.compressedSize > replayData->header.fileSize - (i32)sizeof(ReplayDataHeader) ||
+        replayData->header.decompressedSize < 0 ||
+        replayData->header.decompressedSize > 64 * 1024 * 1024)
+    {
+        goto err1;
+    }
+
     decodedReplay = (ReplayData *)g_ZunMemory.Alloc(replayData->header.decompressedSize + sizeof(ReplayDataHeader) +
                                                     (fileSize - replayData->header.fileSize));
 
+    if (decodedReplay == NULL)
+        goto err1;
+
     memcpy(&decodedReplay->header, data, sizeof(ReplayDataHeader));
 
-    Lzss::Decode((u8 *)replayData + sizeof(ReplayDataHeader), replayData->header.compressedSize,
-                 (u8 *)decodedReplay + sizeof(ReplayDataHeader), replayData->header.decompressedSize);
+    if (Lzss::Decode((u8 *)replayData + sizeof(ReplayDataHeader), replayData->header.compressedSize,
+                     (u8 *)decodedReplay + sizeof(ReplayDataHeader), replayData->header.decompressedSize) == NULL)
+    {
+        goto err2;
+    }
 
     memcpy((u8 *)decodedReplay + sizeof(ReplayDataHeader) + replayData->header.decompressedSize,
            (u8 *)data + replayData->header.fileSize, fileSize - replayData->header.fileSize);
 
     replayData = decodedReplay;
+
+#ifdef TH08_IOS
+    // ReplayDataHeader stores stage pointers as offsets from the decoded
+    // replay base.  Convert each offset exactly once after decompression;
+    // treating the offset as a pointer-registry handle is invalid on arm64.
+    decodedFileSize = (i32)(sizeof(ReplayDataHeader) + replayData->header.decompressedSize +
+                            (fileSize - replayData->header.fileSize));
+    if (decodedFileSize < (i32)sizeof(ReplayData) || decodedFileSize < 0)
+    {
+        goto err2;
+    }
+    for (i = 0; i < MAX_STAGES; ++i)
+    {
+        DWORD stageOffset = replayData->header.stageReplayData[i].RawHandle();
+        if (stageOffset != 0)
+        {
+            if (stageOffset < sizeof(ReplayData) ||
+                stageOffset > static_cast<DWORD>(decodedFileSize - sizeof(StageReplayData)))
+                goto err2;
+            replayData->header.stageReplayData[i].SetPointer(
+                reinterpret_cast<StageReplayData *>(reinterpret_cast<u8 *>(replayData) + stageOffset));
+        }
+
+        stageOffset = replayData->header.stageReplayData2[i].RawHandle();
+        if (stageOffset != 0)
+        {
+            if (stageOffset < sizeof(ReplayData) ||
+                stageOffset > static_cast<DWORD>(decodedFileSize - sizeof(StageReplayData)))
+                goto err2;
+            replayData->header.stageReplayData2[i].SetPointer(
+                reinterpret_cast<StageReplayData *>(reinterpret_cast<u8 *>(replayData) + stageOffset));
+        }
+    }
+#else
+    (void)decodedFileSize;
+#endif
 
     if (replayData->gameConfiguration.slowMode != 0)
     {
@@ -121,9 +192,29 @@ err1:
 
 err2:
     g_ZunMemory.Free(data);
-    g_ZunMemory.Free(decodedReplay);
+    ReplayManager::FreeReplayData(decodedReplay);
 
     return NULL;
+}
+
+void ReplayManager::FreeReplayData(ReplayData *replayData)
+{
+    if (replayData == NULL)
+        return;
+
+#ifdef TH08_IOS
+    // Stage data in a decoded replay lives inside the same allocation as the
+    // header.  Remove its interior registry entries before freeing the base,
+    // otherwise a later allocation can accidentally reuse a stale handle.
+    for (i32 i = 0; i < MAX_STAGES; ++i)
+    {
+        StageReplayData *stage = replayData->header.stageReplayData[i].Get();
+        StageReplayData *stage2 = replayData->header.stageReplayData2[i].Get();
+        if (stage != NULL) TH08IosForgetPointer(reinterpret_cast<uintptr_t>(stage));
+        if (stage2 != NULL) TH08IosForgetPointer(reinterpret_cast<uintptr_t>(stage2));
+    }
+#endif
+    g_ZunMemory.Free(replayData);
 }
 
 ZunResult ReplayManager::RegisterChain(i32 replayMode, const char *replayPath)
@@ -328,6 +419,22 @@ ChainCallbackResult ReplayManager::OnUpdateHighPrioDemo(ReplayManager *replayMan
     g_GuiMessageInputPrevious = g_GuiMessageInputCurrent;
     g_GuiMessageInputCurrent = *(u16 *)replayManager->replayInputs;
     replayManager->replayInputs += sizeof(u16);
+
+#ifdef TH08_IOS
+    static u32 iosReplayTraceCount;
+    if (iosReplayTraceCount < 8)
+    {
+        char message[192];
+        snprintf(message, sizeof(message),
+                 "replay/input: frame=%d value=%04x stream=%p stage=%d",
+                 replayManager->frameCounter,
+                 static_cast<unsigned>(g_GuiMessageInputCurrent),
+                 replayManager->replayInputs,
+                 static_cast<int>(g_GameManager.currentStage));
+        modern::LogStartup(message);
+        ++iosReplayTraceCount;
+    }
+#endif
 
     g_IsEighthFrameOfHeldInput = 0;
     if (g_GuiMessageInputPrevious == g_GuiMessageInputCurrent)
@@ -556,6 +663,7 @@ ZunResult ReplayManager::AddedCallbackDemo(ReplayManager *replayManager)
         }
 
         replayManager->replayFileData = NULL;
+#ifndef TH08_IOS
         for (stage = 0; stage < MAX_STAGES; stage++)
         {
             if (replayManager->replayData->header.stageReplayData[stage] != NULL)
@@ -571,6 +679,7 @@ ZunResult ReplayManager::AddedCallbackDemo(ReplayManager *replayManager)
                                         reinterpret_cast<uintptr_t>(replayManager->replayData));
             }
         }
+#endif
     }
 
     stage = g_GameManager.currentStage;
@@ -641,7 +750,8 @@ ZunResult ReplayManager::DeletedCallback(ReplayManager *replayManager)
         replayManager->rngSyncChain = NULL;
     }
 
-    g_ZunMemory.Free(g_ReplayManager->replayData);
+    ReplayManager::FreeReplayData(replayManager->replayData);
+    replayManager->replayData = NULL;
 
     if (replayManager->replayFileData != NULL)
     {
@@ -736,10 +846,15 @@ void ReplayManager::SaveReplay(const char *replayPath, const char *replayName)
     {
         if (mgr->replayData->header.stageReplayData[i] != NULL)
         {
-            stageSize = mgr->replayInputStageBookmarks[i] - (u8 *)mgr->replayData->header.stageReplayData[i];
+            stageSize = mgr->replayInputStageBookmarks[i] - reinterpret_cast<u8 *>(
+                GetReplayStageData(mgr->replayData->header.stageReplayData[i]));
             memcpy(tempBuffer + currentOffset - sizeof(ReplayDataHeader),
-                   mgr->replayData->header.stageReplayData[i], stageSize);
+                   GetReplayStageData(mgr->replayData->header.stageReplayData[i]), stageSize);
+#ifdef TH08_IOS
+            replayCopy.header.stageReplayData[i].SetRawHandle((DWORD)currentOffset);
+#else
             replayCopy.header.stageReplayData[i] = (StageReplayData *)currentOffset;
+#endif
             currentOffset += stageSize;
         }
     }
@@ -748,10 +863,15 @@ void ReplayManager::SaveReplay(const char *replayPath, const char *replayName)
     {
         if (mgr->replayData->header.stageReplayData2[i] != NULL)
         {
-            stageSize = mgr->replayInputStageBookmarks2[i] - (u8 *)mgr->replayData->header.stageReplayData2[i];
+            stageSize = mgr->replayInputStageBookmarks2[i] - reinterpret_cast<u8 *>(
+                GetReplayStageData(mgr->replayData->header.stageReplayData2[i]));
             memcpy(tempBuffer + currentOffset - sizeof(ReplayDataHeader),
-                   mgr->replayData->header.stageReplayData2[i], stageSize);
+                   GetReplayStageData(mgr->replayData->header.stageReplayData2[i]), stageSize);
+#ifdef TH08_IOS
+            replayCopy.header.stageReplayData2[i].SetRawHandle((DWORD)currentOffset);
+#else
             replayCopy.header.stageReplayData2[i] = (StageReplayData *)currentOffset;
+#endif
             currentOffset += stageSize;
         }
     }

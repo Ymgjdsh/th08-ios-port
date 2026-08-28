@@ -1,15 +1,18 @@
 #include "ios_touch.hpp"
+#include "ios_cheat.hpp"
 #include "ios_gl_legacy.hpp"
 
 #include "BulletManager.hpp"
 #include "GameManager.hpp"
 #include "Gui.hpp"
 #include "Player.hpp"
+#include "ResultScreen.hpp"
 #include "SoundPlayer.hpp"
 #include "Supervisor.hpp"
 
 #include <SDL.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,11 +41,15 @@ struct TouchState
     bool moveIsDrag;
     u16 buttons;
     u16 keyboardButtons;
+    u16 controllerButtons;
+    Sint16 controllerAxisX;
+    Sint16 controllerAxisY;
     float sensitivity;
     TouchState()
         : moveFinger(-1), shotFinger(-1), bombFinger(-1), focusFinger(-1), menuFinger(-1),
           moveX(0), moveY(0), moveDx(0), moveDy(0), dragDeltaX(0), dragDeltaY(0),
-          moveIsDrag(false), buttons(0), keyboardButtons(0), sensitivity(1.0f)
+          moveIsDrag(false), buttons(0), keyboardButtons(0), controllerButtons(0),
+          controllerAxisX(0), controllerAxisY(0), sensitivity(1.0f)
     {
     }
 };
@@ -100,10 +107,11 @@ struct MobileConfig
     u8 performanceMode;
     u8 dragAutoShoot;
     NormalizedLayout layouts[2];
+    u8 showDeveloperButton;
 };
 
 const u32 MOBILE_CONFIG_MAGIC = 0x38424f4d; // MOB8
-const u32 MOBILE_CONFIG_VERSION = 3;
+const u32 MOBILE_CONFIG_VERSION = 4;
 MobileConfig g_config = {};
 bool g_configLoaded = false;
 bool g_settingsOpen = false;
@@ -127,6 +135,11 @@ float g_menuGestureY = 0.0f;
 bool g_menuGestureCancelled = false;
 int g_activeTouchCount = 0;
 bool g_settingsNeedsSave = false;
+SDL_FingerID g_secondaryFinger = -1;
+Uint32 g_secondaryStartedAt = 0;
+bool g_secondaryLongPress = false;
+bool g_controllerInputReady = false;
+const Uint32 SECONDARY_LONG_PRESS_MS = 280;
 
 struct RectGeometry
 {
@@ -181,6 +194,7 @@ void SetDefaultConfig()
     g_config.showButtons = 1;
     g_config.dragAutoShoot = 1;
     g_config.performanceMode = PERFORMANCE_FULL;
+    g_config.showDeveloperButton = 1;
     SetDefaultLayout(&g_config.layouts[0], false);
     SetDefaultLayout(&g_config.layouts[1], true);
 }
@@ -245,12 +259,13 @@ void EnsureMobileConfig()
     if (GetMobileConfigPath(path, sizeof(path)))
     {
         FILE *file = fopen(path, "rb");
-        MobileConfig stored = {};
+        MobileConfig stored = g_config;
         if (file != NULL)
         {
-            const bool loaded = fread(&stored, sizeof(stored), 1, file) == 1;
+            const size_t loadedBytes = fread(&stored, 1, sizeof(stored), file);
             fclose(file);
-            if (loaded && stored.magic == MOBILE_CONFIG_MAGIC &&
+            const size_t legacySize = offsetof(MobileConfig, showDeveloperButton);
+            if (loadedBytes >= legacySize && stored.magic == MOBILE_CONFIG_MAGIC &&
                 (stored.version >= 1 && stored.version <= MOBILE_CONFIG_VERSION))
             {
                 const u32 storedVersion = stored.version;
@@ -258,6 +273,8 @@ void EnsureMobileConfig()
                 g_config.version = MOBILE_CONFIG_VERSION;
                 if (storedVersion < 3)
                     g_config.dragAutoShoot = 1;
+                if (storedVersion < 4 || loadedBytes < sizeof(stored))
+                    g_config.showDeveloperButton = 1;
             }
         }
     }
@@ -410,7 +427,7 @@ void FingerPixels(const SDL_TouchFingerEvent &finger, float *x, float *y)
 
 int SettingsRowAt(float x, float y)
 {
-    const int rowCount = g_performanceOpen ? 4 : 11;
+    const int rowCount = g_performanceOpen ? 6 : 11;
     for (int row = 0; row < rowCount; ++row)
         if (ContainsPoint(SettingsRowGeometry(row), x, y)) return row;
     return -1;
@@ -443,6 +460,9 @@ void ClearTransientTouchState()
     g_layoutControl = -1;
     g_menuGestureFinger = -1;
     g_menuGestureCancelled = false;
+    g_secondaryFinger = -1;
+    g_secondaryStartedAt = 0;
+    g_secondaryLongPress = false;
     g_activeTouchCount = 0;
     g_settingsNeedsSave = false;
 }
@@ -470,6 +490,21 @@ void ActivateSettingsRow(int row, float x)
                                           : "touch/performance: speed"));
         }
         else if (row == 3)
+        {
+            g_config.showDeveloperButton = !g_config.showDeveloperButton;
+            if (!g_config.showDeveloperButton)
+                g_developerOpen = false;
+            SaveMobileConfig();
+            modern::LogStartup(g_config.showDeveloperButton
+                                   ? "touch/performance: developer button shown"
+                                   : "touch/performance: developer button hidden");
+        }
+        else if (row == 4)
+        {
+            ShowCheatCodeDialog();
+            modern::LogStartup("cheat-dialog: requested from performance menu");
+        }
+        else if (row == 5)
         {
             g_settingsOpen = false;
             g_performanceOpen = false;
@@ -554,12 +589,71 @@ bool IsGameplayMenuOpen()
            (g_GameManager.isInGameMenu != 0 || g_GameManager.showRetryMenu != 0);
 }
 
+bool IsDialogueActive()
+{
+    return IsGameplayReady() && g_Gui.IsDialogPresent();
+}
+
+void EnsureControllerInput()
+{
+    if (g_controllerInputReady)
+        return;
+
+    g_controllerInputReady = true;
+    // CreateWindowExA initializes SDL_INIT_GAMECONTROLLER on iOS.  Explicitly
+    // enabling both event streams also covers keyboards and generic HID pads
+    // that SDL does not map to a named GameController profile.
+    if (SDL_WasInit(SDL_INIT_GAMECONTROLLER) == 0)
+        SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER);
+    if (SDL_WasInit(SDL_INIT_JOYSTICK) == 0)
+        SDL_InitSubSystem(SDL_INIT_JOYSTICK);
+    SDL_GameControllerEventState(SDL_ENABLE);
+    SDL_JoystickEventState(SDL_ENABLE);
+    const int deviceCount = SDL_NumJoysticks();
+    char message[96];
+    SDL_snprintf(message, sizeof(message), "input/controller: ready devices=%d", deviceCount);
+    modern::LogStartup(message);
+}
+
+u16 ControllerDirectionBits()
+{
+    u16 result = g_state.controllerButtons & TH_BUTTON_DIRECTION;
+    const Sint16 threshold = 8000;
+    if (g_state.controllerAxisX <= -threshold)
+        result |= TH_BUTTON_LEFT;
+    else if (g_state.controllerAxisX >= threshold)
+        result |= TH_BUTTON_RIGHT;
+    if (g_state.controllerAxisY <= -threshold)
+        result |= TH_BUTTON_UP;
+    else if (g_state.controllerAxisY >= threshold)
+        result |= TH_BUTTON_DOWN;
+    return result;
+}
+
+void UpdateSecondaryGesture()
+{
+    if (g_secondaryFinger < 0 || g_secondaryLongPress)
+        return;
+    if (SDL_GetTicks() - g_secondaryStartedAt >= SECONDARY_LONG_PRESS_MS)
+    {
+        g_secondaryLongPress = true;
+        g_state.buttons |= TH_BUTTON_FOCUS;
+        modern::LogStartup("touch/gesture: two-finger long press -> focus");
+    }
+}
+
 void ClearGameplayTouches()
 {
     const u16 keyboardButtons = g_state.keyboardButtons;
+    const u16 controllerButtons = g_state.controllerButtons;
+    const Sint16 controllerAxisX = g_state.controllerAxisX;
+    const Sint16 controllerAxisY = g_state.controllerAxisY;
     const float sensitivity = g_state.sensitivity;
     g_state = TouchState();
     g_state.keyboardButtons = keyboardButtons;
+    g_state.controllerButtons = controllerButtons;
+    g_state.controllerAxisX = controllerAxisX;
+    g_state.controllerAxisY = controllerAxisY;
     g_state.sensitivity = sensitivity;
 }
 
@@ -1116,7 +1210,12 @@ void FinishMenuGesture(const SDL_TouchFingerEvent &finger)
         const float absX = fabsf(dx);
         const float absY = fabsf(dy);
         if (absX < 0.035f && absY < 0.035f)
-            QueuePulse(TH_BUTTON_SELECTMENU);
+        {
+            // In buttonless mode a full-screen tap is the only practical way
+            // to advance Japanese dialogue.  The game consumes SHOOT for the
+            // next message, while ordinary menus still use SELECTMENU.
+            QueuePulse(IsDialogueActive() ? TH_BUTTON_SHOOT : TH_BUTTON_SELECTMENU);
+        }
         else
         {
             const bool vertical = absY >= absX;
@@ -1226,7 +1325,25 @@ void HandleFingerDown(const SDL_TouchFingerEvent &finger)
         return;
     }
 
-    if (IsGameplayReady() && HitRect(finger, DeveloperButtonGeometry()))
+    // Dialogues must consume a direct tap before the gameplay move/button
+    // hit-tests below.  Otherwise Drag mode treats the tap as a move start and
+    // a no-button user has no way to advance the message.
+    if (IsDialogueActive())
+    {
+        if (g_menuGestureFinger >= 0)
+        {
+            g_menuGestureCancelled = true;
+            QueuePulse(TH_BUTTON_BOMB);
+        }
+        else
+        {
+            BeginMenuGesture(finger);
+        }
+        return;
+    }
+
+    if (IsGameplayReady() && g_config.showDeveloperButton &&
+        HitRect(finger, DeveloperButtonGeometry()))
     {
         g_developerOpen = true;
         ClearGameplayTouches();
@@ -1283,13 +1400,15 @@ void HandleFingerDown(const SDL_TouchFingerEvent &finger)
             BeginGameplayMove(finger, useDrag);
             return;
         }
-        if (g_state.focusFinger < 0)
+        if (g_secondaryFinger < 0)
         {
-            // Buttonless mode: the second finger bombs immediately and then
-            // acts as focus while it remains held.
-            g_state.focusFinger = finger.fingerId;
-            g_state.buttons |= TH_BUTTON_FOCUS;
-            QueuePulse(TH_BUTTON_BOMB);
+            // A second finger is a deferred gesture: a short two-finger tap
+            // emits Bomb on release, while a hold past the threshold becomes
+            // Focus/S.  Deferring the decision removes the old Bomb+Focus
+            // overlap and keeps both actions available in buttonless mode.
+            g_secondaryFinger = finger.fingerId;
+            g_secondaryStartedAt = SDL_GetTicks();
+            g_secondaryLongPress = false;
             return;
         }
         QueuePulse(TH_BUTTON_MENU);
@@ -1328,6 +1447,11 @@ void HandleFingerMotion(const SDL_TouchFingerEvent &finger)
         g_menuGestureY = finger.y;
         return;
     }
+    if (finger.fingerId == g_secondaryFinger)
+    {
+        UpdateSecondaryGesture();
+        return;
+    }
     if (finger.fingerId != g_state.moveFinger) return;
     if (g_state.moveIsDrag) AccumulateDragMotion(finger);
     else SetDirectional(finger.x - g_state.moveX, finger.y - g_state.moveY);
@@ -1352,6 +1476,19 @@ void HandleFingerUp(const SDL_TouchFingerEvent &finger)
         g_settingsRow = -1;
     }
     FinishMenuGesture(finger);
+    if (finger.fingerId == g_secondaryFinger)
+    {
+        UpdateSecondaryGesture();
+        if (!g_secondaryLongPress)
+        {
+            QueuePulse(TH_BUTTON_BOMB);
+            modern::LogStartup("touch/gesture: two-finger tap -> bomb");
+        }
+        g_secondaryFinger = -1;
+        g_secondaryStartedAt = 0;
+        g_secondaryLongPress = false;
+        g_state.buttons &= (u16)~TH_BUTTON_FOCUS;
+    }
     if (finger.fingerId == g_state.moveFinger)
     {
         g_state.moveFinger = -1;
@@ -1655,8 +1792,8 @@ void DrawSettingsPanel()
     static const char *labels[11] = {
         "CONTROL", "BUTTONS", "BUTTON SIZE", "DRAG SENS", "OPACITY",
         "DRAG AUTO Z", "Z TOGGLE", "S TOGGLE", "AUTO BOMB", "EDIT LAYOUT", "CLOSE"};
-    static const char *performanceLabels[4] = {
-        "FULL QUALITY", "BALANCED", "SPEED", "CLOSE"};
+    static const char *performanceLabels[6] = {
+        "FULL QUALITY", "BALANCED", "SPEED", "SHOW DEV BUTTON", "CHEAT CODE", "CLOSE"};
     const RectGeometry panel = SettingsPanelGeometry();
     DrawRect(panel, 17, 9, 29, 247);
     DrawRectOutline(panel, panel.width * 0.005f, 192, 119, 181, 242);
@@ -1670,7 +1807,7 @@ void DrawSettingsPanel()
              title.y + (title.height - titlePixel * 7.0f) * 0.5f,
              titlePixel, 255, 222, 247, 255);
 
-    const int rowCount = g_performanceOpen ? 4 : 11;
+    const int rowCount = g_performanceOpen ? 6 : 11;
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
     {
         const RectGeometry row = SettingsRowGeometry(rowIndex);
@@ -1687,6 +1824,10 @@ void DrawSettingsPanel()
         char numeric[24];
         if (g_performanceOpen && rowIndex < 3)
             value = g_config.performanceMode == rowIndex ? "ACTIVE" : "SELECT";
+        else if (g_performanceOpen && rowIndex == 3)
+            value = g_config.showDeveloperButton ? "ON" : "OFF";
+        else if (g_performanceOpen && rowIndex == 4)
+            value = "OPEN";
         else if (!g_performanceOpen && rowIndex == 0)
             value = g_config.controlMode == CONTROL_JOYSTICK ? "JOYSTICK" :
                     (g_config.controlMode == CONTROL_DRAG ? "DRAG" : "HYBRID");
@@ -1750,6 +1891,217 @@ void DrawLayoutEditor()
     DrawActionButton(FocusGeometry(), false, 'S');
     DrawActionButton(MenuGeometry(), false, 'M');
 }
+
+u16 KeyboardButtonsForKey(SDL_Keycode key)
+{
+    switch (key)
+    {
+    case SDLK_UP:
+    case SDLK_w:
+    case SDLK_KP_8:
+        return TH_BUTTON_UP;
+    case SDLK_KP_7:
+        return TH_BUTTON_UP_LEFT;
+    case SDLK_KP_9:
+        return TH_BUTTON_UP_RIGHT;
+    case SDLK_DOWN:
+    case SDLK_s:
+    case SDLK_KP_2:
+        return TH_BUTTON_DOWN | TH_BUTTON_S;
+    case SDLK_KP_1:
+        return TH_BUTTON_DOWN_LEFT;
+    case SDLK_KP_3:
+        return TH_BUTTON_DOWN_RIGHT;
+    case SDLK_LEFT:
+    case SDLK_a:
+    case SDLK_KP_4:
+        return TH_BUTTON_LEFT;
+    case SDLK_RIGHT:
+    case SDLK_KP_6:
+        return TH_BUTTON_RIGHT;
+    case SDLK_d:
+        // D is the original score-screen cheat key.  Keep it available while
+        // also allowing WASD users to use D as the right direction.
+        return TH_BUTTON_RIGHT | TH_BUTTON_D;
+    case SDLK_z:
+    case SDLK_SPACE:
+        return TH_BUTTON_SHOOT;
+    case SDLK_x:
+    case SDLK_c:
+        return TH_BUTTON_BOMB;
+    case SDLK_LSHIFT:
+    case SDLK_RSHIFT:
+    case SDLK_LCTRL:
+    case SDLK_RCTRL:
+    case SDLK_f:
+        return TH_BUTTON_FOCUS;
+    case SDLK_ESCAPE:
+        return TH_BUTTON_MENU;
+    case SDLK_p:
+        return TH_BUTTON_HOME;
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+        return TH_BUTTON_ENTER;
+    case SDLK_TAB:
+        return TH_BUTTON_SKIP;
+    case SDLK_q:
+        return TH_BUTTON_Q;
+    case SDLK_r:
+        return TH_BUTTON_RESET;
+    case SDLK_HOME:
+        return TH_BUTTON_HOME;
+    default:
+        return 0;
+    }
+}
+
+u16 ControllerButtonsForButton(Uint8 button)
+{
+    switch (button)
+    {
+    case SDL_CONTROLLER_BUTTON_A:
+        return TH_BUTTON_SHOOT;
+    case SDL_CONTROLLER_BUTTON_B:
+    case SDL_CONTROLLER_BUTTON_X:
+        return TH_BUTTON_BOMB;
+    case SDL_CONTROLLER_BUTTON_Y:
+    case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
+        return TH_BUTTON_FOCUS;
+    case SDL_CONTROLLER_BUTTON_START:
+        return TH_BUTTON_MENU;
+    case SDL_CONTROLLER_BUTTON_DPAD_UP:
+        return TH_BUTTON_UP;
+    case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+        return TH_BUTTON_DOWN;
+    case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+        return TH_BUTTON_LEFT;
+    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+        return TH_BUTTON_RIGHT;
+    default:
+        return 0;
+    }
+}
+
+u16 JoystickButtonsForButton(Uint8 button)
+{
+    // These indices match the usual HID/XInput layout.  The named
+    // GameController path above is preferred when SDL has a mapping.
+    switch (button)
+    {
+    case 0:
+        return TH_BUTTON_SHOOT;
+    case 1:
+    case 2:
+        return TH_BUTTON_BOMB;
+    case 3:
+    case 4:
+        return TH_BUTTON_FOCUS;
+    case 7:
+        return TH_BUTTON_MENU;
+    case 8:
+        return TH_BUTTON_UP;
+    case 9:
+        return TH_BUTTON_DOWN;
+    case 10:
+        return TH_BUTTON_LEFT;
+    case 11:
+        return TH_BUTTON_RIGHT;
+    default:
+        return 0;
+    }
+}
+}
+
+bool ApplyIosCheatCode(const char *code)
+{
+    if (code == NULL || strcmp(code, "ymgjdsh") != 0)
+    {
+        modern::LogStartup("cheat: rejected code");
+        return false;
+    }
+
+    // Mirror the original all-clear flag layout: bit 14 exposes Extra and
+    // bit 15 exposes Spell Practice.  Setting every stage bit also makes all
+    // character teams and stage starts immediately available.
+    for (i32 shot = 0; shot < SHOT_ALL + 1; ++shot)
+    {
+        for (i32 difficulty = 0; difficulty < MAX_DIFFICULTIES; ++difficulty)
+        {
+            g_GameManager.clrdData[shot].base.magic = CLRD_MAGIC;
+            g_GameManager.clrdData[shot].base.unkLen = sizeof(Clrd);
+            g_GameManager.clrdData[shot].base.th8kLen = sizeof(Clrd);
+            g_GameManager.clrdData[shot].base.version = CLRD_VERSION;
+            g_GameManager.clrdData[shot].shotNumber = static_cast<u8>(shot);
+            g_GameManager.clrdData[shot].difficultiesClearedWithoutRetries[difficulty] = 0xffff;
+            g_GameManager.clrdData[shot].difficultiesClearedWithRetries[difficulty] = 0xffff;
+        }
+    }
+
+    for (i32 spell = 0; spell < SPELLCARD_COUNT_SPELLCARDS; ++spell)
+    {
+        if (g_GameManager.catkData[spell].base.magic == CATK_MAGIC)
+        {
+            for (i32 shot = 0; shot < SHOT_ALL + 1; ++shot)
+            {
+                g_GameManager.catkData[spell].inGameHistory.attempts[shot] = 1;
+                g_GameManager.catkData[spell].inGameHistory.captures[shot] = 1;
+                g_GameManager.catkData[spell].spellPracticeHistory.attempts[shot] = 1;
+                g_GameManager.catkData[spell].spellPracticeHistory.captures[shot] = 1;
+            }
+            g_GameManager.catkData2[spell] = g_GameManager.catkData[spell];
+        }
+    }
+
+    for (i32 lastWord = 0; lastWord < SPELLCARD_COUNT_LAST_WORD_SPELLCARDS; ++lastWord)
+    {
+        g_GameManager.flsp.unlockedLastWordSpellCards[lastWord] =
+            static_cast<BYTE>(SPELLCARD_LAST_WORD_START + lastWord);
+    }
+    for (i32 bgm = 0; bgm < 32; ++bgm)
+        g_GameManager.plst.bgmUnlocked[bgm] = 1;
+    for (i32 difficulty = 0; difficulty < MAX_DIFFICULTIES; ++difficulty)
+    {
+        g_GameManager.plst.playDataByDifficulty[difficulty].attemptsTotal = 1;
+        g_GameManager.plst.playDataByDifficulty[difficulty].clears = 1;
+    }
+    g_GameManager.plst.playDataTotals.attemptsTotal = MAX_DIFFICULTIES;
+    g_GameManager.plst.playDataTotals.clears = MAX_DIFFICULTIES;
+    g_GameManager.flags.isExtraUnlocked = TRUE;
+    g_GameManager.flags.isSpellPracticeUnlocked = TRUE;
+    g_GameManager.flags.isExtraUnlockedWithAllTeams = TRUE;
+
+    // Reuse the game's own score serializer so existing high scores and replay
+    // metadata are preserved while the updated unlock arrays are encrypted and
+    // compressed in the normal score.dat format.
+    ResultScreen *writer = new ResultScreen();
+    writer->scoreDat = ScoreDat::OpenScore("score.dat");
+    if (writer->scoreDat == NULL)
+    {
+        delete writer;
+        modern::LogStartup("cheat: score.dat open failed");
+        return false;
+    }
+    writer->lsnm.base.magic = LSNM_MAGIC;
+    writer->lsnm.base.version = LSNM_VERSION;
+    writer->lsnm.base.unkLen = sizeof(Lsnm);
+    writer->lsnm.base.th8kLen = sizeof(Lsnm);
+    strcpy(writer->lsnm.name, "        ");
+    ScoreDat::ParseLSNM(writer->scoreDat, &writer->lsnm);
+    for (i32 difficulty = 0; difficulty < MAX_DIFFICULTIES; ++difficulty)
+    {
+        for (i32 shot = 0; shot < SHOT_ALL; ++shot)
+            ScoreDat::GetHighScore(writer->scoreDat, &writer->scores[difficulty][shot],
+                                   shot, difficulty, NULL);
+    }
+    ResultScreen::WriteScore(writer);
+    for (i32 difficulty = 0; difficulty < MAX_DIFFICULTIES; ++difficulty)
+    {
+        for (i32 shot = 0; shot < SHOT_ALL; ++shot)
+            writer->FreeScore(difficulty, shot);
+    }
+    delete writer;
+    modern::LogStartup("cheat: full unlock applied and score.dat persisted");
+    return true;
 }
 
 void SetPresentationLayout(const PresentationLayout &layout)
@@ -1776,6 +2128,15 @@ void GetPresentationShake(f32 *x, f32 *y)
 
 void ProcessEvent(const SDL_Event &event)
 {
+    // SDL can report a hardware Escape press as SDL_QUIT on some iOS
+    // keyboard/HID combinations.  SDL_QUIT normally becomes WM_CLOSE and
+    // terminates the process, but Escape is a game-menu command here.
+    if (event.type == SDL_QUIT)
+    {
+        QueuePulse(TH_BUTTON_MENU);
+        modern::LogStartup("input: converted SDL_QUIT to game menu");
+        return;
+    }
     if (event.type == SDL_APP_WILLENTERBACKGROUND || event.type == SDL_APP_DIDENTERBACKGROUND)
     {
         if (!g_appInBackground)
@@ -1823,19 +2184,68 @@ void ProcessEvent(const SDL_Event &event)
             modern::LogStartup("developer: panel closed by keyboard");
             return;
         }
-        if (event.key.keysym.sym == SDLK_ESCAPE) g_state.keyboardButtons |= TH_BUTTON_MENU;
-        if (event.key.keysym.sym == SDLK_z) g_state.keyboardButtons |= TH_BUTTON_SHOOT;
-        if (event.key.keysym.sym == SDLK_x) g_state.keyboardButtons |= TH_BUTTON_BOMB;
-        if (event.key.keysym.sym == SDLK_LSHIFT || event.key.keysym.sym == SDLK_RSHIFT)
-            g_state.keyboardButtons |= TH_BUTTON_FOCUS;
+        g_state.keyboardButtons |= KeyboardButtonsForKey(event.key.keysym.sym);
     }
     else if (event.type == SDL_KEYUP)
     {
-        if (event.key.keysym.sym == SDLK_ESCAPE) g_state.keyboardButtons &= (u16)~TH_BUTTON_MENU;
-        if (event.key.keysym.sym == SDLK_z) g_state.keyboardButtons &= (u16)~TH_BUTTON_SHOOT;
-        if (event.key.keysym.sym == SDLK_x) g_state.keyboardButtons &= (u16)~TH_BUTTON_BOMB;
-        if (event.key.keysym.sym == SDLK_LSHIFT || event.key.keysym.sym == SDLK_RSHIFT)
-            g_state.keyboardButtons &= (u16)~TH_BUTTON_FOCUS;
+        g_state.keyboardButtons &= (u16)~KeyboardButtonsForKey(event.key.keysym.sym);
+    }
+    else if (event.type == SDL_CONTROLLERBUTTONDOWN)
+    {
+        const u16 mapped = ControllerButtonsForButton(event.cbutton.button);
+        if (mapped != 0)
+            g_state.controllerButtons |= mapped;
+        else if (event.cbutton.button == SDL_CONTROLLER_BUTTON_BACK)
+            QueuePulse(TH_BUTTON_RETURNMENU);
+    }
+    else if (event.type == SDL_CONTROLLERBUTTONUP)
+    {
+        g_state.controllerButtons &= (u16)~ControllerButtonsForButton(event.cbutton.button);
+    }
+    else if (event.type == SDL_JOYBUTTONDOWN)
+    {
+        const u16 mapped = JoystickButtonsForButton(event.jbutton.button);
+        if (mapped != 0)
+            g_state.controllerButtons |= mapped;
+        else if (event.jbutton.button == 6)
+            QueuePulse(TH_BUTTON_RETURNMENU);
+    }
+    else if (event.type == SDL_JOYBUTTONUP)
+    {
+        g_state.controllerButtons &= (u16)~JoystickButtonsForButton(event.jbutton.button);
+    }
+    else if (event.type == SDL_CONTROLLERAXISMOTION)
+    {
+        if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX)
+            g_state.controllerAxisX = event.caxis.value;
+        else if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY)
+            g_state.controllerAxisY = event.caxis.value;
+    }
+    else if (event.type == SDL_JOYAXISMOTION)
+    {
+        if (event.jaxis.axis == 0)
+            g_state.controllerAxisX = event.jaxis.value;
+        else if (event.jaxis.axis == 1)
+            g_state.controllerAxisY = event.jaxis.value;
+    }
+    else if (event.type == SDL_JOYHATMOTION)
+    {
+        g_state.controllerButtons &= (u16)~TH_BUTTON_DIRECTION;
+        if ((event.jhat.value & SDL_HAT_UP) != 0)
+            g_state.controllerButtons |= TH_BUTTON_UP;
+        if ((event.jhat.value & SDL_HAT_DOWN) != 0)
+            g_state.controllerButtons |= TH_BUTTON_DOWN;
+        if ((event.jhat.value & SDL_HAT_LEFT) != 0)
+            g_state.controllerButtons |= TH_BUTTON_LEFT;
+        if ((event.jhat.value & SDL_HAT_RIGHT) != 0)
+            g_state.controllerButtons |= TH_BUTTON_RIGHT;
+    }
+    else if (event.type == SDL_CONTROLLERDEVICEREMOVED || event.type == SDL_JOYDEVICEREMOVED)
+    {
+        g_state.controllerButtons = 0;
+        g_state.controllerAxisX = 0;
+        g_state.controllerAxisY = 0;
+        modern::LogStartup("input/controller: device removed; state cleared");
     }
     else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
         ResetTouchState();
@@ -1844,9 +2254,12 @@ void ProcessEvent(const SDL_Event &event)
 u16 PollButtons()
 {
     EnsureMobileConfig();
+    EnsureControllerInput();
     SDL_Event event;
     while (SDL_PollEvent(&event))
         ProcessEvent(event);
+
+    UpdateSecondaryGesture();
 
     if (g_backgroundPausePending && IsGameplayReady())
     {
@@ -1882,7 +2295,10 @@ u16 PollButtons()
 
     const u16 smokeButtons = PollSmokeTestButtons();
     const bool overlayOpen = g_developerOpen || g_settingsOpen || g_layoutEdit;
-    u16 result = overlayOpen ? 0 : static_cast<u16>(g_state.buttons | g_state.keyboardButtons);
+    u16 result = overlayOpen
+                     ? 0
+                     : static_cast<u16>(g_state.buttons | g_state.keyboardButtons |
+                                        g_state.controllerButtons | ControllerDirectionBits());
     if (!overlayOpen)
     {
         result |= smokeButtons;
@@ -1893,6 +2309,21 @@ u16 PollButtons()
             g_state.moveFinger >= 0 && g_state.moveIsDrag &&
             (g_config.controlMode == CONTROL_DRAG || !g_config.showButtons))
             result |= TH_BUTTON_SHOOT;
+
+        // ReplayManager replaces g_CurFrameInput with the recorded stream
+        // after this poll. Keep live touch/keyboard gameplay bits out of the
+        // frame so a failed or delayed replay callback cannot leave the user
+        // in control of the player. MENU remains available for pause/exit.
+        if (g_GameManager.flags.isReplay && IsGameplayReady() && !IsGameplayMenuOpen())
+        {
+            result &= TH_BUTTON_MENU;
+            static bool replayInputGateLogged;
+            if (!replayInputGateLogged)
+            {
+                replayInputGateLogged = true;
+                modern::LogStartup("replay/input: live gameplay input gated");
+            }
+        }
 
     }
     static bool stageClearInputGateVerified;
@@ -1913,6 +2344,9 @@ void ResetTouchState()
 {
     ClearTransientTouchState();
     g_state.keyboardButtons = 0;
+    g_state.controllerButtons = 0;
+    g_state.controllerAxisX = 0;
+    g_state.controllerAxisY = 0;
     g_pulseButtons = 0;
     g_shootLatched = false;
     g_focusLatched = false;
@@ -1999,7 +2433,8 @@ void DrawVirtualControls()
     }
     else if (IsGameplayReady())
     {
-        u16 pressed = g_state.buttons | g_state.keyboardButtons;
+        u16 pressed = g_state.buttons | g_state.keyboardButtons |
+                      g_state.controllerButtons | ControllerDirectionBits();
         if (g_shootLatched) pressed |= TH_BUTTON_SHOOT;
         if (g_focusLatched) pressed |= TH_BUTTON_FOCUS;
         if (g_config.controlMode != CONTROL_DRAG)
@@ -2031,7 +2466,8 @@ void DrawVirtualControls()
             DrawActionButton(FocusGeometry(), (pressed & TH_BUTTON_FOCUS) != 0, 'S');
             DrawActionButton(MenuGeometry(), (pressed & TH_BUTTON_MENU) != 0, 'M');
         }
-        DrawDeveloperButton();
+        if (g_config.showDeveloperButton)
+            DrawDeveloperButton();
     }
     else if (g_Supervisor.curState == SupervisorState_TitleScreen)
     {

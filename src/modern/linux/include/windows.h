@@ -22,7 +22,18 @@
 #define MAX_PATH 260
 
 typedef void VOID;
+#ifdef __OBJC__
+#ifdef TH08_IOS_CHEAT_OBJC
+// The UIKit helper does not use the D3D8 declarations.  Match objc.h's
+// Objective-C BOOL ABI for that translation unit and skip legacy layout
+// assertions that assume a four-byte Windows BOOL.
+typedef signed char BOOL;
+#else
 typedef int BOOL;
+#endif
+#else
+typedef int BOOL;
+#endif
 typedef int32_t LONG;
 typedef uint32_t ULONG;
 typedef uint32_t DWORD;
@@ -190,7 +201,11 @@ typedef const GUID &REFIID;
 #define ZeroMemory(d, n) memset((d), 0, (n))
 #define CopyMemory(d, s, n) memcpy((d), (s), (n))
 #define FillMemory(d, n, v) memset((d), (v), (n))
+#ifdef TH08_IOS_CHEAT_OBJC
+#define C_ASSERT(e)
+#else
 #define C_ASSERT(e) typedef char __C_ASSERT__[(e) ? 1 : -1]
+#endif
 #define RGB(r, g, b) ((COLORREF)(((BYTE)(r)) | ((WORD)((BYTE)(g)) << 8) | ((DWORD)(BYTE)(b) << 16)))
 
 #define GENERIC_READ 0x80000000u

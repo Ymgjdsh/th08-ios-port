@@ -13,6 +13,10 @@
 #include <string.h>
 #include <vector>
 
+#ifndef GL_BGRA
+#define GL_BGRA 0x80E1
+#endif
+
 namespace
 {
 class LinuxTexture;
@@ -170,11 +174,16 @@ void DrawPresentationRegion(int sourceX, int sourceY, int sourceWidth, int sourc
                             int destinationX, int destinationY,
                             int destinationWidth, int destinationHeight)
 {
-    const float u0 = static_cast<float>(sourceX) / 640.0f;
-    const float u1 = static_cast<float>(sourceX + sourceWidth) / 640.0f;
-    const float vTop = 1.0f - static_cast<float>(sourceY) / 480.0f;
+    // D3D8 sprite rectangles address texel edges, while the GLES sampler
+    // uses texel centres. With GL_LINEAR, sampling the exact outer edge
+    // blends the adjacent playfield/background texel into the presentation
+    // region (visible as a persistent fragment at x=32). Pull both edges in
+    // by half a texel so the crop is isolated from its neighbours.
+    const float u0 = static_cast<float>(sourceX + 0.5f) / 640.0f;
+    const float u1 = static_cast<float>(sourceX + sourceWidth - 0.5f) / 640.0f;
+    const float vTop = 1.0f - static_cast<float>(sourceY + 0.5f) / 480.0f;
     const float vBottom =
-        1.0f - static_cast<float>(sourceY + sourceHeight) / 480.0f;
+        1.0f - static_cast<float>(sourceY + sourceHeight - 0.5f) / 480.0f;
     const float x0 = static_cast<float>(destinationX);
     const float x1 = static_cast<float>(destinationX + destinationWidth);
     const float y0 = static_cast<float>(destinationY);
@@ -188,15 +197,28 @@ void DrawPresentationRegion(int sourceX, int sourceY, int sourceWidth, int sourc
     glEnd();
 }
 
+struct IosClipVertex
+{
+    float x, y, z, w;
+    float u, v;
+    float red, green, blue, alpha;
+    float fogCoordinate;
+};
+
 class LinuxSurface : public IDirect3DSurface8
 {
   public:
     LinuxSurface(UINT width_, UINT height_, D3DFORMAT format_, bool backbuffer_, LinuxTexture *owner_)
         : refs(1), width(width_), height(height_), format(format_), backbuffer(backbuffer_), owner(owner_),
-          dirty(!backbuffer_)
+          dirty(!backbuffer_), blitTexture(0)
     {
         pitch = width * BytesPerPixel(format);
         pixels.resize(pitch * height);
+    }
+    ~LinuxSurface()
+    {
+        if (blitTexture != 0)
+            glDeleteTextures(1, &blitTexture);
     }
     ULONG AddRef() { return ++refs; }
     ULONG Release() { ULONG value = --refs; if (value == 0) delete this; return value; }
@@ -238,26 +260,46 @@ class LinuxSurface : public IDirect3DSurface8
     void FlushBackbuffer()
     {
         if (!backbuffer || !dirty || width == 0 || height == 0) return;
-        std::vector<BYTE> rgba(width * height * 4);
-        const UINT bytes = BytesPerPixel(format);
-        for (UINT y = 0; y < height; ++y)
-            for (UINT x = 0; x < width; ++x)
-                DecodePixel(&pixels[y * pitch + x * bytes], format, &rgba[(y * width + x) * 4]);
+        const bool directBgra =
+            (format == D3DFMT_X8R8G8B8 || format == D3DFMT_A8R8G8B8) &&
+            pitch == width * 4;
+        std::vector<BYTE> rgba;
+        const BYTE *uploadPixels = &pixels[0];
+        GLenum uploadFormat = GL_BGRA;
+        if (!directBgra)
+        {
+            rgba.resize(width * height * 4);
+            const UINT bytes = BytesPerPixel(format);
+            for (UINT y = 0; y < height; ++y)
+                for (UINT x = 0; x < width; ++x)
+                    DecodePixel(&pixels[y * pitch + x * bytes], format,
+                                &rgba[(y * width + x) * 4]);
+            uploadPixels = &rgba[0];
+            uploadFormat = GL_RGBA;
+        }
 
-        GLuint name = 0;
+        const bool allocateTexture = blitTexture == 0;
         glPushAttrib(GL_ALL_ATTRIB_BITS);
         glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
         glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_FALSE);
-        glGenTextures(1, &name); glBindTexture(GL_TEXTURE_2D, name);
+        if (allocateTexture)
+            glGenTextures(1, &blitTexture);
+        glBindTexture(GL_TEXTURE_2D, blitTexture);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, &rgba[0]);
+        if (allocateTexture)
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+                         uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
+        else
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height,
+                            uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
         glMatrixMode(GL_PROJECTION); glPushMatrix(); glLoadIdentity(); glOrtho(0.0, width, height, 0.0, -1.0, 1.0);
         glMatrixMode(GL_MODELVIEW); glPushMatrix(); glLoadIdentity();
+        IosLegacySetTextureUsage(GL_TRUE, GL_FALSE);
         glColor4ub(255, 255, 255, 255);
         glBegin(GL_TRIANGLE_STRIP);
         glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 0.0f);
@@ -265,8 +307,8 @@ class LinuxSurface : public IDirect3DSurface8
         glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, static_cast<float>(height));
         glTexCoord2f(1.0f, 1.0f); glVertex2f(static_cast<float>(width), static_cast<float>(height));
         glEnd();
+        IosLegacySetTextureUsage(GL_TRUE, GL_TRUE);
         glPopMatrix(); glMatrixMode(GL_PROJECTION); glPopMatrix(); glMatrixMode(GL_MODELVIEW);
-        glDeleteTextures(1, &name);
         glPopAttrib();
         dirty = false;
     }
@@ -276,6 +318,7 @@ class LinuxSurface : public IDirect3DSurface8
     bool backbuffer;
     LinuxTexture *owner;
     bool dirty;
+    GLuint blitTexture;
     std::vector<BYTE> pixels;
 };
 
@@ -963,6 +1006,233 @@ class LinuxDevice : public IDirect3DDevice8
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         return true;
     }
+    void TransformToClip(const float *position, IosClipVertex *vertex)
+    {
+        float vector[4] = {position[0], position[1], position[2], 1.0f};
+        const D3DMATRIX *matrices[3] = {&world, &view, &projection};
+        vertex->fogCoordinate = 0.0f;
+        for (int index = 0; index < 3; ++index)
+        {
+            const D3DMATRIX &matrix = *matrices[index];
+            float next[4];
+            next[0] = vector[0] * matrix._11 + vector[1] * matrix._21 +
+                      vector[2] * matrix._31 + vector[3] * matrix._41;
+            next[1] = vector[0] * matrix._12 + vector[1] * matrix._22 +
+                      vector[2] * matrix._32 + vector[3] * matrix._42;
+            next[2] = vector[0] * matrix._13 + vector[1] * matrix._23 +
+                      vector[2] * matrix._33 + vector[3] * matrix._43;
+            next[3] = vector[0] * matrix._14 + vector[1] * matrix._24 +
+                      vector[2] * matrix._34 + vector[3] * matrix._44;
+            memcpy(vector, next, sizeof(vector));
+            if (index == 1)
+                vertex->fogCoordinate = fabsf(vector[2]);
+        }
+        vertex->x = vector[0];
+        vertex->y = vector[1];
+        vertex->z = vector[2];
+        vertex->w = vector[3];
+    }
+
+    float ClipDistance(const IosClipVertex &vertex, int plane)
+    {
+        switch (plane)
+        {
+        case 0: return vertex.w - 1.0e-5f;
+        case 1: return vertex.x + vertex.w;
+        case 2: return vertex.w - vertex.x;
+        case 3: return vertex.y + vertex.w;
+        case 4: return vertex.w - vertex.y;
+        case 5: return vertex.z;
+        default: return vertex.w - vertex.z;
+        }
+    }
+
+    IosClipVertex InterpolateClipVertex(const IosClipVertex &from,
+                                        const IosClipVertex &to, float amount)
+    {
+        IosClipVertex result;
+        result.x = from.x + (to.x - from.x) * amount;
+        result.y = from.y + (to.y - from.y) * amount;
+        result.z = from.z + (to.z - from.z) * amount;
+        result.w = from.w + (to.w - from.w) * amount;
+        result.u = from.u + (to.u - from.u) * amount;
+        result.v = from.v + (to.v - from.v) * amount;
+        result.red = from.red + (to.red - from.red) * amount;
+        result.green = from.green + (to.green - from.green) * amount;
+        result.blue = from.blue + (to.blue - from.blue) * amount;
+        result.alpha = from.alpha + (to.alpha - from.alpha) * amount;
+        result.fogCoordinate = from.fogCoordinate +
+                               (to.fogCoordinate - from.fogCoordinate) * amount;
+        return result;
+    }
+
+    int ClipTriangle(const IosClipVertex *triangle, IosClipVertex *clipped)
+    {
+        IosClipVertex buffers[2][24];
+        memcpy(buffers[0], triangle, sizeof(IosClipVertex) * 3);
+        int inputIndex = 0;
+        int count = 3;
+        for (int plane = 0; plane < 7 && count > 0; ++plane)
+        {
+            IosClipVertex *input = buffers[inputIndex];
+            IosClipVertex *output = buffers[1 - inputIndex];
+            int outputCount = 0;
+            IosClipVertex previous = input[count - 1];
+            float previousDistance = ClipDistance(previous, plane);
+            bool previousInside = previousDistance >= 0.0f;
+            for (int index = 0; index < count; ++index)
+            {
+                const IosClipVertex current = input[index];
+                const float currentDistance = ClipDistance(current, plane);
+                const bool currentInside = currentDistance >= 0.0f;
+                if (currentInside != previousInside)
+                {
+                    const float denominator = previousDistance - currentDistance;
+                    const float amount = fabsf(denominator) > 1.0e-12f
+                                             ? previousDistance / denominator
+                                             : 0.0f;
+                    if (outputCount < 24)
+                        output[outputCount++] =
+                            InterpolateClipVertex(previous, current, amount);
+                }
+                if (currentInside && outputCount < 24)
+                    output[outputCount++] = current;
+                previous = current;
+                previousDistance = currentDistance;
+                previousInside = currentInside;
+            }
+            count = outputCount;
+            inputIndex = 1 - inputIndex;
+        }
+        if (count > 0)
+            memcpy(clipped, buffers[inputIndex], sizeof(IosClipVertex) * count);
+        return count;
+    }
+
+    bool ReadClipVertex(const BYTE *data, UINT colorOffset, UINT textureOffset,
+                        bool hasDiffuse, bool hasTexture, IosClipVertex *vertex)
+    {
+        TransformToClip(reinterpret_cast<const float *>(data), vertex);
+        D3DCOLOR color = hasDiffuse
+                             ? *reinterpret_cast<const D3DCOLOR *>(data + colorOffset)
+                             : 0xffffffffu;
+        color = EffectiveColor(color);
+        vertex->red = ((color >> 16) & 255) / 255.0f;
+        vertex->green = ((color >> 8) & 255) / 255.0f;
+        vertex->blue = (color & 255) / 255.0f;
+        vertex->alpha = ((color >> 24) & 255) / 255.0f;
+        vertex->u = vertex->v = 0.0f;
+        if (hasTexture)
+        {
+            const float *uv = reinterpret_cast<const float *>(data + textureOffset);
+            vertex->u = uv[0] * textureTransform._11 + uv[1] * textureTransform._21 +
+                        textureTransform._31;
+            vertex->v = uv[0] * textureTransform._12 + uv[1] * textureTransform._22 +
+                        textureTransform._32;
+        }
+        return isfinite(vertex->x) && isfinite(vertex->y) &&
+               isfinite(vertex->z) && isfinite(vertex->w) &&
+               isfinite(vertex->u) && isfinite(vertex->v);
+    }
+
+    GLubyte ColorByte(float value)
+    {
+        if (value <= 0.0f) return 0;
+        if (value >= 1.0f) return 255;
+        return static_cast<GLubyte>(value * 255.0f + 0.5f);
+    }
+
+    void EmitClipVertex(const IosClipVertex &vertex, bool hasTexture)
+    {
+        if (hasTexture)
+            glTexCoord2f(vertex.u, vertex.v);
+        glColor4ub(ColorByte(vertex.red), ColorByte(vertex.green),
+                   ColorByte(vertex.blue), ColorByte(vertex.alpha));
+        IosLegacySetFogCoordinate(vertex.fogCoordinate);
+        const float reciprocal = 1.0f / vertex.w;
+        const float x = viewport.X + (vertex.x * reciprocal + 1.0f) *
+                                      viewport.Width * 0.5f;
+        const float y = viewport.Y + (1.0f - vertex.y * reciprocal) *
+                                      viewport.Height * 0.5f;
+        const float z = viewport.MinZ + vertex.z * reciprocal *
+                                      (viewport.MaxZ - viewport.MinZ);
+        glVertex3f(x, y, 2.0f * z - 1.0f);
+    }
+
+    HRESULT DrawClippedTriangles(D3DPRIMITIVETYPE type, UINT primitiveCount,
+                                 const BYTE *data, UINT stride, UINT colorOffset,
+                                 UINT textureOffset, bool hasDiffuse, bool hasTexture)
+    {
+        UINT clippedPrimitiveCount = 0;
+        UINT rejectedPrimitiveCount = 0;
+        glBegin(GL_TRIANGLES);
+        for (UINT primitive = 0; primitive < primitiveCount; ++primitive)
+        {
+            UINT indices[3];
+            if (type == D3DPT_TRIANGLELIST)
+            {
+                indices[0] = primitive * 3;
+                indices[1] = primitive * 3 + 1;
+                indices[2] = primitive * 3 + 2;
+            }
+            else if (type == D3DPT_TRIANGLESTRIP)
+            {
+                indices[0] = primitive;
+                indices[1] = primitive + 1;
+                indices[2] = primitive + 2;
+            }
+            else
+            {
+                indices[0] = 0;
+                indices[1] = primitive + 1;
+                indices[2] = primitive + 2;
+            }
+
+            IosClipVertex triangle[3];
+            bool valid = true;
+            for (int corner = 0; corner < 3; ++corner)
+                valid = ReadClipVertex(data + indices[corner] * stride,
+                                       colorOffset, textureOffset, hasDiffuse,
+                                       hasTexture, &triangle[corner]) && valid;
+            if (!valid)
+            {
+                ++rejectedPrimitiveCount;
+                continue;
+            }
+
+            IosClipVertex polygon[24];
+            const int count = ClipTriangle(triangle, polygon);
+            if (count < 3)
+            {
+                ++rejectedPrimitiveCount;
+                continue;
+            }
+            if (count != 3)
+                ++clippedPrimitiveCount;
+            for (int index = 1; index + 1 < count; ++index)
+            {
+                EmitClipVertex(polygon[0], hasTexture);
+                EmitClipVertex(polygon[index], hasTexture);
+                EmitClipVertex(polygon[index + 1], hasTexture);
+            }
+        }
+        glEnd();
+
+        static UINT diagnosticCount;
+        if ((clippedPrimitiveCount != 0 || rejectedPrimitiveCount != 0) &&
+            diagnosticCount < 24)
+        {
+            char message[160];
+            SDL_snprintf(message, sizeof(message),
+                         "ios/clip: type=%u primitives=%u clipped=%u rejected=%u",
+                         static_cast<unsigned>(type), primitiveCount,
+                         clippedPrimitiveCount, rejectedPrimitiveCount);
+            th08::modern::LogStartup(message);
+            ++diagnosticCount;
+        }
+        return S_OK;
+    }
+
     void TransformPosition(const float *position, bool transformed, float *xOut, float *yOut,
                            float *zOut, float *fogCoordinateOut)
     {
@@ -1104,7 +1374,16 @@ class LinuxDevice : public IDirect3DDevice8
         if (hasDiffuse) offset += 4;
         if (fvf & D3DFVF_SPECULAR) offset += 4;
         bool hasTexture = (fvf & D3DFVF_TEXCOUNT_MASK) != 0; UINT textureOffset = offset;
-        PrepareState(); glBegin(PrimitiveMode(type));
+        PrepareState();
+        if (!transformed &&
+            (type == D3DPT_TRIANGLELIST || type == D3DPT_TRIANGLESTRIP ||
+             type == D3DPT_TRIANGLEFAN))
+        {
+            return DrawClippedTriangles(type, primitiveCount, data, stride,
+                                        colorOffset, textureOffset,
+                                        hasDiffuse, hasTexture);
+        }
+        glBegin(PrimitiveMode(type));
         for (UINT index = 0; index < count; ++index)
         {
             const BYTE *vertex = data + index * stride; float x, y, z, fogCoordinate;

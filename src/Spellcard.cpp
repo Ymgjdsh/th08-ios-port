@@ -1517,6 +1517,33 @@ i32 Spellcard::OnUpdateImpl()
     g_AnmManager->ExecuteScript(&this->vm10F8);
     g_AnmManager->ExecuteScript(&this->vm1B88);
 #endif
+#ifdef TH08_IOS
+    // The enemy spell-card cut-in uses a separate set of VMs from the player
+    // Bomb portrait. Keep its visual timeline on the same cadence as the
+    // original 60 Hz presentation path; the gameplay timer below still
+    // advances every simulation frame.
+    static u32 iosEnemyCutInCadence;
+    ++iosEnemyCutInCadence;
+    const bool enemyCutInVisible = this->vm3C4.IsVisible() ||
+                                    this->vm90C.IsVisible() ||
+                                    this->vmE54.IsVisible() ||
+                                    this->vm139C.IsVisible() ||
+                                    this->vm1640.IsVisible() ||
+                                    this->vm18E4.IsVisible() ||
+                                    this->vm1E2C.IsVisible() ||
+                                    this->vm2374.IsVisible();
+    if (!enemyCutInVisible || (iosEnemyCutInCadence & 3) != 0)
+    {
+        g_AnmManager->ExecuteScript(&this->vm3C4);
+        g_AnmManager->ExecuteScript(&this->vm90C);
+        g_AnmManager->ExecuteScript(&this->vmE54);
+        g_AnmManager->ExecuteScript(&this->vm139C);
+        g_AnmManager->ExecuteScript(&this->vm1640);
+        g_AnmManager->ExecuteScript(&this->vm18E4);
+        g_AnmManager->ExecuteScript(&this->vm1E2C);
+        g_AnmManager->ExecuteScript(&this->vm2374);
+    }
+#else
     g_AnmManager->ExecuteScript(&this->vm3C4);
     g_AnmManager->ExecuteScript(&this->vm90C);
     g_AnmManager->ExecuteScript(&this->vmE54);
@@ -1525,6 +1552,7 @@ i32 Spellcard::OnUpdateImpl()
     g_AnmManager->ExecuteScript(&this->vm18E4);
     g_AnmManager->ExecuteScript(&this->vm1E2C);
     g_AnmManager->ExecuteScript(&this->vm2374);
+#endif
     this->timer108--;
 
     return 1;
@@ -1702,6 +1730,7 @@ ZunResult Spellcard::RegisterChain()
 
     spellcard->lifetimeObject = g_Chain.CreateElem((ChainCallback)Spellcard::OnUpdate);
     spellcard->lifetimeChain = g_Chain.CreateElem((ChainCallback)Spellcard::OnDraw);
+    g_SpellcardCalcChain = reinterpret_cast<ChainElem *>(spellcard->lifetimeObject);
     reinterpret_cast<ChainElem *>(spellcard->lifetimeObject)->deletedCallback =
         (ChainLifetimeCallback)Spellcard::DeletedCallback;
     reinterpret_cast<ChainElem *>(spellcard->lifetimeObject)->arg = spellcard;
@@ -1739,21 +1768,36 @@ ZunResult Spellcard::DeletedCallback(Spellcard *spellcard)
         g_AnmManager->ReleaseAnm(17);
     }
 
-    if (spellcard->lifetimeObject != NULL)
-    {
-        reinterpret_cast<ChainElem *>(spellcard->lifetimeObject)->deletedCallback = NULL;
-    }
-    g_Chain.Cut(spellcard->lifetimeChain);
+    // The calc element is already being destroyed when this callback runs.
+    // Clear every alias before cutting the draw element so a transition back
+    // to the title screen cannot retain the Bomb portrait/text draw job.
+    g_SpellcardCalcChain = NULL;
+    spellcard->lifetimeObject = NULL;
+    ChainElem *drawChain = spellcard->lifetimeChain;
     spellcard->lifetimeChain = NULL;
+    g_Chain.Cut(drawChain);
     return ZUN_SUCCESS;
 }
 
 // FUNCTION: th08 0x4180f0
 void Spellcard::CutChain()
 {
-    if (g_SpellcardCalcChain != NULL)
+    ChainElem *calcChain = g_SpellcardCalcChain;
+    if (calcChain == NULL)
+        calcChain = reinterpret_cast<ChainElem *>(g_Spellcard.lifetimeObject);
+
+    if (calcChain != NULL)
+        g_Chain.Cut(calcChain);
+
+    // DeletedCallback normally clears both fields. Keep this fallback for a
+    // partially registered chain so teardown remains idempotent.
+    g_SpellcardCalcChain = NULL;
+    g_Spellcard.lifetimeObject = NULL;
+    if (g_Spellcard.lifetimeChain != NULL)
     {
-        g_Chain.Cut(g_SpellcardCalcChain);
+        ChainElem *drawChain = g_Spellcard.lifetimeChain;
+        g_Spellcard.lifetimeChain = NULL;
+        g_Chain.Cut(drawChain);
     }
 }
 

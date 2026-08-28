@@ -404,6 +404,11 @@ void PumpSdlEvents(MSG *message, bool *hasMessage)
         return;
 #ifdef TH08_IOS
     th08::modern::ios::ProcessEvent(event);
+    // ProcessEvent converts iOS SDL_QUIT into a one-frame menu pulse.  Do not
+    // translate it to WM_CLOSE, which would set receivedCloseMsg and exit to
+    // the iOS desktop instead of opening the in-game menu.
+    if (event.type == SDL_QUIT)
+        return;
 #endif
     memset(message, 0, sizeof(*message));
     message->hwnd = reinterpret_cast<HWND>(g_window);

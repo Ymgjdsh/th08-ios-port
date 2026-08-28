@@ -67,9 +67,20 @@ template <typename T> struct IosPtr32
 {
     DWORD handle;
 
-    IosPtr32 &operator=(T *pointer)
+    // Raw 32-bit fields are used by a few on-disk formats.  They must not be
+    // passed through the process-local pointer registry until the owner has
+    // added its file base and explicitly relocates them.
+    DWORD RawHandle() const { return this->handle; }
+    void SetRawHandle(DWORD value) { this->handle = value; }
+
+    void SetPointer(T *pointer)
     {
         this->handle = TH08IosStorePointer(reinterpret_cast<uintptr_t>(pointer));
+    }
+
+    IosPtr32 &operator=(T *pointer)
+    {
+        this->SetPointer(pointer);
         return *this;
     }
 

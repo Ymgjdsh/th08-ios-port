@@ -51,6 +51,17 @@
 
 namespace th08
 {
+#ifdef TH08_IOS
+static void PersistIosGameConfig()
+{
+    if (FileSystem::WriteDataToFile("th08.cfg", &g_Supervisor.cfg,
+                                    sizeof(GameConfiguration)) == 0)
+        modern::LogStartup("config: title option persisted");
+    else
+        modern::LogStartup("config: title option persistence failed");
+}
+#endif
+
 #ifndef TH08_MODERN_PORT
 inline Float3::Float3(float x, float y, float z)
 {
@@ -215,6 +226,83 @@ DIFFABLE_STATIC_ASSIGN(const char *, g_ReplayDifficulties[]) = {
 };
 
 void DrawPieChart(Float3 *position, D3DCOLOR color, float param_3, float param_4);
+
+bool ReplayHasStage(const ReplayData &replay, i32 stage)
+{
+    return stage >= 0 && stage < MAX_STAGES &&
+           ReplayStagePresent(replay.header.stageReplayData[stage]);
+}
+
+bool StepReplayStage(const ReplayData &replay, i32 *stage, i32 direction)
+{
+    if (stage == NULL || direction == 0)
+        return false;
+
+    const i32 original = *stage;
+    for (i32 attempts = 0; attempts < MAX_STAGES; ++attempts)
+    {
+        *stage += direction;
+        if (*stage < 0)
+            *stage = MAX_STAGES - 1;
+        else if (*stage >= MAX_STAGES)
+            *stage = 0;
+        if (ReplayHasStage(replay, *stage))
+            return true;
+    }
+    *stage = original;
+    return false;
+}
+
+#ifdef TH08_IOS
+// The replay list keeps only the small stage summary needed by the menu. The
+// decoded replay buffer itself is released after scanning, so copying its
+// interior stage pointers would leave dangling registry handles.
+void ReleaseReplayListStages(TitleScreen *titleScreen)
+{
+    for (i32 replay = 0; replay < TITLE_MAX_REPLAYS; ++replay)
+    {
+        for (i32 stage = 0; stage < MAX_STAGES; ++stage)
+        {
+            StageReplayData *summary = titleScreen->replays[replay].header.stageReplayData[stage].Get();
+            if (summary != NULL)
+            {
+                TH08IosForgetPointer(reinterpret_cast<uintptr_t>(summary));
+                g_ZunMemory.Free(summary);
+            }
+            titleScreen->replays[replay].header.stageReplayData[stage] = NULL;
+            titleScreen->replays[replay].header.stageReplayData2[stage] = NULL;
+        }
+    }
+}
+
+void CopyReplaySummary(TitleScreen *titleScreen, i32 replayIndex, const ReplayData *source)
+{
+    titleScreen->replays[replayIndex] = *source;
+    for (i32 stage = 0; stage < MAX_STAGES; ++stage)
+    {
+        StageReplayData *sourceStage = source->header.stageReplayData[stage].Get();
+        if (sourceStage != NULL)
+        {
+            StageReplayData *summary = static_cast<StageReplayData *>(
+                g_ZunMemory.Alloc(sizeof(StageReplayData), "ReplayListStage"));
+            if (summary != NULL)
+            {
+                memcpy(summary, sourceStage, sizeof(StageReplayData));
+                titleScreen->replays[replayIndex].header.stageReplayData[stage] = summary;
+            }
+            else
+            {
+                titleScreen->replays[replayIndex].header.stageReplayData[stage] = NULL;
+            }
+        }
+        else
+        {
+            titleScreen->replays[replayIndex].header.stageReplayData[stage] = NULL;
+        }
+        titleScreen->replays[replayIndex].header.stageReplayData2[stage] = NULL;
+    }
+}
+#endif
 
 ChainCallbackResult TitleScreen::OnUpdate(TitleScreen *titleScreen)
 {
@@ -476,15 +564,22 @@ ChainCallbackResult TitleScreen::OnUpdateStartMenu()
                 g_GameManager.shotType = this->currentReplay->shotType;
 
                 i = 0;
-
-                while (this->currentReplay->header.stageReplayData[i] == NULL)
+                while (i < MAX_STAGES && !ReplayHasStage(*this->currentReplay, i))
+                    ++i;
+                if (i >= MAX_STAGES)
                 {
-                    i++;
+                    ReplayManager::FreeReplayData(this->currentReplay);
+                    this->currentReplay = NULL;
+                    this->startMenuIdleFrames = 0;
+#ifdef TH08_IOS
+                    modern::LogStartup("title/demo: rejected replay without a stage");
+#endif
+                    break;
                 }
 
                 g_GameManager.currentStage = i;
 
-                g_ZunMemory.Free(this->currentReplay);
+                ReplayManager::FreeReplayData(this->currentReplay);
                 this->currentReplay = NULL;
 
                 g_Supervisor.curState = SupervisorState_GameManager;
@@ -916,6 +1011,9 @@ ChainCallbackResult TitleScreen::OnUpdateOptions()
                 {
                     g_Supervisor.cfg.slowMode--;
                 }
+#ifdef TH08_IOS
+                PersistIosGameConfig();
+#endif
                 break;
             default:
                 goto left_button_check;
@@ -1083,6 +1181,9 @@ ChainCallbackResult TitleScreen::OnUpdateOptions()
                 {
                     g_Supervisor.cfg.slowMode++;
                 }
+#ifdef TH08_IOS
+                PersistIosGameConfig();
+#endif
                 break;
             default:
                 goto sfx_play;
@@ -1126,6 +1227,9 @@ ChainCallbackResult TitleScreen::OnUpdateOptions()
                 g_Supervisor.cfg.musicMode = WAV;
                 g_Supervisor.cfg.playSounds = 1;
                 g_Supervisor.cfg.slowMode = 0;
+#ifdef TH08_IOS
+                PersistIosGameConfig();
+#endif
 
                 g_SoundPlayer.PlaySoundByIdx(SOUND_SELECT, 0);
                 g_SoundPlayer.ProcessQueues();
@@ -3290,6 +3394,9 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
             this->stateTimer = 0;
             this->currentHelpTextVm = NULL;
 
+#ifdef TH08_IOS
+            ReleaseReplayListStages(this);
+#endif
             replayCount = 0;
 
             for (i = 0; i < 15; i++)
@@ -3305,14 +3412,19 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
                 replayData = ReplayManager::LoadReplayData(replayData, fileSize);
                 if (replayData != NULL)
                 {
-                    this->replays[replayCount] = *replayData;
+                    if (replayCount < TITLE_MAX_REPLAYS)
+                    {
+#ifdef TH08_IOS
+                        CopyReplaySummary(this, replayCount, replayData);
+#else
+                        this->replays[replayCount] = *replayData;
+#endif
 
-                    strcpy(this->replayFilePaths[replayCount], path);
-                    sprintf(this->replayNumbers[replayCount], "No.%.2d", i + 1);
-
-                    replayCount++;
-
-                    g_ZunMemory.Free(replayData);
+                        strcpy(this->replayFilePaths[replayCount], path);
+                        sprintf(this->replayNumbers[replayCount], "No.%.2d", i + 1);
+                        replayCount++;
+                    }
+                    ReplayManager::FreeReplayData(replayData);
                 }
             }
 
@@ -3336,27 +3448,35 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
 #else
                     replayData = (ReplayData *)FileSystem::OpenFile(findData.cFileName, &fileSize, TRUE);
 #endif
-                    if (replayData == NULL)
-                    {
-                        continue;
-                    }
-
-                    replayData = ReplayManager::LoadReplayData(replayData, fileSize);
                     if (replayData != NULL)
                     {
-                        this->replays[replayCount] = *replayData;
-
+                        replayData = ReplayManager::LoadReplayData(replayData, fileSize);
+                    }
+                    if (replayData != NULL)
+                    {
+                        if (replayCount >= TITLE_MAX_REPLAYS)
+                        {
+                            ReplayManager::FreeReplayData(replayData);
+                        }
+                        else
+                        {
 #ifdef TH08_IOS
-                        snprintf(this->replayFilePaths[replayCount], sizeof(this->replayFilePaths[replayCount]),
-                                 "./replay/%s", findData.cFileName);
+                            CopyReplaySummary(this, replayCount, replayData);
 #else
-                        sprintf(this->replayFilePaths[replayCount], "./replay/%s", findData.cFileName);
+                            this->replays[replayCount] = *replayData;
 #endif
-                        sprintf(this->replayNumbers[replayCount], "User ");
+#ifdef TH08_IOS
+                            snprintf(this->replayFilePaths[replayCount], sizeof(this->replayFilePaths[replayCount]),
+                                     "./replay/%s", findData.cFileName);
+#else
+                            sprintf(this->replayFilePaths[replayCount], "./replay/%s", findData.cFileName);
+#endif
+                            sprintf(this->replayNumbers[replayCount], "User ");
 
-                        g_ZunMemory.Free(replayData);
+                            ReplayManager::FreeReplayData(replayData);
 
-                        replayCount++;
+                            replayCount++;
+                        }
                     }
 
                     if (!FindNextFileA(firstFile, &findData))
@@ -3446,6 +3566,7 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
             }
 #endif
 
+#ifndef TH08_IOS
             for (i = 0; i < MAX_STAGES; i++)
             {
                 if (this->currentReplay->header.stageReplayData[i] != NULL)
@@ -3455,19 +3576,26 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
                                             (uintptr_t)this->currentReplay->header.stageReplayData[i]);
                 }
             }
+#endif
 
             this->cursor = 0;
 
-            while (this->replays[this->selectedReplay].header.stageReplayData[this->cursor] == NULL)
+            while (this->cursor < MAX_STAGES &&
+                   !ReplayHasStage(this->replays[this->selectedReplay], this->cursor))
+                ++this->cursor;
+            if (this->cursor >= MAX_STAGES)
             {
-                this->cursor++;
-                if (this->cursor > EXTRASTAGE)
-                {
-                    g_GameErrorContext.Fatal(TH_ERR_REPLAY_CORRUPTED);
-                    g_Supervisor.curState = SupervisorState_ExitGame;
-
-                    return CHAIN_CALLBACK_RESULT_CONTINUE_AND_REMOVE_JOB;
-                }
+                ReplayManager::FreeReplayData(this->currentReplay);
+                this->currentReplay = NULL;
+                g_SoundPlayer.PlaySoundByIdx(SOUND_INVALID_ACTION, 0);
+                this->currentScreenState = (TitleCurrentScreenState)1;
+                this->stateTimer = 0;
+                this->stateTimer2 = 0;
+                this->cursor = this->selectedReplay;
+#ifdef TH08_IOS
+                modern::LogStartup("title/replay: rejected replay without a stage");
+#endif
+                break;
             }
 
             this->resultTextAnm->InitializeAndSetSprite(&this->spellCardNameVms[0], i + 2);
@@ -3500,25 +3628,11 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
         i = this->MoveCursorVertical(9);
         if (i < 0)
         {
-            while (this->replays[this->selectedReplay].header.stageReplayData[this->cursor] == NULL)
-            {
-                this->cursor--;
-                if (this->cursor < 0)
-                {
-                    this->cursor = MAX_STAGES;
-                }
-            }
+            StepReplayStage(this->replays[this->selectedReplay], &this->cursor, -1);
         }
         else if (i > 0)
         {
-            while (this->replays[this->selectedReplay].header.stageReplayData[this->cursor] == NULL)
-            {
-                this->cursor++;
-                if (this->cursor >= ARRAY_SIZE(g_StageNames))
-                {
-                    this->cursor = 0;
-                }
-            }
+            StepReplayStage(this->replays[this->selectedReplay], &this->cursor, 1);
         }
 
         this->selectedReplayStage = this->cursor;
@@ -3547,7 +3661,7 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
 
         if (WAS_PRESSED(TH_BUTTON_BOMB | TH_BUTTON_MENU))
         {
-            g_ZunMemory.Free(this->currentReplay);
+            ReplayManager::FreeReplayData(this->currentReplay);
             this->currentReplay = NULL;
             this->currentScreenState = (TitleCurrentScreenState)1;
             this->stateTimer2 = 0;
@@ -3585,7 +3699,7 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
             g_GameManager.flags.isSpellPractice = (this->currentReplay->spellcardNumber >= 0);
             g_GameManager.currentSpellCardNumber = this->currentReplay->spellcardNumber;
 
-            g_ZunMemory.Free(this->currentReplay);
+            ReplayManager::FreeReplayData(this->currentReplay);
             this->currentReplay = NULL;
 
             g_GameManager.currentStage = this->selectedReplayStage;
@@ -3614,7 +3728,7 @@ ChainCallbackResult TitleScreen::OnUpdateReplayMenu()
         {
             if (this->currentReplay != NULL)
             {
-                g_ZunMemory.Free(this->currentReplay);
+                ReplayManager::FreeReplayData(this->currentReplay);
                 this->currentReplay = NULL;
             }
             this->ChangeCurrentScreen(TitleCurrentScreen_StartMenu);
@@ -4067,9 +4181,12 @@ void TitleScreen::DisplayInfoImage(const char *path)
 
 ZunResult TitleScreen::Release()
 {
+#ifdef TH08_IOS
+    ReleaseReplayListStages(this);
+#endif
     if (this->currentReplay != NULL)
     {
-        g_ZunMemory.Free(this->currentReplay);
+        ReplayManager::FreeReplayData(this->currentReplay);
         this->currentReplay = NULL;
     }
 

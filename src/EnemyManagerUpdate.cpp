@@ -483,12 +483,8 @@ static void LogRejectedIosStage6Target(EnemyManagerUpdateEnemy *enemy,
     modern::LogStartup(message);
 }
 
-static bool IsIosStage6ParkedLinkedChild(EnemyManagerUpdateEnemy *enemy)
+static bool IsIosParkedLinkedChild(EnemyManagerUpdateEnemy *enemy)
 {
-    if (g_GameManager.currentStage != STAGE6A &&
-        g_GameManager.currentStage != STAGE6B)
-        return false;
-
     const u32 flags = enemy->Flags1();
     if ((flags & EMUF1_LINKED_CHILD) == 0 ||
         (flags & EMUF1_BOSS) != 0 ||
@@ -500,9 +496,11 @@ static bool IsIosStage6ParkedLinkedChild(EnemyManagerUpdateEnemy *enemy)
     if (!isfinite(position.x) || !isfinite(position.y) || !isfinite(position.z))
         return true;
 
-    // Some Stage 6 helper familiars can remain parked at the script origin.
-    // Their sprites and alignment effects are large enough to leak into the
-    // playfield even though the object itself is outside normal gameplay.
+    // A linked helper can survive a boss transition with its world position
+    // parked at the script origin.  This is not limited to Stage 6: replay
+    // restarts and practice routes can leave the same stale child in any
+    // stage.  Its sprite/effect is outside the playable area and otherwise
+    // leaks as the purple/white ring at the upper-left corner.
     return position.x > -96.0f && position.x <= 4.0f &&
            position.y > -96.0f && position.y <= 4.0f;
 }
@@ -529,6 +527,7 @@ static void LogIosStage6ParkedLinkedChild(EnemyManagerUpdateEnemy *enemy,
              enemy->PrimaryVm()->sprite.Get(), enemy->DeathVm());
     modern::LogStartup(message);
 }
+
 #endif
 
 #pragma var_order(currentTargetDelta, difficultyScale, bombHit, damage, enemyIndex, secondaryHitbox, extraDamage, trailIndex, damageOccurred, enemy, rankAmount, previousTargetDelta)
@@ -550,8 +549,8 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
 
 #ifdef TH08_IOS
     static u32 diagnosticFrame;
-    static u8 stage6CornerFamiliarSuppressed[480];
-    bool suppressStage6CornerFamiliar;
+    static u8 cornerFamiliarSuppressed[480];
+    bool suppressCornerFamiliar;
     const u32 currentDiagnosticFrame = diagnosticFrame++;
     const bool traceFrame = currentDiagnosticFrame < 8;
     if (traceFrame)
@@ -650,7 +649,7 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
         if ((*reinterpret_cast<u32 *>(enemy->raw + 0x3324) & EMUF1_ACTIVE) == 0)
         {
 #ifdef TH08_IOS
-            stage6CornerFamiliarSuppressed[enemyIndex] = 0;
+            cornerFamiliarSuppressed[enemyIndex] = 0;
 #endif
             if (g_Player.optionHomingTarget == reinterpret_cast<Enemy *>(enemy))
                 g_Player.optionHomingTarget = 0;
@@ -659,7 +658,7 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
 
         damageOccurred = 0;
 #ifdef TH08_IOS
-        suppressStage6CornerFamiliar = false;
+        suppressCornerFamiliar = false;
 #endif
 
 #ifdef TH08_IOS
@@ -1256,14 +1255,13 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
             (*reinterpret_cast<ZunTimer *>(enemy->raw + 0x5354))--;
 
 #ifdef TH08_IOS
-        suppressStage6CornerFamiliar =
-            IsIosStage6ParkedLinkedChild(enemy);
-        if (suppressStage6CornerFamiliar)
+        suppressCornerFamiliar = IsIosParkedLinkedChild(enemy);
+        if (suppressCornerFamiliar)
         {
-            if (stage6CornerFamiliarSuppressed[enemyIndex] == 0)
+            if (cornerFamiliarSuppressed[enemyIndex] == 0)
             {
                 LogIosStage6ParkedLinkedChild(enemy, enemyIndex, false);
-                stage6CornerFamiliarSuppressed[enemyIndex] = 1;
+                cornerFamiliarSuppressed[enemyIndex] = 1;
             }
 
             // alignmentEffect owns its own draw chain. Moving it offscreen is
@@ -1277,17 +1275,17 @@ i32 EnemyManagerUpdateOverlay::OnUpdate()
                 effectPosition->z = 0.0f;
             }
         }
-        else if (stage6CornerFamiliarSuppressed[enemyIndex] != 0)
+        else if (cornerFamiliarSuppressed[enemyIndex] != 0)
         {
             LogIosStage6ParkedLinkedChild(enemy, enemyIndex, true);
-            stage6CornerFamiliarSuppressed[enemyIndex] = 0;
+            cornerFamiliarSuppressed[enemyIndex] = 0;
         }
 #endif
 
         if (!reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->noSprite &&
             reinterpret_cast<EnemyManagerUpdateFlag1Bits *>(enemy->raw + 0x3324)->active
 #ifdef TH08_IOS
-            && !suppressStage6CornerFamiliar
+            && !suppressCornerFamiliar
 #endif
             )
         {

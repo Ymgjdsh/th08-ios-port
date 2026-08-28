@@ -101,7 +101,10 @@ elseif(APPLE)
         src/modern/ios/ios_d3d8_compat.cpp
         src/modern/ios/ios_d3dx8_compat.cpp
         src/modern/ios/ios_gl_legacy.cpp
-        src/modern/ios/ios_touch.cpp)
+        src/modern/ios/ios_touch.cpp
+        src/modern/ios/ios_cheat.mm)
+    set_source_files_properties(src/modern/ios/ios_cheat.mm PROPERTIES
+        COMPILE_DEFINITIONS "TH08_IOS_CHEAT_OBJC=1;__OBJC_BOOL_IS_BOOL=0")
     add_executable(th08-modern MACOSX_BUNDLE ${TH08_GAME_SOURCES})
 else()
     message(FATAL_ERROR "The modern target currently supports Windows and Linux.")

@@ -887,7 +887,11 @@ i32 Player::FUN_0044aec0()
     // animation sees the same horizontal/vertical speed as a joystick.
     f32 touchDeltaX = 0.0f;
     f32 touchDeltaY = 0.0f;
-    if (modern::ios::ConsumeDragDelta(&touchDeltaX, &touchDeltaY))
+    // Replay playback owns the complete input stream. Do not let the live
+    // drag gesture overwrite the recorded player position while a replay is
+    // running; menu/cancel input is handled separately by GameManager.
+    if (!g_GameManager.flags.isReplay &&
+        modern::ios::ConsumeDragDelta(&touchDeltaX, &touchDeltaY))
     {
         const f32 timeScale = g_EclGameTimeScale != 0.0f ? g_EclGameTimeScale : 1.0f;
         horizontalSpeed = touchDeltaX / timeScale;
