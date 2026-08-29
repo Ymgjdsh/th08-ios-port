@@ -17,7 +17,7 @@
 | --- | --- |
 | 目标平台 | arm64 iPhone / iPad |
 | 最低系统 | iOS 14.0 |
-| 当前验证节点 | `0.4.0 (103)` |
+| 当前验证节点 | `0.4.0 (105)` |
 | 主线流程 | 模拟器自动测试已完成 Normal 六面路线、结局和返回标题页 |
 | 输入 | 触摸、键盘、SDL 控制器 |
 | 画面 | 横屏和竖屏；iPhone / iPad 自适应布局 |
@@ -61,7 +61,7 @@ SDL2 负责窗口、事件、键盘和控制器。`src/modern/ios/ios_touch.cpp`
 
 工程包含可通过环境变量启用的模拟器 Smoke Test，覆盖标题菜单、Music Room、Replay 返回、Bomb、自动放 B、关卡结算、跨关卡重建和完整六面流程。App 还会在 Documents 中持续写入运行日志，便于定位只在真机出现的问题。
 
-验证节点 `0.4.0 (103)` 已通过：
+验证节点 `0.4.0 (105)` 已通过构建与静态包检查：
 
 - 第六面直达和实际 Bomb 计数验证；
 - Music Room 进入与加载遮罩关闭；
@@ -70,6 +70,10 @@ SDL2 负责窗口、事件、键盘和控制器。`src/modern/ios/ios_touch.cpp`
 - 第六面停在战斗区原点的附属使魔/光效抑制与诊断日志。
 - iOS 原生作弊码弹窗及全开存档写入路径的构建检查；
 - 键盘 Esc 的 `SDL_QUIT` 防退出兼容路径；
+- 剧情期间暂停 Toggle Z / 拖拽自动射击，避免持续按键阻塞对白；
+- Boss 阶段切换后的血条状态恢复，以及激光显示长度与判定长度对齐；
+- 二面滚动背景 UV 回绕连续性修复；
+- 3D 背景保留齐次 W 到 GLES 光栅化阶段，恢复透视正确的纹理插值。
 
 ## 构建 IPA
 
@@ -98,8 +102,8 @@ cd th08-ios-port
 chmod +x ios/*.sh
 
 TH08_IOS_DATA_DIR="$HOME/TH08-data" \
-IOS_VERSION=0.3.9 \
-IOS_BUILD=94 \
+IOS_VERSION=0.4.0 \
+IOS_BUILD=105 \
 ./ios/build_ios.sh
 ```
 

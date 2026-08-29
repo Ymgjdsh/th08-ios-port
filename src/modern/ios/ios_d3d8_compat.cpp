@@ -1149,14 +1149,28 @@ class LinuxDevice : public IDirect3DDevice8
         glColor4ub(ColorByte(vertex.red), ColorByte(vertex.green),
                    ColorByte(vertex.blue), ColorByte(vertex.alpha));
         IosLegacySetFogCoordinate(vertex.fogCoordinate);
-        const float reciprocal = 1.0f / vertex.w;
-        const float x = viewport.X + (vertex.x * reciprocal + 1.0f) *
-                                      viewport.Width * 0.5f;
-        const float y = viewport.Y + (1.0f - vertex.y * reciprocal) *
-                                      viewport.Height * 0.5f;
-        const float z = viewport.MinZ + vertex.z * reciprocal *
-                                      (viewport.MaxZ - viewport.MinZ);
-        glVertex3f(x, y, 2.0f * z - 1.0f);
+        const float targetWidth = static_cast<float>(
+            backbuffer != NULL ? backbuffer->width : viewport.Width);
+        const float targetHeight = static_cast<float>(
+            backbuffer != NULL ? backbuffer->height : viewport.Height);
+
+        // Preserve homogeneous W through rasterization. The old path divided
+        // by W here and submitted a screen-space vertex, which forced GLES to
+        // interpolate UVs affinely. Long Stage 5/Final floors then warped as
+        // the camera advanced. Map the D3D viewport into the full render
+        // target in clip space, but leave the final divide to the GPU.
+        const float scaleX = viewport.Width / targetWidth;
+        const float scaleY = viewport.Height / targetHeight;
+        const float offsetX =
+            (2.0f * viewport.X + viewport.Width) / targetWidth - 1.0f;
+        const float offsetY =
+            1.0f - (2.0f * viewport.Y + viewport.Height) / targetHeight;
+        const float x = vertex.x * scaleX + vertex.w * offsetX;
+        const float y = vertex.y * scaleY + vertex.w * offsetY;
+        const float z =
+            2.0f * vertex.z * (viewport.MaxZ - viewport.MinZ) +
+            vertex.w * (2.0f * viewport.MinZ - 1.0f);
+        IosLegacyClipVertex4f(x, y, z, vertex.w);
     }
 
     HRESULT DrawClippedTriangles(D3DPRIMITIVETYPE type, UINT primitiveCount,

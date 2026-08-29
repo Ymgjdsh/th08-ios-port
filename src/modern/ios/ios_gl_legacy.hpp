@@ -158,6 +158,9 @@ void glColor4ub(GLubyte red, GLubyte green, GLubyte blue, GLubyte alpha);
 void glTexCoord2f(GLfloat u, GLfloat v);
 void glVertex2f(GLfloat x, GLfloat y);
 void glVertex3f(GLfloat x, GLfloat y, GLfloat z);
+// Submit an already transformed homogeneous clip-space position. Keeping W
+// lets GLES perform perspective-correct interpolation for stage 3D geometry.
+void IosLegacyClipVertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w);
 void IosLegacySetFog(GLboolean enabled, GLfloat red, GLfloat green, GLfloat blue,
                      GLfloat start, GLfloat end);
 void IosLegacySetFogCoordinate(GLfloat coordinate);

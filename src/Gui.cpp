@@ -1216,6 +1216,47 @@ void Gui::FUN_00435900()
     i32 score;
     i32 k;
 
+#ifdef TH08_IOS
+    // ECL phase callbacks can hide the gauge and make the next boss phase
+    // damageable in the same update. On the original 32-bit build the gauge
+    // animation state is reopened by the surrounding pointer-backed boss
+    // state. Recover that relationship explicitly on arm64 so later nonspells
+    // and spell cards cannot run with a permanently hidden life bar.
+    EclOperands::EnemyOverlay *boss = EclRunLowProposal::EclEnemySlot(0);
+    if (boss != NULL)
+    {
+        u8 *bossBytes = reinterpret_cast<u8 *>(boss);
+        const u32 bossFlags = *reinterpret_cast<u32 *>(bossBytes + 0x3324);
+        const i32 bossLife = *reinterpret_cast<i32 *>(bossBytes + 0x2DFC);
+        const i32 bossMaxLife = *reinterpret_cast<i32 *>(bossBytes + 0x2E00);
+        const bool activeDamageableBoss =
+            (bossFlags & 0x3U) == 0x3U &&
+            (bossFlags & (0x8U | 0x40U)) != 0 &&
+            bossLife > 0 && bossMaxLife > 0;
+        if (activeDamageableBoss && this->impl->msgVm.currentMsgIdx < 0)
+        {
+            f32 ratio = static_cast<f32>(bossLife) / static_cast<f32>(bossMaxLife);
+            if (ratio < 0.0f) ratio = 0.0f;
+            if (ratio > 1.0f) ratio = 1.0f;
+            this->bossLifeBarSize = ratio;
+
+            u8 &gaugeState = *reinterpret_cast<u8 *>(
+                reinterpret_cast<u8 *>(this->GetImpl()) + 0x2A40);
+            if (!this->bossPresent || gaugeState == 3)
+            {
+                this->bossPresent = true;
+                gaugeState = 0;
+                char message[176];
+                snprintf(message, sizeof(message),
+                         "boss-gauge/recover: stage=%d life=%d/%d flags=%08x",
+                         g_GameManager.currentStage, bossLife, bossMaxLife,
+                         static_cast<unsigned>(bossFlags));
+                modern::LogStartup(message);
+            }
+        }
+    }
+#endif
+
     if (reinterpret_cast<GuiMessageStateOverlay *>(&this->impl->msgVm)->currentMsgIdx < 0)
     {
         if (this->bossPresent)

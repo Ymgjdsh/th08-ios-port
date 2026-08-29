@@ -10,10 +10,11 @@ namespace
 {
 struct ImmediateVertex
 {
-    GLfloat position[3];
+    GLfloat position[4];
     GLfloat color[4];
     GLfloat texcoord[2];
     GLfloat fogFactor;
+    GLfloat clipSpace;
 };
 
 std::vector<ImmediateVertex> g_vertices;
@@ -28,6 +29,7 @@ GLint g_resolution;
 GLint g_texture;
 GLint g_useTextureRgb;
 GLint g_useTextureAlpha;
+GLint g_clipSpaceAttribute;
 GLint g_fogFactorAttribute;
 GLint g_fogColorUniform;
 GLint g_alphaThresholdUniform;
@@ -63,17 +65,19 @@ bool Initialize()
     if (g_initialized) return g_program != 0;
     g_initialized = true;
     static const char vertexSource[] =
-        "attribute vec3 aPosition;\n"
+        "attribute vec4 aPosition;\n"
         "attribute vec4 aColor;\n"
         "attribute vec2 aTexCoord;\n"
         "attribute float aFogFactor;\n"
+        "attribute float aClipSpace;\n"
         "uniform vec2 uResolution;\n"
         "varying vec4 vColor;\n"
         "varying vec2 vTexCoord;\n"
         "varying float vFogFactor;\n"
         "void main() {\n"
         "  vec2 p = aPosition.xy / uResolution * 2.0 - 1.0;\n"
-        "  gl_Position = vec4(p.x, -p.y, aPosition.z, 1.0);\n"
+        "  vec4 screenPosition = vec4(p.x, -p.y, aPosition.z, 1.0);\n"
+        "  gl_Position = mix(screenPosition, aPosition, aClipSpace);\n"
         "  vColor = aColor; vTexCoord = aTexCoord; vFogFactor = aFogFactor;\n"
         "}\n";
     static const char fragmentSource[] =
@@ -108,6 +112,7 @@ bool Initialize()
     glBindAttribLocation(g_program, 1, "aColor");
     glBindAttribLocation(g_program, 2, "aTexCoord");
     glBindAttribLocation(g_program, 3, "aFogFactor");
+    glBindAttribLocation(g_program, 4, "aClipSpace");
     glLinkProgram(g_program);
     glDeleteShader(vertex); glDeleteShader(fragment);
     GLint success = GL_FALSE;
@@ -127,6 +132,7 @@ bool Initialize()
     g_useTextureRgb = glGetUniformLocation(g_program, "uUseTextureRgb");
     g_useTextureAlpha = glGetUniformLocation(g_program, "uUseTextureAlpha");
     g_fogFactorAttribute = 3;
+    g_clipSpaceAttribute = 4;
     g_fogColorUniform = glGetUniformLocation(g_program, "uFogColor");
     g_alphaThresholdUniform = glGetUniformLocation(g_program, "uAlphaThreshold");
     th08::modern::LogStartup("gles2: immediate shader ready");
@@ -162,12 +168,15 @@ void glVertex2f(GLfloat x, GLfloat y)
     glVertex3f(x, y, 0.0f);
 }
 
-void glVertex3f(GLfloat x, GLfloat y, GLfloat z)
+static void AppendVertex(GLfloat x, GLfloat y, GLfloat z, GLfloat w,
+                         GLfloat clipSpace)
 {
     ImmediateVertex vertex;
-    vertex.position[0] = x; vertex.position[1] = y; vertex.position[2] = z;
+    vertex.position[0] = x; vertex.position[1] = y;
+    vertex.position[2] = z; vertex.position[3] = w;
     memcpy(vertex.color, g_color, sizeof(g_color));
     memcpy(vertex.texcoord, g_texcoord, sizeof(g_texcoord));
+    vertex.clipSpace = clipSpace;
     vertex.fogFactor = 1.0f;
     if (g_fogEnabled)
     {
@@ -180,6 +189,16 @@ void glVertex3f(GLfloat x, GLfloat y, GLfloat z)
         if (vertex.fogFactor > 1.0f) vertex.fogFactor = 1.0f;
     }
     g_vertices.push_back(vertex);
+}
+
+void glVertex3f(GLfloat x, GLfloat y, GLfloat z)
+{
+    AppendVertex(x, y, z, 1.0f, 0.0f);
+}
+
+void IosLegacyClipVertex4f(GLfloat x, GLfloat y, GLfloat z, GLfloat w)
+{
+    AppendVertex(x, y, z, w, 1.0f);
 }
 
 void IosLegacySetFog(GLboolean enabled, GLfloat red, GLfloat green, GLfloat blue,
@@ -240,17 +259,21 @@ void glEnd()
     glEnableVertexAttribArray(g_position); glEnableVertexAttribArray(g_colorAttribute);
     glEnableVertexAttribArray(g_texcoordAttribute);
     glEnableVertexAttribArray(g_fogFactorAttribute);
+    glEnableVertexAttribArray(g_clipSpaceAttribute);
     const GLsizei stride = sizeof(ImmediateVertex);
     const GLubyte *base = reinterpret_cast<const GLubyte *>(&g_vertices[0]);
-    glVertexAttribPointer(g_position, 3, GL_FLOAT, GL_FALSE, stride, base + 0);
+    glVertexAttribPointer(g_position, 4, GL_FLOAT, GL_FALSE, stride, base + 0);
     glVertexAttribPointer(g_colorAttribute, 4, GL_FLOAT, GL_FALSE, stride,
-                          base + sizeof(GLfloat) * 3);
+                          base + sizeof(GLfloat) * 4);
     glVertexAttribPointer(g_texcoordAttribute, 2, GL_FLOAT, GL_FALSE, stride,
-                          base + sizeof(GLfloat) * 7);
+                          base + sizeof(GLfloat) * 8);
     glVertexAttribPointer(g_fogFactorAttribute, 1, GL_FLOAT, GL_FALSE, stride,
-                          base + sizeof(GLfloat) * 9);
+                          base + sizeof(GLfloat) * 10);
+    glVertexAttribPointer(g_clipSpaceAttribute, 1, GL_FLOAT, GL_FALSE, stride,
+                          base + sizeof(GLfloat) * 11);
     glDrawArrays(g_primitiveMode, 0, (GLsizei)g_vertices.size());
     glDisableVertexAttribArray(g_position); glDisableVertexAttribArray(g_colorAttribute);
     glDisableVertexAttribArray(g_texcoordAttribute);
     glDisableVertexAttribArray(g_fogFactorAttribute);
+    glDisableVertexAttribArray(g_clipSpaceAttribute);
 }

@@ -1504,6 +1504,59 @@ void Bullet::FUN_00432aa0()
 
 // FUNCTION: th08 0x432b50
 #pragma var_order(i, sine, laser, halfLength, cosine, node, bulletManager)
+#ifdef TH08_IOS
+static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
+{
+    AnmVm *vm = &laser->vm0;
+    if (vm->loadedSprite == NULL)
+        return ZUN_ERROR;
+
+    // Build the beam from its logical endpoints instead of relying on a
+    // stretched sprite matrix. This keeps the visible body identical to the
+    // collision length even for laser sprites whose source dimensions differ.
+    const f32 startX = laser->position.x + cosine * laser->startOffset +
+                       g_GameManager.arcadeRegionTopLeftPos.x;
+    const f32 startY = laser->position.y + sine * laser->startOffset +
+                       g_GameManager.arcadeRegionTopLeftPos.y;
+    const f32 endX = laser->position.x + cosine * laser->endOffset +
+                     g_GameManager.arcadeRegionTopLeftPos.x;
+    const f32 endY = laser->position.y + sine * laser->endOffset +
+                     g_GameManager.arcadeRegionTopLeftPos.y;
+    f32 visibleWidth = fabsf(vm->spriteSize.x * vm->scale.x);
+    if (!isfinite(visibleWidth) || visibleWidth <= 0.0f)
+        visibleWidth = fabsf(laser->currentWidth);
+    if (!isfinite(visibleWidth) || visibleWidth <= 0.0f)
+        visibleWidth = fabsf(laser->width);
+    const f32 halfWidth = visibleWidth * 0.5f;
+    const f32 perpendicularX = -sine * halfWidth;
+    const f32 perpendicularY = cosine * halfWidth;
+    const f32 shakeX = g_AnmManager->screenShakeOffset.x;
+    const f32 shakeY = g_AnmManager->screenShakeOffset.y;
+
+    VertexTex1DiffuseXyzrhw vertices[4];
+    vertices[0].pos = Float3(endX - perpendicularX + shakeX,
+                             endY - perpendicularY + shakeY, 0.06f);
+    vertices[1].pos = Float3(endX + perpendicularX + shakeX,
+                             endY + perpendicularY + shakeY, 0.06f);
+    vertices[2].pos = Float3(startX - perpendicularX + shakeX,
+                             startY - perpendicularY + shakeY, 0.06f);
+    vertices[3].pos = Float3(startX + perpendicularX + shakeX,
+                             startY + perpendicularY + shakeY, 0.06f);
+    for (i32 vertex = 0; vertex < 4; ++vertex)
+    {
+        vertices[vertex].w = 1.0f;
+        vertices[vertex].diffuse = vm->color1.d3dColor;
+    }
+    vertices[0].textureUV = vm->loadedSprite->uvStart;
+    vertices[1].textureUV.x = vm->loadedSprite->uvEnd.x;
+    vertices[1].textureUV.y = vm->loadedSprite->uvStart.y;
+    vertices[2].textureUV.x = vm->loadedSprite->uvStart.x;
+    vertices[2].textureUV.y = vm->loadedSprite->uvEnd.y;
+    vertices[3].textureUV = vm->loadedSprite->uvEnd;
+    return g_AnmManager->FUN_00464dd0(vm, vertices);
+}
+#endif
+
 ChainCallbackResult BulletManager::OnDraw(BulletManager *bulletManager)
 {
     i32 i;
@@ -1589,7 +1642,11 @@ ChainCallbackResult BulletManager::OnDraw(BulletManager *bulletManager)
 #endif
         laser->vm0.pos.x += g_GameManager.arcadeRegionTopLeftPos.x;
         laser->vm0.pos.y += g_GameManager.arcadeRegionTopLeftPos.y;
+#ifdef TH08_IOS
+        DrawIosLaserBody(laser, sine, cosine);
+#else
         g_AnmManager->Draw2D(&laser->vm0);
+#endif
 
         if (*reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(laser) + 0x558) < 16.0f ||
             *reinterpret_cast<f32 *>(reinterpret_cast<u8 *>(laser) + 0x56c) == 0.0f)

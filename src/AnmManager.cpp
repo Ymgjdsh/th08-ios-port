@@ -1866,7 +1866,12 @@ ZunResult AnmManager::Draw3D(AnmVm *vm)
     worldTransformMatrix._43 = vm->pos.z;
     g_Supervisor.d3dDevice->SetTransform(D3DTS_WORLD, &worldTransformMatrix);
 
-    if (this->currentSprite != vm->loadedSprite || vm->uvScrollPos.x != 0.0f || vm->uvScrollPos.x != 0.0f)
+    // V scrolling used to be checked as X a second time. Also keep updating
+    // while velocity is non-zero so the exact 1 -> 0 wrap frame does not reuse
+    // the previous texture matrix and visibly jerk animated stage scenery.
+    if (this->currentSprite != vm->loadedSprite ||
+        vm->uvScrollPos.x != 0.0f || vm->uvScrollPos.y != 0.0f ||
+        vm->uvScrollVel.x != 0.0f || vm->uvScrollVel.y != 0.0f)
     {
         this->currentSprite = vm->loadedSprite;
         textureMatrix = vm->matrix3;

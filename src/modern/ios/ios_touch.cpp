@@ -2261,6 +2261,25 @@ u16 PollButtons()
 
     UpdateSecondaryGesture();
 
+    const bool dialogueActive = IsDialogueActive();
+    static bool dialogueWasActive;
+    if (dialogueActive && !dialogueWasActive)
+    {
+        // A latched/drag-generated Z is a level input. Dialogue waits require
+        // a fresh rising edge, so carrying the level into the first line makes
+        // every later tap look as if Z never got released. Drop active touch
+        // holds on entry and suspend automatic fire until the dialogue ends.
+        ClearGameplayTouches();
+        modern::LogStartup(g_shootLatched
+                               ? "dialogue/input: automatic Z suspended; toggle remains armed"
+                               : "dialogue/input: gameplay touches released");
+    }
+    else if (!dialogueActive && dialogueWasActive)
+    {
+        modern::LogStartup("dialogue/input: automatic controls restored");
+    }
+    dialogueWasActive = dialogueActive;
+
     if (g_backgroundPausePending && IsGameplayReady())
     {
         QueuePulse(TH_BUTTON_MENU);
@@ -2303,9 +2322,11 @@ u16 PollButtons()
     {
         result |= smokeButtons;
         result |= g_pulseButtons;
-        if (g_shootLatched && !stageClearActive) result |= TH_BUTTON_SHOOT;
+        if (g_shootLatched && !stageClearActive && !dialogueActive)
+            result |= TH_BUTTON_SHOOT;
         if (g_focusLatched) result |= TH_BUTTON_FOCUS;
-        if (g_config.dragAutoShoot && !stageClearActive && IsGameplayReady() && !IsGameplayMenuOpen() &&
+        if (g_config.dragAutoShoot && !stageClearActive && !dialogueActive &&
+            IsGameplayReady() && !IsGameplayMenuOpen() &&
             g_state.moveFinger >= 0 && g_state.moveIsDrag &&
             (g_config.controlMode == CONTROL_DRAG || !g_config.showButtons))
             result |= TH_BUTTON_SHOOT;
