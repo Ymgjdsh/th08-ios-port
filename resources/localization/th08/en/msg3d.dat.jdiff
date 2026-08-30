@@ -1,0 +1,240 @@
+{
+    "2": {
+        "61_0": {
+            "lines": [
+                "Is it you? Are you the ones trying to attack",
+                "the village in the middle of this night?"
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Oh?",
+                "It seems we've gotten lost in some strange place."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Yeah, where are we...?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "There's no point in playing innocent.",
+                "I can tell you're ominous ghosts."
+            ]
+        }
+    },
+    "3": {
+        "61_0": {
+            "lines": [
+                "Crap!",
+                "These ghosts are really something."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Oh, how cruel.",
+                "Treating ghosts like outcasts, really."
+            ]
+        }
+    },
+    "0": {
+        "60_0": {
+            "lines": [
+                "What business do you have in some place like this?"
+            ]
+        },
+        "60_1": {
+            "lines": [
+                "You attacked us before, right?",
+                "We're just going to respond to that."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "There's nothing here.",
+                "Just move along already."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "It's easy to say that, but we really",
+                "don't know where we're moving to..."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Are you just wandering around with no goal?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "No, no, Youmu."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "We're certainly heading in the right direction.",
+                "All you need to do is go where I tell you to."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "What is your purpose?"
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "To restore this abnormal Moon to normal."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "No, no, Youmu."
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "!?"
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "We're having our fill of a wonderful",
+                "nighttime sightseeing tour."
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "You two are really way too suspicious."
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "Although phantoms are suspicious at the best of times."
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "Wait, I can't just let you say that.",
+                "Phantoms aren't suspicious."
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "No, no—"
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "Shut up."
+            ]
+        },
+        "76_0": {
+            "lines": [
+                "...You two really do seem dangerous.",
+                "Looks like I'll have to drive you away from here."
+            ]
+        },
+        "77_0": {
+            "lines": [
+                "Although I don't quite get what you're doing."
+            ]
+        },
+        "78_0": {
+            "lines": [
+                "Hey, hey, Youmu."
+            ]
+        },
+        "79_0": {
+            "lines": [
+                "So far, we've had a bug, a bird, and now a beast."
+            ]
+        },
+        "80_0": {
+            "lines": [
+                "What are you trying to say?"
+            ]
+        },
+        "81_0": {
+            "lines": [
+                "Hmph. I'll help myself to all of your history!"
+            ]
+        },
+        "82_0": {
+            "lines": [
+                "Every last bit. Even from before you became phantoms."
+            ]
+        },
+        "83_0": {
+            "lines": [
+                "I wonder if a dragon's up next."
+            ]
+        },
+        "84_0": {
+            "lines": [
+                "Lady Yuyuko. Please concentrate on what's happening",
+                "now, and not what's going to happen next."
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "\"Beast\"? Please, milady,",
+                "you shouldn't treat humans like beasts."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "No, no, Youmu."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "This girl appears human right now,",
+                "but she's a half-beast. Kind of like you."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Although, I think humans are beasts too,",
+                "so I guess she's a full beast?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Dammit. If the Moon hadn't been incomplete,",
+                "I'd never have lost to such phantoms..."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Oh, yes, yes.",
+                "We got to take back the full moon."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Now, next up is a dragon dish.",
+                "I can't wait, Youmu."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "Lady Yuyuko, you said you knew where our",
+                "destination was, right?"
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "Somehow, I feel kind of concerned."
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "A dragon would have lots of scales, though."
+            ]
+        }
+    }
+}

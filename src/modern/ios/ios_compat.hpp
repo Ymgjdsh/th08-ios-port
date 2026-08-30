@@ -63,6 +63,24 @@ DWORD TH08IosStorePointer(uintptr_t pointerValue);
 uintptr_t TH08IosLoadPointer(DWORD handle);
 void TH08IosForgetPointer(uintptr_t pointerValue);
 
+// Retail text is CP932. Localized dialogue and replacement menu labels opt in
+// to UTF-8 only while their text texture is being generated.
+BOOL TH08IosSetGdiTextUtf8(BOOL enabled);
+BOOL TH08IosGetGdiTextUtf8();
+
+// Rasterize a localized UTF-8 label directly into an RGBA8 destination.
+// This bypasses the retail A1R5G5B5 GDI path, whose alpha convention is not
+// representable reliably by the GLES2 compatibility layer.
+BOOL TH08IosRasterizeTextUtf8(const char *text, int pixelSize, int width, int height,
+                              COLORREF textColor, COLORREF shadowColor,
+                              BYTE *destination, int destinationPitch);
+
+// Mark a texture whose locked surface was filled by the iOS UTF-8 rasterizer.
+// D3DFMT_A8R8G8B8 normally stores legacy BGRA bytes, while the rasterizer
+// writes canonical RGBA bytes. The GLES upload path uses this marker to avoid
+// decoding the text surface a second time.
+void TH08IosMarkTextureRgba(IDirect3DTexture8 *texture);
+
 template <typename T> struct IosPtr32
 {
     DWORD handle;

@@ -9,6 +9,7 @@
 #include "i18n.hpp"
 #ifdef TH08_IOS
 #include "modern/ios/ios_touch.hpp"
+#include "modern/ios/ios_localization.hpp"
 #endif
 
 namespace th08
@@ -250,7 +251,12 @@ i32 MusicRoom::ProcessInput()
             if (buf1[0] != '\0')
             {
                 this->descriptionVms[i].flag1 = true;
-                g_AnmManager->DrawTextLeft(&this->descriptionVms[i], 0xffe0c0, 0x300000, buf1);
+#ifdef TH08_IOS
+                if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                    this->descriptionVms[i].visible = true;
+                else
+#endif
+                    g_AnmManager->DrawTextLeft(&this->descriptionVms[i], 0xffe0c0, 0x300000, buf1);
             }
             else
             {
@@ -280,7 +286,12 @@ i32 MusicRoom::ProcessInput()
         CopyCp932Text(buf2, sizeof(buf2),
                       this->trackDescriptors[this->cursor].descriptors[0]);
 
-        g_AnmManager->DrawTextLeft(&this->descriptionVms[7], 0xffe0c0, 0x300000, buf2);
+#ifdef TH08_IOS
+        if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+            this->descriptionVms[7].visible = true;
+        else
+#endif
+            g_AnmManager->DrawTextLeft(&this->descriptionVms[7], 0xffe0c0, 0x300000, buf2);
     }
 
     if (WAS_PRESSED(TH_BUTTON_BOMB | TH_BUTTON_MENU))
@@ -412,7 +423,16 @@ ChainCallbackResult MusicRoom::OnDraw(MusicRoom *musicRoom)
         musicRoom->songNameVms[i].pos.y = (((i + 1 - musicRoom->listingOffset) * 18) + 104.0f) - 20.0f;
         musicRoom->songNameVms[i].pos.z = 0.0f;
 
-        g_AnmManager->DrawNoRotation(&musicRoom->songNameVms[i]);
+#ifdef TH08_IOS
+        if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+        {
+            g_AnmManager->DrawUtf8TextAt(&musicRoom->songNameVms[i].pos, 270, 22, 13,
+                                         musicRoom->songNameVms[i].color1.d3dColor, 0x302080,
+                                         modern::ios::MusicRoomTitle(i, musicRoom->trackDescriptors[i].title));
+        }
+        else
+#endif
+            g_AnmManager->DrawNoRotation(&musicRoom->songNameVms[i]);
 
         position = musicRoom->songNameVms[i].pos;
         position.x -= 60.0f;
@@ -431,7 +451,25 @@ ChainCallbackResult MusicRoom::OnDraw(MusicRoom *musicRoom)
 
     for (i = 0; i < ARRAY_SIZE_SIGNED(musicRoom->descriptionVms) - 1; i++)
     {
-        g_AnmManager->DrawNoRotation(&musicRoom->descriptionVms[i]);
+#ifdef TH08_IOS
+        if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+        {
+            const bool unlocked = musicRoom->selectedSongIndex == musicRoom->cursor ||
+                                  musicRoom->bgmUnlocked[musicRoom->cursor] != 0;
+            const char *comment = modern::ios::MusicRoomComment(
+                musicRoom->cursor, i, unlocked, musicRoom->trackDescriptors[musicRoom->cursor].descriptors[i]);
+            musicRoom->descriptionVms[i].visible = false;
+            // Description VMs are animated by the retail script and are not
+            // guaranteed to be visible on the first frame after a selection.
+            // The localized replacement is owned by this draw pass, so do
+            // not gate it on the stale atlas VM visibility bit.
+            if (comment != NULL && comment[0] != '\0')
+                g_AnmManager->DrawUtf8TextAt(&musicRoom->descriptionVms[i].pos, 370, 22, 13,
+                                             0xffe0c0, 0x300000, comment);
+        }
+        else
+#endif
+            g_AnmManager->DrawNoRotation(&musicRoom->descriptionVms[i]);
     }
 
     g_AsciiManager.SetColor(0xffffffff);
@@ -440,7 +478,13 @@ ChainCallbackResult MusicRoom::OnDraw(MusicRoom *musicRoom)
     position.y = 32.0f;
     position.z = 0.0f;
 
-    g_AsciiManager.AddFormatText(&position, "Now Playing");
+#ifdef TH08_IOS
+    if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+        g_AnmManager->DrawUtf8TextAt(&position, 180, 28, 18, COLOR_WHITE, 0x300000,
+                                     modern::ios::MusicRoomLabel("now-playing"));
+    else
+#endif
+        g_AsciiManager.AddFormatText(&position, "Now Playing");
 
     position = musicRoom->descriptionVms[7].pos;
     color = musicRoom->descriptionVms[7].color1.d3dColor;
@@ -450,7 +494,18 @@ ChainCallbackResult MusicRoom::OnDraw(MusicRoom *musicRoom)
     musicRoom->descriptionVms[7].pos.z = 0.0f;
     musicRoom->descriptionVms[7].color1.d3dColor = 0xffffffff;
 
-    g_AnmManager->DrawNoRotation(&musicRoom->descriptionVms[7]);
+#ifdef TH08_IOS
+    if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+    {
+        musicRoom->descriptionVms[7].visible = false;
+        g_AnmManager->DrawUtf8TextAt(&musicRoom->descriptionVms[7].pos, 300, 24, 14,
+                                     COLOR_WHITE, 0x300000,
+                                     modern::ios::MusicRoomTitle(musicRoom->selectedSongIndex,
+                                                                 musicRoom->trackDescriptors[musicRoom->selectedSongIndex].title));
+    }
+    else
+#endif
+        g_AnmManager->DrawNoRotation(&musicRoom->descriptionVms[7]);
 
     musicRoom->descriptionVms[7].pos = position;
     musicRoom->descriptionVms[7].color1.d3dColor = color;
@@ -649,8 +704,16 @@ out:
         // The mobile port allows every Music Room entry to be selected and
         // played even on a fresh save. Hiding the corresponding title behind
         // question marks makes the touch list impossible to identify.
-        g_AnmManager->DrawTextLeft(&musicRoom->songNameVms[i], 0xc0e0ff, 0x302080,
-                                   musicRoom->trackDescriptors[i].title);
+        const char *title = modern::ios::MusicRoomTitle(i, musicRoom->trackDescriptors[i].title);
+        if (modern::ios::GetLanguage() == modern::ios::IOS_LANGUAGE_JP)
+            g_AnmManager->DrawTextLeft(&musicRoom->songNameVms[i], 0xc0e0ff, 0x302080, "%s", title);
+        else
+        {
+            // Keep the VM alive for the draw chain.  On the next frame
+            // OnDraw replaces its pixels through DrawUtf8TextAt; hiding it
+            // here caused a one-frame blank/old-title flash after scrolling.
+            musicRoom->songNameVms[i].visible = true;
+        }
 #else
         if (musicRoom->bgmUnlocked[i])
         {

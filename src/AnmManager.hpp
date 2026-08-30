@@ -537,6 +537,9 @@ struct AnmManager
     // FUNCTION: th08 0x43ef40 FOLDED
     ~AnmManager()
     {
+#ifdef TH08_IOS
+        this->ResetLocalizedSpritePatches();
+#endif
     }
     ZunBool ExecuteScript(AnmVm *vm);
     void ExecuteScriptArray(AnmVm *sprites, int count);
@@ -597,6 +600,20 @@ struct AnmManager
     void DrawTextLeft(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...);
     void DrawTextRight(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...);
     void DrawTextCentered(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...);
+#ifdef TH08_IOS
+    void DrawTextLeftUtf8(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...);
+    // Draw a standalone UTF-8 label without modifying the retail ASCII/ANM
+    // atlas. Used by localized Replay/Result/Music Room headers.
+    void DrawUtf8TextAt(const Float3 *position, i32 width, i32 height, i32 fontSize,
+                        COLORREF textColor, COLORREF shadowColor, const char *text);
+    // Register text for the current frame without changing the retail ANM
+    // atlas. DrawNoRotation/Draw2D consume this overlay during the draw pass.
+    void ReplaceSpriteText(AnmVm *vm, const char *text, COLORREF textColor, COLORREF shadowColor);
+    void BeginLocalizedTextFrame();
+    ZunResult DrawLocalizedTextOverlay(AnmVm *vm, i32 flags);
+    void ForgetLocalizedTexture(IDirect3DTexture8 *texture);
+    void ResetLocalizedSpritePatches();
+#endif
     ZunResult LoadSurface(i32 surfaceIdx, const char *path);
     ZunResult PreloadSurface(i32 surfaceIdx, const char *path);
     void ReleaseSurface(i32 surfaceIdx);

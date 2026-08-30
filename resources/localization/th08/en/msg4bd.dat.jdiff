@@ -1,0 +1,202 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "Move and I'll shoot!"
+            ]
+        },
+        "121_0": {
+            "lines": [
+                "I messed up.",
+                "I mean, shoot and I'll move. Right away."
+            ]
+        },
+        "121_1": {
+            "lines": [
+                "What?",
+                "That's strange, running into you in a place like this."
+            ]
+        },
+        "122_0": {
+            "lines": [
+                "Well, uh, I'm just hunting some troublesome youkai,",
+                "like usual."
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "Troublesome? Do you know who's doing all this, then?"
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "I'm telling you, even ordinary people",
+                "could understand that."
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Well, then, I understand. How couldn't I, when the",
+                "ones gathering up this strange air are flying right at me?"
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "Tomorrow's the moon-viewing festival that we've been",
+                "waiting for. I already got bored of staring at tonight's moon."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "Oh, you don't seem to understand."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "We're the ones who are stopping the night."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "Yeah, and?"
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "That's why I came here to kick your butts, ain't it?"
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "Hey, you. The black-clothed one. Don't you feel anything",
+                "when you look at that warped Moon behind you?"
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "Didn't I just say I got bored of lookin' at it?"
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "You can't look away from reality."
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "While we're arguing like this, that Moon is sinking lower."
+            ]
+        },
+        "135_0": {
+            "lines": [
+                "Don't you understand that things will get really bad",
+                "if we just leave it be?"
+            ]
+        },
+        "136_0": {
+            "lines": [
+                "Aah? An endless night will cause far more trouble for sure."
+            ]
+        },
+        "137_0": {
+            "lines": [
+                "For instance, the bamboo here will grow",
+                "eternally if the night lasts too long."
+            ]
+        },
+        "138_0": {
+            "lines": [
+                "Might even reach the Moon, perhaps."
+            ]
+        },
+        "139_0": {
+            "lines": [
+                "The nail that sticks out gets struck down.",
+                "Oh? How would you move if you get struck down?"
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "Yeah, I'll move, alright.",
+                "I'll keep on moving until dawn breaks!"
+            ]
+        }
+    },
+    "2": {
+        "60_0": {
+            "lines": [
+                "Lady Yuyuko, she's fled.",
+                "Should we pursue?"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "What a bother.",
+                "I mean, we're headed that way too, but..."
+            ]
+        }
+    },
+    "3": {
+        "60_0": {
+            "lines": [
+                "Okay. You shot, I moved.",
+                "Now, the real battle starts here."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "You're still up for this?",
+                "The game's already decided, isn't it?"
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Hmph.",
+                "There's two of you, so I get two tries!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "That was such an awful waste of time."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "For phantoms, there's no such thing as wasted time.",
+                "Everything is going as planned."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Dammit.",
+                "What the heck are you two saying?"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "An instant is everything. Everything is but an instant.",
+                "The time we spent playing with you was inevitable, too."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Huh?",
+                "I see a huge mansion in the middle of the bamboo forest."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Youmu. Didn't I say it'd be strange",
+                "to not understand what's happening?"
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Inside there...",
+                "is the dragon dish I've been searching for."
+            ]
+        }
+    }
+}

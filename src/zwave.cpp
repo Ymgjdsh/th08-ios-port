@@ -421,6 +421,17 @@ HRESULT CSound::FillBufferWithSound(LPDIRECTSOUNDBUFFER pDSB, BOOL bRepeatWavIfB
                 if (FAILED(hr))
                     return DXTRACE_ERR(TEXT("Read"), hr);
 
+                // Never spin while holding the audio-device lock when an
+                // archive reports EOF without returning bytes.
+                if (dwWavDataRead == 0)
+                {
+                    FillMemory((BYTE *)pDSLockedBuffer + dwReadSoFar,
+                               dwDSLockedBufferSize - dwReadSoFar,
+                               (BYTE)(m_pWaveFile->m_pzwf->format.wBitsPerSample == 8 ? 128 : 0));
+                    dwReadSoFar = dwDSLockedBufferSize;
+                    break;
+                }
+
                 dwReadSoFar += dwWavDataRead;
             }
         }
@@ -894,6 +905,22 @@ HRESULT CStreamingSound::HandleWaveStreamNotification(BOOL bLoopedPlay)
                 {
                     utils::DebugPrint("error : m_pWaveFile->Read(+) in HandleWaveStreamNotification\r\n");
                     return DXTRACE_ERR(TEXT("Read"), hr);
+                }
+
+                // A truncated or malformed mobile BGM archive can report a
+                // successful zero-byte read at EOF. The original Windows
+                // loop assumes every read makes progress; on iOS that would
+                // retain the audio-device lock forever and deadlock language
+                // restart / app teardown in StopBGM(). Treat it as silence
+                // and finish the current notification instead.
+                if (dwBytesWrittenToBuffer == 0)
+                {
+                    FillMemory((BYTE *)pDSLockedBuffer + dwReadSoFar,
+                               dwDSLockedBufferSize - dwReadSoFar,
+                               (BYTE)(m_pWaveFile->m_pzwf->format.wBitsPerSample == 8 ? 128 : 0));
+                    dwReadSoFar = dwDSLockedBufferSize;
+                    m_bFillNextNotificationWithSilence = TRUE;
+                    break;
                 }
 
                 dwReadSoFar += dwBytesWrittenToBuffer;

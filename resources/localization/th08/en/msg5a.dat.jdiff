@@ -1,0 +1,286 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "You're too late."
+            ]
+        },
+        "121_0": {
+            "lines": [
+                "I've sealed all the doors.",
+                "You can't take the princess away now, can you?"
+            ]
+        },
+        "121_1": {
+            "lines": [
+                "Is she the culprit?"
+            ]
+        },
+        "122_0": {
+            "lines": [
+                "Who knows. Should we take her down, first of all?",
+                "The culprit should be here somewhere."
+            ]
+        },
+        "123_h1_0": {
+            "lines": [
+                "Reisen"
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "What, are you youkai?"
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "You shouldn't have been able to find your",
+                "way here, though. Nothing to worry about."
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Hey, I'm still human."
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "Humans are even less worrisome."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "Why would you be worried, I wonder?",
+                "All this is your mischief."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "Mischief?",
+                "Nnn, you mean sealing up the Earth?"
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "Maybe?",
+                "I don't quite get it, though."
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "We mean the full moon.",
+                "I don't quite get it either, though."
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "Ah, you're talking about the Moon?",
+                "That's my master Eirin's most powerful spell."
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "It makes this Earth into a giant, sealed chamber.",
+                "Do you get it now?"
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "There's no way we get it."
+            ]
+        },
+        "193_0": {
+            "lines": [
+                "Mm-mm.",
+                "Humans can't understand with an explanation like that."
+            ]
+        },
+        "194_0": {
+            "lines": [
+                "Also, about that full moon-erasing spell.",
+                "It's hardly my most powerful one."
+            ]
+        },
+        "195_0": {
+            "lines": [
+                "Reimu.",
+                "She's the culprit. I can smell it."
+            ]
+        },
+        "196_0": {
+            "lines": [
+                "Is she?",
+                "My intuition is, sort of..."
+            ]
+        },
+        "197_0": {
+            "lines": [
+                "Now, return this distorted Moon",
+                "to normal!"
+            ]
+        },
+        "198_0": {
+            "lines": [
+                "...It's still too early for that.",
+                "There's no way I can undo this spell yet."
+            ]
+        },
+        "199_0": {
+            "lines": [
+                "Udonge.",
+                "Conflict and insanity are all your job, correct?"
+            ]
+        },
+        "200_0": {
+            "lines": [
+                "I'll leave this to you."
+            ]
+        },
+        "261_0": {
+            "lines": [
+                "Leave it to me.",
+                "I won't let a single one of those closed doors be opened."
+            ]
+        },
+        "262_0": {
+            "lines": [
+                "Running won't stop us. We'll get her anyway",
+                "after taking you down."
+            ]
+        },
+        "263_0": {
+            "lines": [
+                "Looks like it. It also looks like taking you down",
+                "won't bring back the full moon, either."
+            ]
+        },
+        "264_0": {
+            "lines": [
+                "Hmph. I haven't had anyone to fight with lately,",
+                "so this is just about perfect."
+            ]
+        },
+        "265_0": {
+            "lines": [
+                "I'll show you two everything",
+                "of the Moon's insanity!"
+            ]
+        },
+        "266_0": {
+            "lines": [
+                "The Moon's insanity?"
+            ]
+        },
+        "267_0": {
+            "lines": [
+                "It's my hypnosis, that drove the humans who came",
+                "to the Moon insane. Those humans were weak."
+            ]
+        },
+        "268_0": {
+            "lines": [
+                "This person. She seems dangerous."
+            ]
+        },
+        "269_0": {
+            "lines": [
+                "The Moon drives people insane."
+            ]
+        },
+        "270_0": {
+            "lines": [
+                "So, I wonder if you can remain in your right mind",
+                "while gazing into the eyes of this lunar rabbit?"
+            ]
+        }
+    },
+    "3": {
+        "180_0": {
+            "lines": [
+                "Follow your eyes (Final A)",
+                "Trust your intuition (Final B)"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Okay, now let's go chase that other one down."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "But which door did that other one enter?",
+                "There are so many, I can't tell."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "\"That other one\"... Hey, don't just call my",
+                "master something like that."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "The culprit is down this way!"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "We have got to capture her before she commits suicide."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "She wouldn't commit suicide, and don't call her a..."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Shush, you rabbit.",
+                "Keep it up and we'll tear off your fur."
+            ]
+        }
+    },
+    "2": {
+        "60_0": {
+            "lines": [
+                "Okay, now let's go chase that other one down."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "But which door did that other one enter?",
+                "There are so many, I can't tell."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Yukari.",
+                "Look, that door over there..."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Oh no!",
+                "I didn't finish sealing them in time."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Is the culprit in there?"
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "My intuition says so.",
+                "Let's go."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Aww, my master will be mad at me..."
+            ]
+        }
+    }
+}

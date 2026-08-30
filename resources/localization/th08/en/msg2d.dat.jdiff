@@ -1,0 +1,130 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "Wait, waaaait!"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "You're in the way."
+            ]
+        },
+        "61_1": {
+            "lines": [
+                "The two of you aren't hearing my song, are you?"
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Perhaps you're not human?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "It's nighttime, but I hear a sparrow calling. Youmu?"
+            ]
+        },
+        "64_1": {
+            "lines": [
+                "Lady Yuyuko,",
+                "please don't get distracted by this song."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "That's the cry of a night sparrow.",
+                "It's one of the most accursed sounds in the world."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Accursed? How rude of you."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "At the very least, my singing is better than the sound of",
+                "approaching phantoms, isn't it?"
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "Yes, indeed. It's no contest at all."
+            ]
+        },
+        "69_1": {
+            "lines": [
+                "Please don't agree with her..."
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "Youmu, listen! The cries got louder again.",
+                "I wonder where they're coming from."
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "Geeze. Whether you are human or",
+                "you were human, it doesn't matter to me."
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "Now, the fun youkai festival begins!"
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "Okay, Youmu. Shall we hurry along?"
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "Eh? Uh, yes. I suppose we should, yes. But we've got to",
+                "shoot down this bird in front of us, first off."
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "I don't like sparrows.",
+                "They're too bony."
+            ]
+        },
+        "76_0": {
+            "lines": [
+                "You shall not pass!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "That night sparrow's appearance is going to attract",
+                "lots of youkai and other things, before long."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Let's move on before that happens.",
+                "We have to hurry."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Hang on. Got a bone in my throat..."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Didn't you just say you didn't like sparrows?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "It's not good to be a picky eater, Youmu."
+            ]
+        }
+    }
+}

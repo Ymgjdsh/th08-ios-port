@@ -195,10 +195,11 @@ struct GdiBitmap : GdiObject
 
 struct GdiFont : GdiObject
 {
-    GdiFont() : font(NULL) { kind = FONT; }
-    explicit GdiFont(TTF_Font *font_) : font(font_) { kind = FONT; }
+    GdiFont() : font(NULL), utf8(false) { kind = FONT; }
+    GdiFont(TTF_Font *font_, bool utf8_) : font(font_), utf8(utf8_) { kind = FONT; }
     ~GdiFont() { if (font != NULL) TTF_CloseFont(font); }
     TTF_Font *font;
+    bool utf8;
 };
 
 struct GdiDc
@@ -215,6 +216,7 @@ WNDPROC g_windowProcedure;
 SDL_Window *g_window;
 std::map<DWORD, std::vector<MSG> > g_threadMessages;
 pthread_mutex_t g_messageMutex = PTHREAD_MUTEX_INITIALIZER;
+bool g_gdiTextUtf8 = false;
 
 std::string ExecutableSiblingPath(const char *filename)
 {
@@ -294,14 +296,21 @@ std::string ConvertCp932ToUtf8(const char *text, size_t length)
     return std::string(&output[0], destination - &output[0]);
 }
 
-const char *ResolveJapaneseFont()
+const char *ResolveJapaneseFont(bool localizedUtf8)
 {
-    static std::string path;
-    static bool resolved;
-    if (resolved) return path.empty() ? NULL : path.c_str();
-    resolved = true;
+    static std::string paths[2];
+    static bool resolved[2] = {false, false};
+#ifdef TH08_IOS
+    const int fontIndex = localizedUtf8 ? 1 : 0;
+#else
+    const int fontIndex = 0;
+#endif
+    std::string &path = paths[fontIndex];
+    if (resolved[fontIndex]) return path.empty() ? NULL : path.c_str();
+    resolved[fontIndex] = true;
+    path.clear();
 
-    const char *overridePath = getenv("TH08_FONT");
+    const char *overridePath = getenv(fontIndex == 0 ? "TH08_FONT" : "TH08_FONT_CJK");
     if (overridePath != NULL && access(overridePath, R_OK) == 0)
     {
         path = overridePath;
@@ -312,14 +321,41 @@ const char *ResolveJapaneseFont()
     const char *basePath = SDL_GetBasePath();
     if (basePath != NULL)
     {
-        path = std::string(basePath) + "msgothic.ttc";
-        if (access(path.c_str(), R_OK) == 0)
+        const char *localizedNames[] = {"NotoSansSC-VF.ttf", "NotoSansSC-Regular.ttf", "PingFang.ttc"};
+        const char *japaneseNames[] = {"msgothic.ttc"};
+        const char *const *names = fontIndex == 0 ? japaneseNames : localizedNames;
+        const size_t nameCount = fontIndex == 0 ? 1 : 3;
+        for (size_t index = 0; index < nameCount; ++index)
         {
-            th08::modern::LogStartup("font: bundled Japanese font ready");
-            return path.c_str();
+            path = std::string(basePath) + names[index];
+            if (access(path.c_str(), R_OK) == 0)
+            {
+                th08::modern::LogStartup(fontIndex == 0
+                                             ? "font: bundled Japanese font ready"
+                                             : "font: bundled CJK font ready");
+                return path.c_str();
+            }
         }
     }
-    th08::modern::LogStartup("font: ERROR bundled msgothic.ttc is missing");
+    // A stock iOS installation exposes PingFang as a readable system font;
+    // use it when a private CJK asset was not bundled with the build.
+    if (fontIndex != 0)
+    {
+        const char *systemNames[] = {"/System/Library/Fonts/PingFang.ttc",
+                                     "/System/Library/Fonts/CoreUI/SFUI.ttf"};
+        for (size_t index = 0; index < sizeof(systemNames) / sizeof(systemNames[0]); ++index)
+        {
+            if (access(systemNames[index], R_OK) == 0)
+            {
+                path = systemNames[index];
+                th08::modern::LogStartup("font: system CJK fallback ready");
+                return path.c_str();
+            }
+        }
+    }
+    th08::modern::LogStartup(fontIndex == 0
+                                 ? "font: ERROR bundled msgothic.ttc is missing"
+                                 : "font: ERROR no CJK font available; localized glyphs may be missing");
     return NULL;
 #else
     if (!FcInit()) return NULL;
@@ -367,7 +403,10 @@ void PutGdiTextPixel(GdiBitmap *bitmap, int x, int y, COLORREF color, BYTE cover
         pixel[0] = static_cast<BYTE>((pixel[0] * (255 - coverage) + blue * coverage) / 255);
         pixel[1] = static_cast<BYTE>((pixel[1] * (255 - coverage) + green * coverage) / 255);
         pixel[2] = static_cast<BYTE>((pixel[2] * (255 - coverage) + red * coverage) / 255);
-        pixel[3] = 0;
+        // Keep coverage in the destination alpha. The previous assignment
+        // cleared alpha for every glyph pixel, producing invisible text (or
+        // an opaque black quad after a later format conversion).
+        if (coverage > pixel[3]) pixel[3] = coverage;
     }
 }
 
@@ -536,6 +575,162 @@ int OpenIosFile(const char *path, int flags, mode_t mode, bool writing)
 } // namespace
 
 extern "C" SDL_Window *th08_linux_get_window() { return g_window; }
+
+BOOL TH08IosSetGdiTextUtf8(BOOL enabled)
+{
+    const BOOL previous = g_gdiTextUtf8 ? TRUE : FALSE;
+    g_gdiTextUtf8 = enabled != FALSE;
+    return previous;
+}
+
+BOOL TH08IosGetGdiTextUtf8()
+{
+    return g_gdiTextUtf8 ? TRUE : FALSE;
+}
+
+namespace
+{
+void BlendRasterPixel(BYTE *pixel, BYTE red, BYTE green, BYTE blue, BYTE alpha)
+{
+    if (pixel == NULL || alpha == 0) return;
+    const unsigned int sourceAlpha = alpha;
+    const unsigned int destinationAlpha = pixel[3];
+    const unsigned int outputAlpha = sourceAlpha +
+        (destinationAlpha * (255u - sourceAlpha) + 127u) / 255u;
+    if (outputAlpha == 0) return;
+    pixel[0] = static_cast<BYTE>((red * sourceAlpha +
+                                  pixel[0] * destinationAlpha * (255u - sourceAlpha) / 255u +
+                                  outputAlpha / 2u) / outputAlpha);
+    pixel[1] = static_cast<BYTE>((green * sourceAlpha +
+                                  pixel[1] * destinationAlpha * (255u - sourceAlpha) / 255u +
+                                  outputAlpha / 2u) / outputAlpha);
+    pixel[2] = static_cast<BYTE>((blue * sourceAlpha +
+                                  pixel[2] * destinationAlpha * (255u - sourceAlpha) / 255u +
+                                  outputAlpha / 2u) / outputAlpha);
+    pixel[3] = static_cast<BYTE>(outputAlpha);
+}
+
+void DrawRasterGlyph(SDL_Surface *glyph, int x, int y, COLORREF color,
+                     BYTE *destination, int destinationPitch, int width, int height)
+{
+    if (glyph == NULL || destination == NULL) return;
+    const BYTE red = static_cast<BYTE>(color & 0xff);
+    const BYTE green = static_cast<BYTE>((color >> 8) & 0xff);
+    const BYTE blue = static_cast<BYTE>((color >> 16) & 0xff);
+    const BYTE colorAlpha = static_cast<BYTE>((color >> 24) & 0xff);
+    const BYTE effectiveAlpha = colorAlpha == 0 ? 255 : colorAlpha;
+    if (SDL_MUSTLOCK(glyph)) SDL_LockSurface(glyph);
+    for (int row = 0; row < glyph->h; ++row)
+    {
+        const int destinationY = y + row;
+        if (destinationY < 0 || destinationY >= height) continue;
+        const BYTE *source = static_cast<const BYTE *>(glyph->pixels) + row * glyph->pitch;
+        for (int column = 0; column < glyph->w; ++column)
+        {
+            const int destinationX = x + column;
+            if (destinationX < 0 || destinationX >= width) continue;
+            const BYTE coverage = source[column * 4 + 3];
+            const BYTE alpha = static_cast<BYTE>((coverage * effectiveAlpha + 127u) / 255u);
+            BlendRasterPixel(destination + destinationY * destinationPitch + destinationX * 4,
+                             red, green, blue, alpha);
+        }
+    }
+    if (SDL_MUSTLOCK(glyph)) SDL_UnlockSurface(glyph);
+}
+
+struct RasterFontCache
+{
+    ~RasterFontCache()
+    {
+        if (!TTF_WasInit()) return;
+        for (std::map<std::pair<std::string, int>, TTF_Font *>::iterator it = fonts.begin();
+             it != fonts.end(); ++it)
+            TTF_CloseFont(it->second);
+    }
+
+    std::map<std::pair<std::string, int>, TTF_Font *> fonts;
+};
+
+TTF_Font *GetCachedRasterFont(const char *path, int pixelSize)
+{
+    static RasterFontCache cache;
+    const std::pair<std::string, int> key(path != NULL ? path : "", pixelSize);
+    std::map<std::pair<std::string, int>, TTF_Font *>::iterator existing = cache.fonts.find(key);
+    if (existing != cache.fonts.end())
+        return existing->second;
+
+    TTF_Font *font = TTF_OpenFont(path, pixelSize);
+    if (font == NULL)
+        return NULL;
+    TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
+    cache.fonts[key] = font;
+    return font;
+}
+} // namespace
+
+BOOL TH08IosRasterizeTextUtf8(const char *text, int pixelSize, int width, int height,
+                              COLORREF textColor, COLORREF shadowColor,
+                              BYTE *destination, int destinationPitch)
+{
+    if (text == NULL || text[0] == '\0' || pixelSize <= 0 || width <= 0 || height <= 0 ||
+        destination == NULL || destinationPitch < width * 4)
+        return FALSE;
+    const char *fontPath = ResolveJapaneseFont(true);
+    if (fontPath == NULL)
+    {
+        th08::modern::LogStartup("text/raster: no UTF-8 font available");
+        return FALSE;
+    }
+    if (!TTF_WasInit() && TTF_Init() != 0)
+    {
+        th08::modern::LogStartup("text/raster: SDL_ttf initialization failed");
+        return FALSE;
+    }
+    TTF_Font *font = GetCachedRasterFont(fontPath, pixelSize);
+    if (font == NULL)
+    {
+        char message[256];
+        SDL_snprintf(message, sizeof(message), "text/raster: font open failed: %s", TTF_GetError());
+        th08::modern::LogStartup(message);
+        return FALSE;
+    }
+    SDL_Color white = {255, 255, 255, 255};
+    SDL_Surface *rendered = TTF_RenderUTF8_Blended(font, text, white);
+    if (rendered == NULL)
+    {
+        th08::modern::LogStartup("text/raster: UTF-8 glyph rasterization failed");
+        return FALSE;
+    }
+    SDL_Surface *glyph = SDL_ConvertSurfaceFormat(rendered, SDL_PIXELFORMAT_RGBA32, 0);
+    SDL_FreeSurface(rendered);
+    if (glyph == NULL)
+    {
+        th08::modern::LogStartup("text/raster: RGBA conversion failed");
+        return FALSE;
+    }
+
+    // The original renderer uses a four-sided outline. Render the shadow at
+    // the same scaled offsets, then place the glyph at the logical origin.
+    const int outline = pixelSize >= 24 ? 2 : 1;
+    const int x = 4;
+    const int y = 2;
+    DrawRasterGlyph(glyph, x - outline, y, shadowColor, destination, destinationPitch, width, height);
+    DrawRasterGlyph(glyph, x + outline, y, shadowColor, destination, destinationPitch, width, height);
+    DrawRasterGlyph(glyph, x, y - outline, shadowColor, destination, destinationPitch, width, height);
+    DrawRasterGlyph(glyph, x, y + outline, shadowColor, destination, destinationPitch, width, height);
+    DrawRasterGlyph(glyph, x, y, textColor, destination, destinationPitch, width, height);
+    static int rasterDiagnostics;
+    if (SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL && rasterDiagnostics < 12)
+    {
+        char message[192];
+        SDL_snprintf(message, sizeof(message), "text/raster: success font=%d glyph=%dx%d text=%s",
+                     pixelSize, glyph->w, glyph->h, text);
+        th08::modern::LogStartup(message);
+        ++rasterDiagnostics;
+    }
+    SDL_FreeSurface(glyph);
+    return TRUE;
+}
 
 extern "C" {
 HANDLE CreateFileA(LPCSTR path, DWORD access, DWORD, LPVOID, DWORD disposition, DWORD, HANDLE)
@@ -821,7 +1016,21 @@ HWND CreateWindowExA(DWORD, LPCSTR, LPCSTR title, DWORD style, int, int, int wid
     return reinterpret_cast<HWND>(g_window);
 }
 
-BOOL DestroyWindow(HWND) { if (g_window != NULL) SDL_DestroyWindow(g_window); g_window = NULL; SDL_Quit(); return TRUE; }
+BOOL DestroyWindow(HWND)
+{
+    if (g_window != NULL)
+        SDL_DestroyWindow(g_window);
+    g_window = NULL;
+#ifdef TH08_IOS
+    // Keep SDL's UIKit host alive while the language switch rebuilds the
+    // renderer in this process. SDL_Quit tears down the global view host and
+    // leaves the subsequent window black on iOS.
+    return TRUE;
+#else
+    SDL_Quit();
+    return TRUE;
+#endif
+}
 BOOL ShowWindow(HWND, int) { return TRUE; }
 BOOL MoveWindow(HWND, int, int, int, int, BOOL) { return TRUE; }
 int ShowCursor(BOOL show) { return SDL_ShowCursor(show ? SDL_ENABLE : SDL_DISABLE); }
@@ -884,22 +1093,23 @@ int SetBkMode(HDC, int mode) { return mode; }
 COLORREF SetTextColor(HDC raw, COLORREF color) { GdiDc *dc = static_cast<GdiDc *>(raw); COLORREF old = dc->color; dc->color = color; return old; }
 HFONT CreateFontA(int height, int, int, int, int weight, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCSTR)
 {
-    const char *path = ResolveJapaneseFont();
-    if (path == NULL) return new GdiFont();
+    const bool localizedUtf8 = g_gdiTextUtf8;
+    const char *path = ResolveJapaneseFont(localizedUtf8);
+    if (path == NULL) return new GdiFont(NULL, localizedUtf8);
     if (!TTF_WasInit() && TTF_Init() != 0)
     {
         fprintf(stderr, "th08-modern: SDL_ttf initialization failed: %s\n", TTF_GetError());
-        return new GdiFont();
+        return new GdiFont(NULL, localizedUtf8);
     }
     TTF_Font *font = TTF_OpenFont(path, height < 0 ? -height : height);
     if (font == NULL)
     {
         fprintf(stderr, "th08-modern: unable to load Japanese font %s: %s\n", path, TTF_GetError());
-        return new GdiFont();
+        return new GdiFont(NULL, localizedUtf8);
     }
     if (weight >= FW_SEMIBOLD) TTF_SetFontStyle(font, TTF_STYLE_BOLD);
     TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
-    return new GdiFont(font);
+    return new GdiFont(font, localizedUtf8);
 }
 HBITMAP CreateDIBSection(HDC, const void *infoRaw, UINT, VOID **pixels, HANDLE, DWORD)
 {
@@ -911,7 +1121,9 @@ BOOL TextOutA(HDC dcRaw, int x, int y, LPCSTR text, int length)
     if (dcRaw == NULL || text == NULL || length <= 0) return FALSE;
     GdiDc *dc = static_cast<GdiDc *>(dcRaw);
     if (dc->bitmap == NULL || dc->font == NULL || dc->font->font == NULL) return FALSE;
-    std::string utf8 = ConvertCp932ToUtf8(text, static_cast<size_t>(length));
+    const std::string utf8 = dc->font->utf8
+                                 ? std::string(text, static_cast<size_t>(length))
+                                 : ConvertCp932ToUtf8(text, static_cast<size_t>(length));
     SDL_Color white = {255, 255, 255, 255};
     SDL_Surface *rendered = TTF_RenderUTF8_Blended(dc->font->font, utf8.c_str(), white);
     if (rendered == NULL) return FALSE;

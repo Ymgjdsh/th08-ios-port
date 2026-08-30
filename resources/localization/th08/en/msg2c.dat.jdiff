@@ -1,0 +1,132 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "Wait, waaaait!"
+            ]
+        },
+        "60_1": {
+            "lines": [
+                "We're in a hurry.",
+                "If you can keep up with us, we'll listen."
+            ]
+        },
+        "60_2": {
+            "lines": [
+                "So you won't stop even if I ask.",
+                "A human and a bat, though? That's an unusual pair."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "But humans are what I'm after. I don't need bats."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Hmph. Is it the brats' night out?"
+            ]
+        },
+        "63_1": {
+            "lines": [
+                "Naturally!",
+                "The good little children went to bed at noon."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "At night, it's happy hour for man-hunting!"
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Too bad we're in a hurry.",
+                "So, mind getting shot down right now?"
+            ]
+        },
+        "66_1": {
+            "lines": [
+                "W-wait! I said \"wait\" already, didn't I?"
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "Milady."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "If you start fights even with enemies of this level,",
+                "there'll be no end to them."
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "True."
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "Oh, quit joking around!"
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "Aren't you scared by birds flying in the night?"
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "Birds frying in the night?",
+                "Humans are better, really."
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "(What's better?)",
+                "Milady, you can't turn \"fly\" into \"fry.\""
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "Whatever.",
+                "I'll show you the true terror of darkness!"
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "\"Terror of darkness,\" huh...?"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Now, Sakuya. Which shall we do:",
+                "To fry that bird, or to continue on ahead?"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Let's leave the frying for later and proceed onward.",
+                "The night is short."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Speaking of which, why are we headed",
+                "in this direction?"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Hm? Refueling."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "..."
+            ]
+        }
+    }
+}

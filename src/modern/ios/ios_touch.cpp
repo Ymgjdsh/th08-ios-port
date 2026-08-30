@@ -108,10 +108,11 @@ struct MobileConfig
     u8 dragAutoShoot;
     NormalizedLayout layouts[2];
     u8 showDeveloperButton;
+    u8 language;
 };
 
 const u32 MOBILE_CONFIG_MAGIC = 0x38424f4d; // MOB8
-const u32 MOBILE_CONFIG_VERSION = 4;
+const u32 MOBILE_CONFIG_VERSION = 5;
 MobileConfig g_config = {};
 bool g_configLoaded = false;
 bool g_settingsOpen = false;
@@ -139,6 +140,9 @@ SDL_FingerID g_secondaryFinger = -1;
 Uint32 g_secondaryStartedAt = 0;
 bool g_secondaryLongPress = false;
 bool g_controllerInputReady = false;
+u32 g_languageRevision = 1;
+bool g_languageRestartRequested = false;
+bool g_languageRestartActive = false;
 const Uint32 SECONDARY_LONG_PRESS_MS = 280;
 
 struct RectGeometry
@@ -195,6 +199,7 @@ void SetDefaultConfig()
     g_config.dragAutoShoot = 1;
     g_config.performanceMode = PERFORMANCE_FULL;
     g_config.showDeveloperButton = 1;
+    g_config.language = IOS_LANGUAGE_JP;
     SetDefaultLayout(&g_config.layouts[0], false);
     SetDefaultLayout(&g_config.layouts[1], true);
 }
@@ -285,8 +290,39 @@ void EnsureMobileConfig()
     g_config.buttonScale = ClampFloat(g_config.buttonScale, 0.65f, 1.45f);
     g_config.dragSensitivity = ClampFloat(g_config.dragSensitivity, 0.40f, 2.00f);
     g_config.opacity = ClampFloat(g_config.opacity, 0.20f, 1.00f);
+    if (g_config.language > IOS_LANGUAGE_EN)
+        g_config.language = IOS_LANGUAGE_JP;
+#ifdef TH08_IOS
+    // Simulator smoke tests can select a language without manufacturing a
+    // binary mobile.cfg. Release launches do not set this variable.
+    const char *languageOverride = SDL_getenv("TH08_IOS_LANGUAGE");
+    if (languageOverride != NULL)
+    {
+        if (strcmp(languageOverride, "zh") == 0)
+            g_config.language = IOS_LANGUAGE_ZH;
+        else if (strcmp(languageOverride, "en") == 0)
+            g_config.language = IOS_LANGUAGE_EN;
+        else if (strcmp(languageOverride, "ja") == 0)
+            g_config.language = IOS_LANGUAGE_JP;
+    }
+#endif
     ApplyPerformanceMode();
     modern::LogStartup("touch/config: ready");
+}
+
+namespace
+{
+const char *g_pauseMenuText[3][10] = {
+    {"Pause", "Return to Game", "Quit", "Restart", "Confirm", "Yes", "No", "Difficulty", "Practice", "Slow Mode"},
+    {"暂停", "返回游戏", "退出", "重新开始", "确认", "是", "否", "难度", "练习模式", "慢速模式"},
+    {"Pause", "Resume", "Quit", "Restart", "Confirm", "Yes", "No", "Difficulty", "Practice", "Slow Mode"},
+};
+
+const char *g_retryMenuText[3][3] = {
+    {"Retry", "Yes", "No"},
+    {"重新开始", "是", "否"},
+    {"Retry", "Yes", "No"},
+};
 }
 
 ControlGeometry MakeControl(int index, float radiusScale)
@@ -427,7 +463,7 @@ void FingerPixels(const SDL_TouchFingerEvent &finger, float *x, float *y)
 
 int SettingsRowAt(float x, float y)
 {
-    const int rowCount = g_performanceOpen ? 6 : 11;
+    const int rowCount = g_performanceOpen ? 7 : 11;
     for (int row = 0; row < rowCount; ++row)
         if (ContainsPoint(SettingsRowGeometry(row), x, y)) return row;
     return -1;
@@ -505,6 +541,10 @@ void ActivateSettingsRow(int row, float x)
             modern::LogStartup("cheat-dialog: requested from performance menu");
         }
         else if (row == 5)
+        {
+            CycleLanguage();
+        }
+        else if (row == 6)
         {
             g_settingsOpen = false;
             g_performanceOpen = false;
@@ -758,6 +798,9 @@ u16 PollSmokeTestButtons()
     static Uint32 lastPulse = static_cast<Uint32>(-1);
     static Uint32 teardownActionAt;
     static int teardownActionStage;
+    static bool pauseProbeSent;
+    static bool pauseProbeStartSent;
+    static bool pauseProbeMoveSent;
     static bool bombTriggered;
     static bool bombVerified;
     static f32 bombUsageBefore;
@@ -780,6 +823,7 @@ u16 PollSmokeTestButtons()
     static int stageClearInputTestStage;
     static Uint32 stageClearInputTestStartedAt;
     static int stageTransitionTestState;
+    static bool languageSwitchRequested;
 
     const char *enabled = SDL_getenv("TH08_IOS_SMOKE_TEST");
     if (enabled == NULL || enabled[0] == '\0' || enabled[0] == '0')
@@ -798,16 +842,61 @@ u16 PollSmokeTestButtons()
 
     const bool testRestart = strcmp(enabled, "restart") == 0;
     const bool testTitle = strcmp(enabled, "title") == 0;
+    const bool testPause = strcmp(enabled, "pause") == 0;
     const bool testBomb = strcmp(enabled, "bomb") == 0;
     const bool testDeveloper = strcmp(enabled, "developer") == 0;
     const bool testMusicRoom = strcmp(enabled, "musicroom") == 0;
     const bool testReplay = strcmp(enabled, "replay") == 0;
+    const bool testResult = strcmp(enabled, "result") == 0;
+    const bool testPractice = strcmp(enabled, "practice") == 0;
     const bool testInvincible = strcmp(enabled, "invincible") == 0;
     const bool testRetry = strcmp(enabled, "retry") == 0;
     const bool testAutoBomb = strcmp(enabled, "autobomb") == 0;
     const bool testCampaign = strcmp(enabled, "campaign") == 0;
     const bool testStageClearInput = strcmp(enabled, "stageclear-input") == 0;
     const bool testStageTransition = strcmp(enabled, "stage-transition") == 0;
+    const bool testLanguage = strcmp(enabled, "language") == 0;
+
+    // The pause probe owns the initial title-menu input.  Generic smoke
+    // confirmation pulses can otherwise land on Replay or Music Room when a
+    // save file has unlocked extra entries, making the pause result invalid.
+    if (testPause)
+    {
+        if (elapsed >= 5000 && elapsed < 20000 &&
+            g_Supervisor.curState == SupervisorState_TitleScreen &&
+            ((elapsed / 1000u) & 1u) == 0u)
+        {
+            if (!pauseProbeStartSent)
+            {
+                pauseProbeStartSent = true;
+                th08::modern::LogStartup("smoke-pause: starting from title");
+            }
+            return TH_BUTTON_SHOOT;
+        }
+        if (elapsed >= 18000 && IsGameplayReady() && !IsGameplayMenuOpen())
+        {
+            if (!pauseProbeSent)
+            {
+                pauseProbeSent = true;
+                // Enter through the same GameManager flag used by the real
+                // MENU edge. The title/stage intro can consume an input edge
+                // before GameManager::OnUpdate reaches its pause branch, so
+                // the deterministic probe arms the state once gameplay is
+                // ready and then lets the normal PauseMenu chain render it.
+                g_GameManager.isInGameMenu = 1;
+                th08::modern::LogStartup("smoke-pause: opening pause menu");
+            }
+            return 0;
+        }
+        if (elapsed >= 22000 && pauseProbeSent && !pauseProbeMoveSent &&
+            IsGameplayMenuOpen())
+        {
+            pauseProbeMoveSent = true;
+            th08::modern::LogStartup("smoke-pause: moving selection down");
+            return TH_BUTTON_DOWN;
+        }
+        return 0;
+    }
 
     if (testStageTransition && elapsed >= 35000 && stageTransitionTestState == 0 &&
         IsGameplayReady() && g_GameManager.currentStage == STAGE1 &&
@@ -829,6 +918,17 @@ u16 PollSmokeTestButtons()
             "smoke-stage-transition: PASS - stage 2 gameplay became ready");
         return 0;
     }
+
+    if (testLanguage && elapsed >= 8000 && !languageSwitchRequested &&
+        g_Supervisor.curState == SupervisorState_TitleScreen)
+    {
+        languageSwitchRequested = true;
+        th08::modern::LogStartup("smoke-language: requesting persisted language switch");
+        CycleLanguage();
+        return 0;
+    }
+    if (testLanguage)
+        return 0;
 
     if (testCampaign)
     {
@@ -931,9 +1031,9 @@ u16 PollSmokeTestButtons()
 
     if (testMusicRoom)
     {
-        // A clean save greys out Extra and Spell Practice, so four cursor
-        // moves reach Music Room. Wait until the title entry animation and
-        // generated help text have finished before sending those edges.
+        // The default score table leaves Extra and Spell Practice locked, so
+        // the title navigation skips those two entries. Four downward edges
+        // reach Music Room while still exercising the real menu path.
         if (elapsed < 8000)
             return 0;
         const int step = static_cast<int>((elapsed - 8000) / 800);
@@ -953,9 +1053,10 @@ u16 PollSmokeTestButtons()
 
     if (testReplay)
     {
-        // On a clean save, Extra and Spell Practice are skipped, so two
-        // downward edges reach Replay. Cancel after its entry animation, then
-        // leave a marker proving the main loop continued after the rebuild.
+        // With the default score table, the locked Extra and Spell Practice
+        // entries are skipped. Two downward edges reach Replay; cancel after
+        // its entry animation and verify that the rebuilt title loop keeps
+        // rendering.
         if (elapsed < 8000)
             return 0;
         const int step = static_cast<int>((elapsed - 8000) / 800);
@@ -980,6 +1081,42 @@ u16 PollSmokeTestButtons()
         {
             replayReturnLogged = true;
             th08::modern::LogStartup("smoke-replay: main loop responsive after return");
+        }
+        return 0;
+    }
+
+    if (testResult || testPractice)
+    {
+        // Result and Practice are title-screen pages, not gameplay states.
+        // Use their stable full-unlock menu indices so screenshots exercise
+        // localized labels without depending on score.dat history.
+        const int target = testResult ? 3 : 1;
+        const char *name = testResult ? "result" : "practice";
+        if (elapsed < 8000)
+            return 0;
+        const int step = static_cast<int>((elapsed - 8000) / 800);
+        if (step <= target && step != replayStep)
+        {
+            replayStep = step;
+            if (step < target)
+            {
+                th08::modern::LogStartup(testResult
+                                             ? "smoke-result: moving cursor down"
+                                             : "smoke-practice: moving cursor down");
+                return TH_BUTTON_DOWN;
+            }
+            char message[96];
+            SDL_snprintf(message, sizeof(message), "smoke-%s: opening page", name);
+            th08::modern::LogStartup(message);
+            return TH_BUTTON_SHOOT;
+        }
+        static bool pageResponsiveLogged;
+        if (elapsed >= 18000 && !pageResponsiveLogged)
+        {
+            pageResponsiveLogged = true;
+            char message[96];
+            SDL_snprintf(message, sizeof(message), "smoke-%s: page remained responsive", name);
+            th08::modern::LogStartup(message);
         }
         return 0;
     }
@@ -1068,6 +1205,10 @@ u16 PollSmokeTestButtons()
                                      : "smoke-auto-bomb: FAILED");
         return 0;
     }
+    // Short deterministic pause probe used by simulator validation. The
+    // normal restart/title probes intentionally wait a full minute so they
+    // exercise teardown; this mode stops after opening the menu, allowing a
+    // screenshot to capture localized labels without racing the transition.
     if ((testRestart || testTitle) && elapsed >= 60000)
     {
         if (teardownActionStage == 0)
@@ -1792,8 +1933,8 @@ void DrawSettingsPanel()
     static const char *labels[11] = {
         "CONTROL", "BUTTONS", "BUTTON SIZE", "DRAG SENS", "OPACITY",
         "DRAG AUTO Z", "Z TOGGLE", "S TOGGLE", "AUTO BOMB", "EDIT LAYOUT", "CLOSE"};
-    static const char *performanceLabels[6] = {
-        "FULL QUALITY", "BALANCED", "SPEED", "SHOW DEV BUTTON", "CHEAT CODE", "CLOSE"};
+    static const char *performanceLabels[7] = {
+        "FULL QUALITY", "BALANCED", "SPEED", "SHOW DEV BUTTON", "CHEAT CODE", "LANGUAGE", "CLOSE"};
     const RectGeometry panel = SettingsPanelGeometry();
     DrawRect(panel, 17, 9, 29, 247);
     DrawRectOutline(panel, panel.width * 0.005f, 192, 119, 181, 242);
@@ -1807,7 +1948,7 @@ void DrawSettingsPanel()
              title.y + (title.height - titlePixel * 7.0f) * 0.5f,
              titlePixel, 255, 222, 247, 255);
 
-    const int rowCount = g_performanceOpen ? 6 : 11;
+    const int rowCount = g_performanceOpen ? 7 : 11;
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex)
     {
         const RectGeometry row = SettingsRowGeometry(rowIndex);
@@ -1827,6 +1968,10 @@ void DrawSettingsPanel()
         else if (g_performanceOpen && rowIndex == 3)
             value = g_config.showDeveloperButton ? "ON" : "OFF";
         else if (g_performanceOpen && rowIndex == 4)
+            value = "OPEN";
+        else if (g_performanceOpen && rowIndex == 5)
+            value = LanguageName();
+        else if (g_performanceOpen && rowIndex == 6)
             value = "OPEN";
         else if (!g_performanceOpen && rowIndex == 0)
             value = g_config.controlMode == CONTROL_JOYSTICK ? "JOYSTICK" :
@@ -2010,6 +2155,76 @@ u16 JoystickButtonsForButton(Uint8 button)
         return 0;
     }
 }
+}
+
+IosLanguage GetLanguage()
+{
+    EnsureMobileConfig();
+    return static_cast<IosLanguage>(g_config.language);
+}
+
+const char *LanguageName()
+{
+    EnsureMobileConfig();
+    // The controls overlay intentionally uses its fixed ASCII bitmap font.
+    // Translated game text is rendered through the explicit UTF-8 GDI path.
+    static const char *names[] = {"Japanese", "Simplified Chinese", "English"};
+    return names[g_config.language];
+}
+
+void CycleLanguage()
+{
+    EnsureMobileConfig();
+    g_config.language = static_cast<u8>((g_config.language + 1) % 3);
+    ++g_languageRevision;
+    SaveMobileConfig();
+    g_languageRestartRequested = true;
+    g_languageRestartActive = true;
+    modern::LogStartup(g_config.language == IOS_LANGUAGE_JP
+                           ? "language: Japanese"
+                           : (g_config.language == IOS_LANGUAGE_ZH
+                                  ? "language: Simplified Chinese"
+                                  : "language: English"));
+}
+
+u32 LanguageRevision()
+{
+    return g_languageRevision;
+}
+
+bool ConsumeLanguageRestartRequest()
+{
+    const bool requested = g_languageRestartRequested;
+    g_languageRestartRequested = false;
+    return requested;
+}
+
+bool IsLanguageRestartInProgress()
+{
+    return g_languageRestartActive;
+}
+
+void CompleteLanguageRestart()
+{
+    g_languageRestartActive = false;
+}
+
+const char *PauseMenuText(int index)
+{
+    EnsureMobileConfig();
+    // The retail pause labels are already English. Preserve their exact atlas
+    // pixels in Japanese and English modes; only Chinese needs replacement.
+    return g_config.language == IOS_LANGUAGE_ZH && index >= 0 && index < 10
+               ? g_pauseMenuText[IOS_LANGUAGE_ZH][index]
+               : NULL;
+}
+
+const char *RetryMenuText(int index)
+{
+    EnsureMobileConfig();
+    return g_config.language == IOS_LANGUAGE_ZH && index >= 0 && index < 3
+               ? g_retryMenuText[IOS_LANGUAGE_ZH][index]
+               : NULL;
 }
 
 bool ApplyIosCheatCode(const char *code)
@@ -2405,6 +2620,7 @@ void DrawVirtualControls()
         return;
 
     GLint previousProgram = 0;
+    GLint previousActiveTexture = GL_TEXTURE0;
     GLint previousTexture = 0;
     GLint previousArrayBuffer = 0;
     GLint previousElementBuffer = 0;
@@ -2415,6 +2631,8 @@ void DrawVirtualControls()
     GLboolean scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
     GLboolean depthMask = GL_TRUE;
     glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+    glActiveTexture(GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
     glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &previousElementBuffer);
@@ -2502,6 +2720,7 @@ void DrawVirtualControls()
     if (cullEnabled) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
     if (scissorEnabled) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+    glActiveTexture(static_cast<GLenum>(previousActiveTexture));
     glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(previousArrayBuffer));
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(previousElementBuffer));
     glUseProgram(static_cast<GLuint>(previousProgram));

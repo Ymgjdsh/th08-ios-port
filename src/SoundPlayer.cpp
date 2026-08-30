@@ -7,9 +7,20 @@
 #include "dxutil.hpp"
 #include "i18n.hpp"
 #include "utils.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
+
+#ifdef TH08_IOS
+// iOS uses SDL's audio callback for mixing. The legacy worker is still needed
+// to refill streaming buffers, but its Win32 message queue emulation is not
+// safe during an in-process language restart. Use the stream event itself as
+// the wake-up signal and keep a single explicit stop flag instead.
+static volatile bool g_iosBgmThreadStopRequested;
+#endif
 
 #define BGM_BUFFER_SIZE 0x8000
 #define BGM_WAV_NUM_CHANNELS 2
@@ -107,29 +118,31 @@ ZunResult SoundPlayer::Release()
 {
     i32 i;
 
-    if (this->bgmFmtData != NULL)
-    {
-        g_ZunMemory.Free(this->bgmFmtData);
-    }
+    // Stop the worker before releasing anything it can touch. The previous
+    // order freed format data and sound buffers first, leaving a live BGM
+    // thread to access freed state during language/restart teardown.
+    this->StopBGM();
+    for (i = 0; i < NUM_BGM_SLOTS; i++)
+        this->FreePreloadedBGM(i);
+
     for (i = 0; i < NUM_SOUND_BUFFERS; i++)
     {
         SAFE_RELEASE(this->duplicateSoundBuffers[i]);
         SAFE_RELEASE(this->soundBuffers[i]);
     }
-    if (this->manager == NULL)
+    if (this->manager != NULL)
     {
-        return ZUN_SUCCESS;
+        KillTimer(this->gameWindow, 1);
+        this->dsoundHdl = NULL;
+        if (this->initSoundBuffer != NULL)
+            this->initSoundBuffer->Stop();
+        SAFE_RELEASE(this->initSoundBuffer);
+        SAFE_DELETE(this->manager);
     }
-    KillTimer(this->gameWindow, 1);
-    this->StopBGM();
-    this->dsoundHdl = NULL;
-    this->initSoundBuffer->Stop();
-    SAFE_RELEASE(this->initSoundBuffer);
-    SAFE_DELETE(this->bgm);
-    SAFE_DELETE(this->manager);
-    for (i = 0; i < NUM_BGM_SLOTS; i++)
+    if (this->bgmFmtData != NULL)
     {
-        this->FreePreloadedBGM(i);
+        g_ZunMemory.Free(this->bgmFmtData);
+        this->bgmFmtData = NULL;
     }
     return ZUN_SUCCESS;
 }
@@ -303,6 +316,9 @@ ZunResult SoundPlayer::StartBGM(char *path)
     numSamplesPerSec = fmtData->format.nSamplesPerSec;
     notifySize = numSamplesPerSec * 4 * blockAlign / BGM_WAV_BITS_PER_SAMPLE;
     notifySize -= (notifySize % blockAlign);
+ #ifdef TH08_IOS
+    g_iosBgmThreadStopRequested = false;
+ #endif
     this->bgmUpdateEvent = CreateEventA(NULL, FALSE, FALSE, NULL);
     this->bgmThreadHandle =
         CreateThread(NULL, 0, SoundPlayer::BGMPlayerThread, g_Supervisor.hwndGameWindow, 0, &this->bgmThreadId);
@@ -411,6 +427,9 @@ ZunResult SoundPlayer::LoadBGM(i32 idx)
     numSamplesPerSec = this->bgmPreloadFmtData[idx]->format.nSamplesPerSec;
     notifySize = numSamplesPerSec * 4 * blockAlign / BGM_WAV_BITS_PER_SAMPLE;
     notifySize -= (notifySize % blockAlign);
+ #ifdef TH08_IOS
+    g_iosBgmThreadStopRequested = false;
+ #endif
     this->bgmUpdateEvent = CreateEventA(NULL, FALSE, FALSE, NULL);
     this->bgmThreadHandle =
         CreateThread(NULL, 0, SoundPlayer::BGMPlayerThread, g_Supervisor.hwndGameWindow, 0, &this->bgmThreadId);
@@ -430,25 +449,77 @@ ZunResult SoundPlayer::LoadBGM(i32 idx)
 
 void SoundPlayer::StopBGM()
 {
+#ifdef TH08_IOS
+    modern::LogStartup("audio: stop begin");
+    // Stop the worker before touching the streaming buffer. The iOS
+    // DirectSound shim keeps the audio-device lock from Lock() through
+    // Unlock(); calling bgm->Stop() first can therefore wait forever while
+    // the worker is filling a notification block.
+    if (this->bgmThreadHandle != NULL)
+    {
+        g_iosBgmThreadStopRequested = true;
+        utils::DebugPrint("iOS BGM worker stop requested\r\n");
+        modern::LogStartup("audio: worker stop requested");
+        while (WaitForSingleObject(this->bgmThreadHandle, 256) != WAIT_OBJECT_0)
+            ;
+        utils::DebugPrint("iOS BGM worker stopped\r\n");
+        modern::LogStartup("audio: worker stopped");
+        CloseHandle(this->bgmThreadHandle);
+        this->bgmThreadHandle = NULL;
+    }
+
+    if (this->bgm != NULL)
+    {
+        utils::DebugPrint("Streming BGM stop\r\n");
+        modern::LogStartup("audio: stream stop begin");
+        this->bgm->Stop();
+        modern::LogStartup("audio: stream stopped");
+    }
+
+    if (this->bgmUpdateEvent != NULL)
+    {
+        CloseHandle(this->bgmUpdateEvent);
+        this->bgmUpdateEvent = NULL;
+    }
+    SAFE_DELETE(this->bgm);
+    modern::LogStartup("audio: stop complete");
+    return;
+#else
     if (this->bgm != NULL)
     {
         utils::DebugPrint("Streming BGM stop\r\n");
         this->bgm->Stop();
-        if (this->bgmThreadHandle != NULL)
-        {
-            PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
-            utils::DebugPrint("stop m_dwNotifyThreadID\r\n");
-
-            while (WaitForSingleObject(this->bgmThreadHandle, 256))
-                PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
-
-            utils::DebugPrint("stop comp\r\n");
-            CloseHandle(this->bgmThreadHandle);
-            CloseHandle(this->bgmUpdateEvent);
-            this->bgmThreadHandle = NULL;
-        }
-        SAFE_DELETE(this->bgm);
     }
+
+    // A failed stream creation can leave the worker alive with bgm == NULL;
+    // always close the worker handle independently of the stream object.
+    if (this->bgmThreadHandle != NULL)
+    {
+ #ifdef TH08_IOS
+        g_iosBgmThreadStopRequested = true;
+        if (this->bgmUpdateEvent != NULL)
+            SetEvent(this->bgmUpdateEvent);
+ #else
+        PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
+ #endif
+        utils::DebugPrint("stop m_dwNotifyThreadID\r\n");
+        while (WaitForSingleObject(this->bgmThreadHandle, 256) != WAIT_OBJECT_0)
+        {
+ #ifndef TH08_IOS
+            PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
+ #endif
+        }
+        utils::DebugPrint("stop comp\r\n");
+        CloseHandle(this->bgmThreadHandle);
+        this->bgmThreadHandle = NULL;
+    }
+    if (this->bgmUpdateEvent != NULL)
+    {
+        CloseHandle(this->bgmUpdateEvent);
+        this->bgmUpdateEvent = NULL;
+    }
+    SAFE_DELETE(this->bgm);
+#endif
 }
 
 ZunResult SoundPlayer::InitSoundBuffers()
@@ -695,7 +766,12 @@ loop:
         if (commandCursor->arg2 == 0)
         {
             utils::DebugPrint("Sound : Stop Stage\r\n");
+#ifdef TH08_IOS
+            // Signal first; the worker may currently hold the SDL audio lock.
+            g_iosBgmThreadStopRequested = true;
+#else
             this->bgm->Stop();
+#endif
         }
         else if (commandCursor->arg2 == 1)
         {
@@ -704,27 +780,43 @@ loop:
             {
                 goto next_command;
             }
+ #ifdef TH08_IOS
+            g_iosBgmThreadStopRequested = true;
+ #else
             PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
+ #endif
         }
         else if (commandCursor->arg2 == 2)
         {
             if (WaitForSingleObject(this->bgmThreadHandle, 256))
             {
                 utils::DebugPrint("Sound : Thread Stop Wait Stage\r\n");
+ #ifndef TH08_IOS
                 PostThreadMessageA(this->bgmThreadId, WM_QUIT, 0, 0);
+ #else
+                // The iOS worker polls its stop flag with a short timeout;
+                // avoid touching an event that may be concurrently torn down.
+ #endif
                 commandCursor->arg2--;
             }
             else
             {
+#ifdef TH08_IOS
+                this->bgm->Stop();
+                CloseHandle(this->bgmThreadHandle);
+#endif
                 this->bgmThreadHandle = NULL;
             }
         }
         else if (commandCursor->arg2 == 3)
         {
             utils::DebugPrint("Sound : Handle Close Stage\r\n");
-            CloseHandle(this->bgmThreadHandle);
-            CloseHandle(this->bgmUpdateEvent);
+            if (this->bgmThreadHandle != NULL)
+                CloseHandle(this->bgmThreadHandle);
+            if (this->bgmUpdateEvent != NULL)
+                CloseHandle(this->bgmUpdateEvent);
             this->bgmThreadHandle = NULL;
+            this->bgmUpdateEvent = NULL;
             SAFE_DELETE(this->bgm);
         }
         else if (commandCursor->arg2 == 10)
@@ -862,7 +954,21 @@ DWORD WINAPI SoundPlayer::BGMPlayerThread(LPVOID lpThreadParameter)
     looped = true;
     while (!stopped)
     {
+#ifdef TH08_IOS
+        // A bounded wait lets teardown observe the stop flag without relying
+        // on an event object that may be released at the same time as the
+        // SDL audio device.
+        waitObj = MsgWaitForMultipleObjects(1, &g_SoundPlayer.bgmUpdateEvent, FALSE, 50, QS_ALLEVENTS);
+#else
         waitObj = MsgWaitForMultipleObjects(1, &g_SoundPlayer.bgmUpdateEvent, FALSE, INFINITE, QS_ALLEVENTS);
+#endif
+#ifdef TH08_IOS
+        if (g_iosBgmThreadStopRequested)
+        {
+            stopped = true;
+            break;
+        }
+ #endif
         if (g_SoundPlayer.bgm == NULL)
         {
             stopped = true;

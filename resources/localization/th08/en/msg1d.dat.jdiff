@@ -1,0 +1,141 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "You, show yourself!",
+                "The wriggling one, hiding in the darkness there."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Youmu, don't leave me behind here..."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "What are you saying?",
+                "The night's very short!"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "We have to find the villains quickly,",
+                "and cut them into mash."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "No, I didn't mean..."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "\"Cut them into mash\"..."
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Are you cutting them or mashing them?",
+                "Make up your mind!"
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "Now, before you get cut or mashed,",
+                "tell us which direction we should be going!"
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "Youmu, save the excitement for when dawn is nearing!"
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "I told you not to leave me behind, didn't I?",
+                "The night's only just started."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "What's with these two?"
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "Oh?",
+                "There's a big firefly in front of us."
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "Did you not notice her yet...?"
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "Firefly watching is quite nice, too.",
+                "Youmu, would you like to take a side trip?"
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "Do we really have time for that now?!",
+                "I'll slice this bug to ribbons with my Roukanken..."
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "You're spending the most time just talking like this!"
+            ]
+        },
+        "135_0": {
+            "lines": [
+                "It's been such a long time since I've seen anyone",
+                "who wouldn't be pleased to see fireflies!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Lady Yuyuko, it takes a while for you to defeat",
+                "enemies because you don't focus your aim enough."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "My, haven't you ever heard the saying,",
+                "\"haste makes waste\"?"
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Ah, yes, we are in a hurry.",
+                "So, where should we go next?"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Well?",
+                "How about we see which way this branch falls?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Is that really okay...?"
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Wait, with the way you're holding that,",
+                "there's really only one direction it'll fall."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Round and round and round it goes~"
+            ]
+        }
+    }
+}

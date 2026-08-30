@@ -21,6 +21,7 @@
 #include "modern/windows_runtime.hpp"
 #endif
 #ifdef TH08_IOS
+#include "modern/ios/ios_localization.hpp"
 #include "modern/ios/ios_touch.hpp"
 #endif
 #include <d3dx8.h>
@@ -182,6 +183,18 @@ restart:
     modern::LogStartup("main: renderer ready");
 #endif
 
+runtimeRestart:
+#ifdef TH08_IOS
+    if (modern::ios::IsLanguageRestartInProgress())
+    {
+        // UIKit owns the SDL view/controller. Recreating that top-level
+        // window in-process leaves the new GL view detached and produces a
+        // permanently black foreground even though the game keeps drawing.
+        // Keep the host window/context and rebuild every game-owned system.
+        GameWindow::ResetRenderState();
+        modern::LogStartup("language/restart: retained UIKit window and renderer");
+    }
+#endif
     g_SoundPlayer.InitializeDSound(g_GameWindow.window);
 #ifdef TH08_IOS
     modern::LogStartup("main: audio initialized");
@@ -201,6 +214,8 @@ restart:
     renderResult = Supervisor::RegisterChain();
 #ifdef TH08_IOS
     modern::LogStartup("main: chains registered");
+    modern::LogStartup("language/restart: rebuild complete");
+    modern::ios::CompleteLanguageRestart();
 #endif
 
     if (renderResult != RENDER_RESULT_KEEP_RUNNING)
@@ -262,12 +277,24 @@ restart:
     }
 
 awfulConditionalBreak:
+#ifdef TH08_IOS
+    if (g_GameManager.plst.base.magic != 0 && !modern::ios::IsLanguageRestartInProgress())
+#else
     if (g_GameManager.plst.base.magic != 0)
+#endif
     {
         ResultScreen::RegisterChain(2);
     }
 
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: chain release begin");
+ #endif
     g_Chain.Release();
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: chain released");
+ #endif
 
     while (g_SoundPlayer.ProcessQueues() != 0)
         ;
@@ -275,8 +302,25 @@ awfulConditionalBreak:
 stop:
     Sleep(1000);
 
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: audio release begin");
+ #endif
     g_SoundPlayer.Release();
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: audio released");
+ #endif
     ZUN_DELETE(g_AnmManager);
+    g_AnmManager = NULL;
+
+#ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+    {
+        modern::LogStartup("language/restart: game resources released");
+        goto runtimeRestart;
+    }
+#endif
 
     if (g_Supervisor.d3dDevice != NULL)
     {
@@ -288,6 +332,10 @@ stop:
         g_Supervisor.d3dDevice->Release();
         g_Supervisor.d3dDevice = NULL;
     }
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: renderer released");
+ #endif
 
     if (g_Supervisor.d3dIface != NULL)
     {
@@ -302,6 +350,10 @@ stop:
         DestroyWindow(g_GameWindow.window);
         g_GameWindow.window = NULL;
     }
+ #ifdef TH08_IOS
+    if (renderResult == RENDER_RESULT_EXIT_ERROR && modern::ios::IsLanguageRestartInProgress())
+        modern::LogStartup("language/restart: window released");
+ #endif
 
     ShowCursor(TRUE);
 
@@ -386,10 +438,24 @@ RenderResult GameWindow::Render()
 
         g_Supervisor.d3dDevice->SetViewport(&g_Supervisor.viewport);
 
+ #ifdef TH08_IOS
+        g_AnmManager->BeginLocalizedTextFrame();
+ #endif
         calcChainResult = g_Chain.RunCalcChain();
         g_SoundPlayer.ProcessQueues();
 #ifdef TH08_IOS
         iosCalcEnd = SDL_GetPerformanceCounter();
+        if (modern::ios::ConsumeLanguageRestartRequest())
+        {
+            modern::LogStartup("language/restart: request accepted");
+            g_AnmManager->ResetLocalizedSpritePatches();
+            modern::ios::ResetLocalizationRuntime();
+            modern::ios::ResetTouchState();
+            TH08IosSetGdiTextUtf8(FALSE);
+            g_Supervisor.ThreadClose();
+            modern::LogStartup("language/restart: runtime teardown requested");
+            return RENDER_RESULT_EXIT_ERROR;
+        }
 #endif
 
 #ifdef TH08_IOS

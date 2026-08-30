@@ -9,6 +9,9 @@
 #include "pbg/Lzss.hpp"
 
 #include "i18n.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_localization.hpp"
+#endif
 
 #include <direct.h>
 #include <stdio.h>
@@ -127,6 +130,30 @@ const char *ResultScreen::GetCharacterName(i32 character)
 {
     return g_CharacterList[character];
 }
+
+#ifdef TH08_IOS
+static const char *LocalizedResultMenuText(i32 scriptIndex)
+{
+    const char *label = modern::ios::ResultMenuLabel(scriptIndex);
+    if (label != NULL)
+        return label;
+    if (scriptIndex >= RESULT_SCRIPT_HIGHSCORE_CHARACTER_REIMU_YUKARI &&
+        scriptIndex <= RESULT_SCRIPT_HIGHSCORE_CHARACTER_YUYUKO)
+    {
+        return modern::ios::ResultCharacterName(
+            scriptIndex - RESULT_SCRIPT_HIGHSCORE_CHARACTER_REIMU_YUKARI,
+            g_CharacterList[scriptIndex - RESULT_SCRIPT_HIGHSCORE_CHARACTER_REIMU_YUKARI]);
+    }
+    if (scriptIndex >= RESULT_SCRIPT_SPELLCARD_CHARACTER_REIMU_YUKARI &&
+        scriptIndex <= RESULT_SCRIPT_SPELLCARD_CHARACTER_ALL)
+    {
+        return modern::ios::ResultCharacterName(
+            scriptIndex - RESULT_SCRIPT_SPELLCARD_CHARACTER_REIMU_YUKARI,
+            g_CharacterList[scriptIndex - RESULT_SCRIPT_SPELLCARD_CHARACTER_REIMU_YUKARI]);
+    }
+    return NULL;
+}
+#endif
 
 #pragma var_order(i, characterSlot, scoreData, encryptedData, currentOffset, currentCharacter, character, clrd, catk,  \
                   pscr, vrsm, compressedData, header, byteValue, byteIdx, xorValue, bytes, header2)
@@ -2005,8 +2032,15 @@ i32 ResultScreen::HandleOtherStatsScreen()
 
             g_Supervisor.UpdatePlayTime();
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_TOTAL_TIME, g_GameManager.plst.totalHours,
-                                       g_GameManager.plst.totalMinutes, g_GameManager.plst.totalSeconds);
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("total-time"),
+                                               g_GameManager.plst.totalHours, g_GameManager.plst.totalMinutes,
+                                               g_GameManager.plst.totalSeconds);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_TOTAL_TIME, g_GameManager.plst.totalHours,
+                                           g_GameManager.plst.totalMinutes, g_GameManager.plst.totalSeconds);
 
             g_Supervisor.UpdatePlayTime();
 
@@ -2016,14 +2050,26 @@ i32 ResultScreen::HandleOtherStatsScreen()
             pos.y += 17.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_TOTAL_PLAYTIME, g_GameManager.plst.gameHours,
-                                       g_GameManager.plst.gameMinutes, g_GameManager.plst.gameSeconds);
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("total-playtime"),
+                                               g_GameManager.plst.gameHours, g_GameManager.plst.gameMinutes,
+                                               g_GameManager.plst.gameSeconds);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_TOTAL_PLAYTIME, g_GameManager.plst.gameHours,
+                                           g_GameManager.plst.gameMinutes, g_GameManager.plst.gameSeconds);
 
             vm++;
             pos.y += 17.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_PLAYCOUNT_INFO);
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("play-count"));
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_PLAYCOUNT_INFO);
 
             for (i32 i = 0; i < SHOT_ALL; i++)
             {
@@ -2031,61 +2077,118 @@ i32 ResultScreen::HandleOtherStatsScreen()
                 pos.y += 17.0f;
                 vm->pos = pos;
 
-                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, "%s %6d %6d %6d %6d %6d %6d", g_CharacterList[i],
-                                           g_GameManager.plst.playDataByDifficulty[EASY].attemptsPerCharacter[i],
-                                           g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsPerCharacter[i],
-                                           g_GameManager.plst.playDataByDifficulty[HARD].attemptsPerCharacter[i],
-                                           g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsPerCharacter[i],
-                                           g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsPerCharacter[i],
-                                           g_GameManager.plst.playDataTotals.attemptsPerCharacter[i]);
+#ifdef TH08_IOS
+                if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                    g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0,
+                                                   "%s %6d %6d %6d %6d %6d %6d",
+                                                   modern::ios::ResultCharacterName(i, g_CharacterList[i]),
+                                                   g_GameManager.plst.playDataByDifficulty[EASY].attemptsPerCharacter[i],
+                                                   g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsPerCharacter[i],
+                                                   g_GameManager.plst.playDataByDifficulty[HARD].attemptsPerCharacter[i],
+                                                   g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsPerCharacter[i],
+                                                   g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsPerCharacter[i],
+                                                   g_GameManager.plst.playDataTotals.attemptsPerCharacter[i]);
+                else
+#endif
+                    g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, "%s %6d %6d %6d %6d %6d %6d", g_CharacterList[i],
+                                               g_GameManager.plst.playDataByDifficulty[EASY].attemptsPerCharacter[i],
+                                               g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsPerCharacter[i],
+                                               g_GameManager.plst.playDataByDifficulty[HARD].attemptsPerCharacter[i],
+                                               g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsPerCharacter[i],
+                                               g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsPerCharacter[i],
+                                               g_GameManager.plst.playDataTotals.attemptsPerCharacter[i]);
             }
 
             vm++;
             pos.y += 17.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, "%s %6d %6d %6d %6d %6d %6d", g_CharacterList[SHOT_ALL],
-                                       g_GameManager.plst.playDataByDifficulty[EASY].attemptsTotal,
-                                       g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsTotal,
-                                       g_GameManager.plst.playDataByDifficulty[HARD].attemptsTotal,
-                                       g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsTotal,
-                                       g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsTotal,
-                                       g_GameManager.plst.playDataTotals.attemptsTotal);
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, "%s %6d %6d %6d %6d %6d %6d",
+                                               modern::ios::ResultCharacterName(SHOT_ALL, g_CharacterList[SHOT_ALL]),
+                                               g_GameManager.plst.playDataByDifficulty[EASY].attemptsTotal,
+                                               g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsTotal,
+                                               g_GameManager.plst.playDataByDifficulty[HARD].attemptsTotal,
+                                               g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsTotal,
+                                               g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsTotal,
+                                               g_GameManager.plst.playDataTotals.attemptsTotal);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, "%s %6d %6d %6d %6d %6d %6d", g_CharacterList[SHOT_ALL],
+                                           g_GameManager.plst.playDataByDifficulty[EASY].attemptsTotal,
+                                           g_GameManager.plst.playDataByDifficulty[NORMAL].attemptsTotal,
+                                           g_GameManager.plst.playDataByDifficulty[HARD].attemptsTotal,
+                                           g_GameManager.plst.playDataByDifficulty[LUNATIC].attemptsTotal,
+                                           g_GameManager.plst.playDataByDifficulty[EXTRA].attemptsTotal,
+                                           g_GameManager.plst.playDataTotals.attemptsTotal);
 
             vm++;
             pos.y += 34.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(
-                vm, COLOR_TEXT_WHITE, 0, TH_RESULT_CLEAR_COUNT, g_GameManager.plst.playDataByDifficulty[EASY].clears,
-                g_GameManager.plst.playDataByDifficulty[NORMAL].clears,
-                g_GameManager.plst.playDataByDifficulty[HARD].clears,
-                g_GameManager.plst.playDataByDifficulty[LUNATIC].clears,
-                g_GameManager.plst.playDataByDifficulty[EXTRA].clears, g_GameManager.plst.playDataTotals.clears);
+#ifdef TH08_IOS
+                if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("clear-count"),
+                                               g_GameManager.plst.playDataByDifficulty[EASY].clears,
+                                               g_GameManager.plst.playDataByDifficulty[NORMAL].clears,
+                                               g_GameManager.plst.playDataByDifficulty[HARD].clears,
+                                               g_GameManager.plst.playDataByDifficulty[LUNATIC].clears,
+                                               g_GameManager.plst.playDataByDifficulty[EXTRA].clears,
+                                               g_GameManager.plst.playDataTotals.clears);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(
+                    vm, COLOR_TEXT_WHITE, 0, TH_RESULT_CLEAR_COUNT, g_GameManager.plst.playDataByDifficulty[EASY].clears,
+                    g_GameManager.plst.playDataByDifficulty[NORMAL].clears,
+                    g_GameManager.plst.playDataByDifficulty[HARD].clears,
+                    g_GameManager.plst.playDataByDifficulty[LUNATIC].clears,
+                    g_GameManager.plst.playDataByDifficulty[EXTRA].clears, g_GameManager.plst.playDataTotals.clears);
 
             vm++;
             pos.y += 17.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_CONTINUE_COUNT,
-                                       g_GameManager.plst.playDataByDifficulty[EASY].continues,
-                                       g_GameManager.plst.playDataByDifficulty[NORMAL].continues,
-                                       g_GameManager.plst.playDataByDifficulty[HARD].continues,
-                                       g_GameManager.plst.playDataByDifficulty[LUNATIC].continues,
-                                       g_GameManager.plst.playDataByDifficulty[EXTRA].continues,
-                                       g_GameManager.plst.playDataByDifficulty[MAX_DIFFICULTIES]
-                                           .continues); // ?! why not playDataTotals.continues?
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("continue-count"),
+                                               g_GameManager.plst.playDataByDifficulty[EASY].continues,
+                                               g_GameManager.plst.playDataByDifficulty[NORMAL].continues,
+                                               g_GameManager.plst.playDataByDifficulty[HARD].continues,
+                                               g_GameManager.plst.playDataByDifficulty[LUNATIC].continues,
+                                               g_GameManager.plst.playDataByDifficulty[EXTRA].continues,
+                                               g_GameManager.plst.playDataByDifficulty[MAX_DIFFICULTIES].continues);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_CONTINUE_COUNT,
+                                           g_GameManager.plst.playDataByDifficulty[EASY].continues,
+                                           g_GameManager.plst.playDataByDifficulty[NORMAL].continues,
+                                           g_GameManager.plst.playDataByDifficulty[HARD].continues,
+                                           g_GameManager.plst.playDataByDifficulty[LUNATIC].continues,
+                                           g_GameManager.plst.playDataByDifficulty[EXTRA].continues,
+                                           g_GameManager.plst.playDataByDifficulty[MAX_DIFFICULTIES].continues);
             vm++;
             pos.y += 17.0f;
             vm->pos = pos;
 
-            g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_PRACTICE_COUNT,
-                                       g_GameManager.plst.playDataByDifficulty[EASY].practices,
-                                       g_GameManager.plst.playDataByDifficulty[NORMAL].practices,
-                                       g_GameManager.plst.playDataByDifficulty[HARD].practices,
-                                       g_GameManager.plst.playDataByDifficulty[LUNATIC].practices,
-                                       g_GameManager.plst.playDataByDifficulty[EXTRA].practices,
-                                       g_GameManager.plst.playDataTotals.practices);
+#ifdef TH08_IOS
+            if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
+                g_AnmManager->DrawTextLeftUtf8(vm, COLOR_TEXT_WHITE, 0, modern::ios::ResultLabel("practice-count"),
+                                               g_GameManager.plst.playDataByDifficulty[EASY].practices,
+                                               g_GameManager.plst.playDataByDifficulty[NORMAL].practices,
+                                               g_GameManager.plst.playDataByDifficulty[HARD].practices,
+                                               g_GameManager.plst.playDataByDifficulty[LUNATIC].practices,
+                                               g_GameManager.plst.playDataByDifficulty[EXTRA].practices,
+                                               g_GameManager.plst.playDataTotals.practices);
+            else
+#endif
+                g_AnmManager->DrawTextLeft(vm, COLOR_TEXT_WHITE, 0, TH_RESULT_PRACTICE_COUNT,
+                                           g_GameManager.plst.playDataByDifficulty[EASY].practices,
+                                           g_GameManager.plst.playDataByDifficulty[NORMAL].practices,
+                                           g_GameManager.plst.playDataByDifficulty[HARD].practices,
+                                           g_GameManager.plst.playDataByDifficulty[LUNATIC].practices,
+                                           g_GameManager.plst.playDataByDifficulty[EXTRA].practices,
+                                           g_GameManager.plst.playDataTotals.practices);
 
             vm++;
             pos.y += 17.0f;
@@ -2450,6 +2553,9 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
     const char *difficulties[5];
     float local_5c;
     float local_60;
+#ifdef TH08_IOS
+    const bool localizedResult = modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP;
+#endif
 
     g_AnmManager->FlushVertexBuffer();
     g_Supervisor.viewport.X = 0;
@@ -2464,8 +2570,28 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
     {
         pos = vm->pos;
         vm->pos += vm->pos2;
-
-        g_AnmManager->DrawNoRotation(vm);
+#ifdef TH08_IOS
+        const char *localizedMenuText = LocalizedResultMenuText(i);
+        if (localizedResult && localizedMenuText != NULL && vm->visible)
+        {
+            // The retail result atlas is CP932 and too small for CJK glyphs.
+            // Suppress only the text VM and draw the translated label at the
+            // same logical position, preserving the selection animation.
+            const bool wasVisible = vm->visible != 0;
+            Float3 labelPosition = vm->pos;
+            if ((vm->anchor & 1) == 0) labelPosition.x -= vm->spriteSize.x * 0.5f;
+            if ((vm->anchor & 2) == 0) labelPosition.y -= vm->spriteSize.y * 0.5f;
+            vm->visible = false;
+            i32 labelWidth = static_cast<i32>(vm->spriteSize.x + 0.5f);
+            if (labelWidth < 120) labelWidth = 220;
+            if (labelWidth > 300) labelWidth = 300;
+            g_AnmManager->DrawUtf8TextAt(&labelPosition, labelWidth, 26, 14,
+                                         vm->color1.d3dColor, 0x300000, localizedMenuText);
+            vm->visible = wasVisible;
+        }
+        else
+#endif
+            g_AnmManager->DrawNoRotation(vm);
 
         vm->pos = pos;
     }
@@ -2769,7 +2895,13 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
 
         vm++;
 
-        g_AsciiManager.AddFormatText(&pos, "No.   Name     Date   Player Score");
+#ifdef TH08_IOS
+        if (localizedResult)
+            g_AnmManager->DrawUtf8TextAt(&pos, 560, 22, 14, COLOR_WHITE, 0x300000,
+                                         modern::ios::ReplayLabel("hi-score"));
+        else
+#endif
+            g_AsciiManager.AddFormatText(&pos, "No.   Name     Date   Player Score");
 
         for (i = 0; i < ARRAY_SIZE_SIGNED(result->replays); i++)
         {
@@ -2787,6 +2919,21 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
 
             if (result->currentState == RESULT_SCREEN_STATE_WRITING_REPLAY_NAME)
             {
+#ifdef TH08_IOS
+                if (localizedResult)
+                {
+                    char row[256];
+                    SDL_snprintf(row, sizeof(row), "No.%02d %-8s %5s  %s %9d0", i + 1, result->lastName,
+                                 result->currentReplay.date,
+                                 modern::ios::ResultCharacterName(g_GameManager.shotType + g_GameManager.fullShotType,
+                                                                  g_ResultsCharacterNames[g_GameManager.shotType + g_GameManager.fullShotType]),
+                                 result->currentReplay.spellcardScore);
+                    g_AnmManager->DrawUtf8TextAt(&pos, 560, 22, 13,
+                                                 i == result->selectedReplay ? COLOR_WHITE : 0xff808080,
+                                                 0x300000, row);
+                }
+                else
+#endif
                 g_AsciiManager.AddFormatText(
                     &pos, "No.%.2d %8s %5s  %7s %9d0", i + 1, result->lastName, result->currentReplay.date,
                     g_ResultsCharacterNames[g_GameManager.shotType + g_GameManager.fullShotType],
@@ -2806,12 +2953,38 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
                 g_AsciiManager.AddFormatText(&pos, "      %8s", name);
             }
             else if (result->replays[i].header.magic != *(i32 *)REPLAY_MAGIC ||
-                     (result->replays[i].header.version & 0xfff) != REPLAY_VERSION)
+                      (result->replays[i].header.version & 0xfff) != REPLAY_VERSION)
             {
-                g_AsciiManager.AddFormatText(&pos, "No.%.2d -------- --/--  -------          0", i + 1);
+#ifdef TH08_IOS
+                if (localizedResult)
+                {
+                    char row[128];
+                    SDL_snprintf(row, sizeof(row), "No.%02d -------- --/--  --------          0", i + 1);
+                    g_AnmManager->DrawUtf8TextAt(&pos, 560, 22, 13,
+                                                 i == result->selectedReplay ? COLOR_WHITE : 0xff808080,
+                                                 0x300000, row);
+                }
+                else
+#endif
+                    g_AsciiManager.AddFormatText(&pos, "No.%.2d -------- --/--  -------          0", i + 1);
             }
             else
             {
+#ifdef TH08_IOS
+                if (localizedResult)
+                {
+                    char row[256];
+                    SDL_snprintf(row, sizeof(row), "No.%02d %-8s %5s  %s %9d0", i + 1,
+                                 result->replays[i].playerName, result->replays[i].date,
+                                 modern::ios::ResultCharacterName(result->replays[i].shotType,
+                                                                  g_ResultsCharacterNames[result->replays[i].shotType]),
+                                 result->replays[i].spellcardScore);
+                    g_AnmManager->DrawUtf8TextAt(&pos, 560, 22, 13,
+                                                 i == result->selectedReplay ? COLOR_WHITE : 0xff808080,
+                                                 0x300000, row);
+                }
+                else
+#endif
                 g_AsciiManager.AddFormatText(
                     &pos, "No.%.2d %8s %5s  %7s %9d0", i + 1, result->replays[i].playerName, result->replays[i].date,
                     g_ResultsCharacterNames[result->replays[i].shotType], result->replays[i].spellcardScore);

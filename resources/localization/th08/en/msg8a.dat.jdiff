@@ -1,0 +1,459 @@
+{
+    "2": {
+        "60_0": {
+            "lines": [
+                "I've been waiting for you."
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "You've got some guts,",
+                "challenging me on the night of the full moon."
+            ]
+        },
+        "230_0": {
+            "lines": [
+                "Are you the \"guts\" in this trial of guts?"
+            ]
+        },
+        "320_0": {
+            "lines": [
+                "I won't let you lay one finger on that human!"
+            ]
+        }
+    },
+    "0": {
+        "60_0": {
+            "lines": [
+                "I wonder what that was about.",
+                "It does feel like the fairies are pretty rowdy tonight..."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "The Moon tonight is especially strong."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "It's no wonder that all the creatures are rowdy, really."
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "So there are even fools who'd go out on a night like this, huh?"
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "Who's that?"
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "You, obviously?"
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "No, I'm not asking who's a fool."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "So you're admitting to being a fool too, then."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "I'm a human who's lived here for a long time.",
+                "I'm not here because I'm a fool."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "A human?",
+                "A human, huh."
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "Maybe she owns the forest or something."
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "So, what are you doing here, fools?"
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "A trial of guts."
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "And of various other things."
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "What! A trial of guts?!"
+            ]
+        },
+        "135_0": {
+            "lines": [
+                "Oh, since when have humans",
+                "been this foolish?"
+            ]
+        },
+        "136_0": {
+            "lines": [
+                "You come all the way out here in the dead of the night,"
+            ]
+        },
+        "137_0": {
+            "lines": [
+                "with this lunatic full moon, and tons of youkai out,"
+            ]
+        },
+        "138_0": {
+            "lines": [
+                "for a trial of guts, of all things?!"
+            ]
+        },
+        "139_0": {
+            "lines": [
+                "It's a miracle that you weren't killed by youkai yet."
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "A trial of guts, seriously! If you die,",
+                "it'll be your guts the youkai will feast on—"
+            ]
+        },
+        "141_0": {
+            "lines": [
+                "She's just babbling.",
+                "Reimu, any counterattacks?"
+            ]
+        },
+        "142_0": {
+            "lines": [
+                "Ehh, well. We're just having this trial of guts",
+                "because Kaguya was saying \"hey, go on out there,\" so..."
+            ]
+        },
+        "143_0": {
+            "lines": [
+                "What was that?",
+                "Did you say \"Kaguya\"?"
+            ]
+        },
+        "144_0": {
+            "lines": [
+                "Um, did I?"
+            ]
+        },
+        "145_0": {
+            "lines": [
+                "I certainly heard a \"ka,\" a \"gu,\" and a \"ya.\""
+            ]
+        },
+        "146_0": {
+            "lines": [
+                "Rrrgh!",
+                "I figured your trial of guts was suspicious."
+            ]
+        },
+        "147_0": {
+            "lines": [
+                "Of course she'd be behind this."
+            ]
+        },
+        "148_0": {
+            "lines": [
+                "Yeah, she goaded the two of you into",
+                "getting rid of me this time, didn't she?"
+            ]
+        },
+        "149_0": {
+            "lines": [
+                "She always, <i$always> tries to",
+                "do away with me!"
+            ]
+        },
+        "150_0": {
+            "lines": [
+                "Argh, and wasn't she the one who gave me",
+                "this inconvenient body in the first place?!"
+            ]
+        },
+        "151_0": {
+            "lines": [
+                "Huh, she's getting all worked up on her own."
+            ]
+        },
+        "152_0": {
+            "lines": [
+                "See? If you don't take advantage of this, you'll lose."
+            ]
+        },
+        "153_0": {
+            "lines": [
+                "Hmph. So, how about I see for myself",
+                "just how strong you messengers of Kaguya's are?"
+            ]
+        },
+        "154_0": {
+            "lines": [
+                "If she sent you, you must be",
+                "more powerful than her, right?"
+            ]
+        },
+        "155_0": {
+            "lines": [
+                "How brave. To think that there'd be a human",
+                "brave enough to confront a youkai like me."
+            ]
+        },
+        "156_0": {
+            "lines": [
+                "I only knew three others like that."
+            ]
+        },
+        "157_0": {
+            "lines": [
+                "I'd kind of rather not fight",
+                "another human, though..."
+            ]
+        },
+        "158_0": {
+            "lines": [
+                "What are you saying?",
+                "You were fine fighting Marisa, weren't you?"
+            ]
+        },
+        "159_0": {
+            "lines": [
+                "Don't go thinking I'm some ordinary human."
+            ]
+        },
+        "160_0": {
+            "lines": [
+                "I won't die. I'm completely unable to die.",
+                "Thanks to that lousy Kaguya."
+            ]
+        },
+        "161_0": {
+            "lines": [
+                "Yes, no matter how hard she tries to eliminate me,",
+                "it won't do her any good at all."
+            ]
+        },
+        "162_0": {
+            "lines": [
+                "She knows that, and she still sends you messengers.",
+                "This cannot get any more annoying."
+            ]
+        },
+        "163_0": {
+            "lines": [
+                "Look, Reimu.",
+                "You missed another opportunity."
+            ]
+        },
+        "164_0": {
+            "lines": [
+                "I still don't quite get it."
+            ]
+        },
+        "165_0": {
+            "lines": [
+                "But if she won't die, that means",
+                "I can go all-out on her, right?"
+            ]
+        },
+        "166_0": {
+            "lines": [
+                "More or less. Although it looks like the \"completely",
+                "unable to die\" part is just her being full of herself."
+            ]
+        },
+        "167_0": {
+            "lines": [
+                "If you don't go all out,",
+                "it's game over for your life."
+            ]
+        },
+        "168_0": {
+            "lines": [
+                "There's no turning back now.",
+                "It's a one-way street in the dead of the night."
+            ]
+        },
+        "169_0": {
+            "lines": [
+                "Just what you wanted.",
+                "Allow me to test your guts!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Ohhh man.",
+                "You're too strong..."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Wow, look, she's still alive.",
+                "She really can't die, huh?"
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "I'm seriously surprised. It looked like",
+                "she was about to die a bunch of times."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Ow, ow! I won't die, but it still hurts~."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Reimu, this girl is quite interesting."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Uh, looking at her in pain and saying",
+                "\"that's interesting\" is a bit, uh..."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "If you're this strong, there's no point",
+                "to a trial of guts, is there?"
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "Really?",
+                "There's still various things that I'm scared of."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "Like manju?"
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "Yeah, they're shaped like giant insect eggs.",
+                "And then that jelly inside is like..."
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "Oh noooo. Manju are so scary."
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "Well, anyway, is our trial of guts finished?"
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "Oh?",
+                "Now that you mention it, we haven't tried any guts yet."
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "?"
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "See? The human in front of us is full of guts.",
+                "Reimu, you cut out her guts and give them a try."
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "Eeeek.",
+                "I won't die, but that's scary."
+            ]
+        },
+        "76_0": {
+            "lines": [
+                "Why on earth should I have to",
+                "do something so youkai-like?"
+            ]
+        },
+        "77_0": {
+            "lines": [
+                "Well, if you eat an immortal person's liver,",
+                "you'll become immortal too."
+            ]
+        },
+        "78_0": {
+            "lines": [
+                "That said, I'd rather not",
+                "stop being human, you know...?"
+            ]
+        },
+        "79_0": {
+            "lines": [
+                "Oh, that's mean. Are you saying I'm not human?"
+            ]
+        },
+        "80_0": {
+            "lines": [
+                "Are you human...?",
+                "I don't really know."
+            ]
+        },
+        "81_0": {
+            "lines": [
+                "Well, in any case, Gensokyo is full of things",
+                "that you can't tell are human or not anyway."
+            ]
+        },
+        "82_0": {
+            "lines": [
+                "I guess it wouldn't matter much these days",
+                "if the container for your soul is different."
+            ]
+        },
+        "83_0": {
+            "lines": [
+                "Youkai extermination is the duty of the Hakurei, though.",
+                "Would that be youkai discrimination?"
+            ]
+        },
+        "84_0": {
+            "lines": [
+                "Okay, I take that back. Youkai should be exterminated.",
+                "Humans should do the exterminating."
+            ]
+        },
+        "85_0": {
+            "lines": [
+                "It's an unshakable contract we have.",
+                "I'll keep exterminating youkai from now on."
+            ]
+        },
+        "86_0": {
+            "lines": [
+                "Well said."
+            ]
+        }
+    }
+}

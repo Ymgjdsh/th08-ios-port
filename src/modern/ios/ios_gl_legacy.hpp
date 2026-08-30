@@ -166,6 +166,7 @@ void IosLegacySetFog(GLboolean enabled, GLfloat red, GLfloat green, GLfloat blue
 void IosLegacySetFogCoordinate(GLfloat coordinate);
 void IosLegacySetAlphaThreshold(GLfloat threshold);
 void IosLegacySetTextureUsage(GLboolean useRgb, GLboolean useAlpha);
+void IosLegacySetForceAlphaDiscard(GLboolean enabled);
 inline void glDrawBuffer(GLenum) {}
 inline void glReadBuffer(GLenum) {}
 inline void glAlphaFunc(GLenum, GLclampf) {}

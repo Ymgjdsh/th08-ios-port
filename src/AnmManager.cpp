@@ -8,9 +8,15 @@
 #include "utils.hpp"
 #ifdef TH08_IOS
 #include "modern/ios/ios_touch.hpp"
+#include "modern/ios/ios_compat.hpp"
+#include "modern/ios/ios_gl_legacy.hpp"
 #endif
 #include <stdarg.h>
 #include <stdio.h>
+#ifdef TH08_IOS
+#include <string>
+#include <vector>
+#endif
 
 namespace th08
 {
@@ -1259,6 +1265,12 @@ void AnmManager::FlushVertexBuffer()
     g_Supervisor.d3dDevice->DrawPrimitiveUP(D3DPT_TRIANGLELIST, this->spritesToDraw * 2, this->vertexBufferStartPtr,
                                             sizeof(VertexTex1DiffuseXyzrhw));
 
+#ifdef TH08_IOS
+    // Alpha discard is scoped to the just-submitted localized batch. The
+    // following retail sprite must restore its normal alpha-test behavior.
+    IosLegacySetForceAlphaDiscard(0);
+#endif
+
     this->vertexBufferStartPtr = this->vertexBufferEndPtr;
     this->spritesToDraw = 0;
     this->flushesThisFrame++;
@@ -1330,6 +1342,13 @@ ZunResult AnmManager::DrawNoRotation(AnmVm *vm)
 
     g_QuadVertices[0].pos.z = g_QuadVertices[1].pos.z = g_QuadVertices[2].pos.z = g_QuadVertices[3].pos.z = vm->pos.z;
 
+ #ifdef TH08_IOS
+    {
+        const ZunResult localizedResult = this->DrawLocalizedTextOverlay(vm, 1);
+        if (localizedResult != ZUN_ERROR)
+            return localizedResult;
+    }
+ #endif
     return this->DrawInner(vm, 1);
 }
 
@@ -1399,6 +1418,13 @@ ZunResult AnmManager::Draw2D(AnmVm *vm)
         g_QuadVertices[3].pos.y += y;
     }
 
+ #ifdef TH08_IOS
+    {
+        const ZunResult localizedResult = this->DrawLocalizedTextOverlay(vm, 0);
+        if (localizedResult != ZUN_ERROR)
+            return localizedResult;
+    }
+ #endif
     return this->DrawInner(vm, 0);
 }
 
@@ -2694,6 +2720,11 @@ void AnmManager::ReleaseAnmEntry(AnmEntry *entry)
 {
     if (entry->texture != NULL)
     {
+#ifdef TH08_IOS
+        // Remove localized pixel records before the ANM texture can be freed
+        // or its address can be reused for an unrelated atlas.
+        this->ForgetLocalizedTexture(entry->texture);
+#endif
         entry->texture->Release();
         entry->texture = NULL;
     }
@@ -2750,13 +2781,13 @@ void AnmManager::DrawTextInner(IDirect3DTexture8 *outTexture, i32 x, i32 y, i32 
 #pragma var_order(buf, fontWidth)
 void AnmManager::DrawTextLeft(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...)
 {
-    char buf[128];
+    char buf[512];
     int fontWidth = vm->fontWidth;
 
     va_list args;
 
     va_start(args, fmt);
-    vsprintf(buf, fmt, args);
+    vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
     this->DrawTextInner(vm->loadedSprite->texture, vm->loadedSprite->startPixelInclusive.x,
@@ -2771,14 +2802,14 @@ void AnmManager::DrawTextLeft(AnmVm *vm, COLORREF textColor, COLORREF shadowColo
 #pragma var_order(buf, fontWidth)
 void AnmManager::DrawTextRight(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...)
 {
-    char buf[128];
+    char buf[512];
     int x;
     int fontWidth = vm->fontWidth <= 0 ? 15 : vm->fontWidth;
 
     va_list args;
 
     va_start(args, fmt);
-    vsprintf(buf, fmt, args);
+    vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
     x = vm->loadedSprite->startPixelInclusive.x + vm->loadedSprite->widthPx * vm->loadedSprite->scaleFactor.x -
@@ -2794,14 +2825,14 @@ void AnmManager::DrawTextRight(AnmVm *vm, COLORREF textColor, COLORREF shadowCol
 #pragma var_order(buf, fontWidth)
 void AnmManager::DrawTextCentered(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...)
 {
-    char buf[72];
+    char buf[512];
     int x;
     int fontWidth = vm->fontWidth <= 0 ? 15 : vm->fontWidth;
 
     va_list args;
 
     va_start(args, fmt);
-    vsprintf(buf, fmt, args);
+    vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
 
     x = vm->loadedSprite->startPixelInclusive.x + vm->loadedSprite->widthPx * vm->loadedSprite->scaleFactor.x / 2.0f -
@@ -2812,6 +2843,739 @@ void AnmManager::DrawTextCentered(AnmVm *vm, COLORREF textColor, COLORREF shadow
 
     vm->visible = true;
 }
+
+#ifdef TH08_IOS
+namespace
+{
+struct LocalizedTextTexture
+{
+    i32 width;
+    i32 height;
+    i32 fontSize;
+    COLORREF textColor;
+    COLORREF shadowColor;
+    u32 languageRevision;
+    u32 lastUsed;
+    std::string text;
+    IDirect3DTexture8 *texture;
+};
+
+struct LocalizedTextOverlay
+{
+    AnmVm *vm;
+    i32 width;
+    i32 height;
+    i32 fontSize;
+    COLORREF textColor;
+    COLORREF shadowColor;
+    u32 languageRevision;
+    u32 frame;
+    std::string text;
+};
+
+std::vector<LocalizedTextTexture> g_localizedTextTextures;
+std::vector<LocalizedTextOverlay> g_localizedTextOverlays;
+u32 g_localizedTextUseCounter;
+u32 g_localizedTextFrame;
+
+void ReleaseLocalizedTextTextures()
+{
+    for (size_t index = 0; index < g_localizedTextTextures.size(); ++index)
+    {
+        if (g_localizedTextTextures[index].texture != NULL)
+            g_localizedTextTextures[index].texture->Release();
+    }
+    g_localizedTextTextures.clear();
+    g_localizedTextUseCounter = 0;
+}
+
+LocalizedTextTexture *FindLocalizedTextTexture(i32 width, i32 height, i32 fontSize,
+                                               COLORREF textColor, COLORREF shadowColor,
+                                               const char *text)
+{
+    const u32 revision = modern::ios::LanguageRevision();
+    for (size_t index = 0; index < g_localizedTextTextures.size(); ++index)
+    {
+        LocalizedTextTexture &entry = g_localizedTextTextures[index];
+        if (entry.width == width && entry.height == height && entry.fontSize == fontSize &&
+            entry.textColor == textColor && entry.shadowColor == shadowColor &&
+            entry.languageRevision == revision && entry.text == text)
+        {
+            entry.lastUsed = ++g_localizedTextUseCounter;
+            return &entry;
+        }
+    }
+    return NULL;
+}
+
+void StoreLocalizedTextTexture(const LocalizedTextTexture &created)
+{
+    const size_t maximumCachedLabels = 384;
+    if (g_localizedTextTextures.size() >= maximumCachedLabels)
+    {
+        size_t oldestIndex = 0;
+        for (size_t index = 1; index < g_localizedTextTextures.size(); ++index)
+            if (g_localizedTextTextures[index].lastUsed < g_localizedTextTextures[oldestIndex].lastUsed)
+                oldestIndex = index;
+        if (g_localizedTextTextures[oldestIndex].texture != NULL)
+            g_localizedTextTextures[oldestIndex].texture->Release();
+        g_localizedTextTextures.erase(g_localizedTextTextures.begin() + oldestIndex);
+    }
+    g_localizedTextTextures.push_back(created);
+}
+
+LocalizedTextOverlay *FindLocalizedTextOverlay(AnmVm *vm)
+{
+    if (vm == NULL) return NULL;
+    for (size_t index = 0; index < g_localizedTextOverlays.size(); ++index)
+    {
+        if (g_localizedTextOverlays[index].vm == vm)
+            return &g_localizedTextOverlays[index];
+    }
+    return NULL;
+}
+
+void RemoveLocalizedTextOverlay(AnmVm *vm)
+{
+    for (size_t index = 0; index < g_localizedTextOverlays.size();)
+    {
+        if (g_localizedTextOverlays[index].vm == vm)
+            g_localizedTextOverlays.erase(g_localizedTextOverlays.begin() + index);
+        else
+            ++index;
+    }
+}
+
+i32 Utf8TextWidthEstimate(const char *text, i32 fontSize)
+{
+    size_t characters = 0;
+    if (text != NULL)
+    {
+        for (const unsigned char *cursor = reinterpret_cast<const unsigned char *>(text);
+             *cursor != 0; ++cursor)
+        {
+            if ((*cursor & 0xc0) != 0x80) ++characters;
+        }
+    }
+    return static_cast<i32>(characters * fontSize * 0.92f + 0.5f);
+}
+
+IDirect3DTexture8 *GetLocalizedTextTexture(i32 width, i32 height, i32 fontSize,
+                                           COLORREF textColor, COLORREF shadowColor,
+                                           const char *text)
+{
+    static int createDiagnostics;
+    const bool diagnosticsEnabled = SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL;
+    if (diagnosticsEnabled && createDiagnostics < 12)
+    {
+        char message[256];
+        SDL_snprintf(message, sizeof(message), "text/texture: create entered %dx%d size=%d text=%s",
+                     width, height, fontSize, text != NULL ? text : "<null>");
+        modern::LogStartup(message);
+        ++createDiagnostics;
+    }
+    if (width <= 4 || height <= 4 || text == NULL || text[0] == '\0' ||
+        g_Supervisor.d3dDevice == NULL)
+        return NULL;
+
+    if (fontSize < 8) fontSize = 8;
+    if (fontSize > height - 2) fontSize = height - 2;
+    if (fontSize < 8) fontSize = 8;
+    while (fontSize > 8 && Utf8TextWidthEstimate(text, fontSize) > width - 4)
+        --fontSize;
+
+    LocalizedTextTexture *cached = FindLocalizedTextTexture(width, height, fontSize,
+                                                             textColor, shadowColor, text);
+    if (cached != NULL)
+        return cached->texture;
+
+    const i32 textureScale = 2;
+    const i32 textureWidth = width * textureScale;
+    const i32 textureHeight = height * textureScale;
+    if (textureWidth <= 0 || textureHeight <= 0 || textureWidth > 4096 || textureHeight > 256)
+    {
+        modern::LogStartup("text: localized overlay dimensions rejected");
+        return NULL;
+    }
+
+    IDirect3DTexture8 *texture = NULL;
+    if (FAILED(g_Supervisor.d3dDevice->CreateTexture(static_cast<UINT>(textureWidth),
+                                                     static_cast<UINT>(textureHeight), 1, 0,
+                                                     D3DFMT_A8R8G8B8, D3DPOOL_MANAGED,
+                                                     &texture)) || texture == NULL)
+        return NULL;
+
+    // Explicitly initialize the alpha channel. Some iOS drivers leave managed
+    // textures undefined until their first lock, which produced opaque black
+    // rectangles behind otherwise valid glyphs.
+    IDirect3DSurface8 *surface = NULL;
+    if (SUCCEEDED(texture->GetSurfaceLevel(0, &surface)) && surface != NULL)
+    {
+        D3DLOCKED_RECT locked;
+        if (SUCCEEDED(surface->LockRect(&locked, NULL, 0)))
+        {
+            for (i32 row = 0; row < textureHeight; ++row)
+                memset(static_cast<u8 *>(locked.pBits) + row * locked.Pitch, 0,
+                       static_cast<size_t>(textureWidth) * 4);
+            surface->UnlockRect();
+        }
+        surface->Release();
+    }
+
+    IDirect3DSurface8 *rasterSurface = NULL;
+    bool rasterized = false;
+    if (SUCCEEDED(texture->GetSurfaceLevel(0, &rasterSurface)) && rasterSurface != NULL)
+    {
+        D3DLOCKED_RECT rasterLock;
+        if (SUCCEEDED(rasterSurface->LockRect(&rasterLock, NULL, 0)))
+        {
+            rasterized = TH08IosRasterizeTextUtf8(text, fontSize * textureScale,
+                                                  textureWidth, textureHeight,
+                                                  textColor, shadowColor,
+                                                  static_cast<BYTE *>(rasterLock.pBits),
+                                                  rasterLock.Pitch) != FALSE;
+            if (diagnosticsEnabled && rasterized && createDiagnostics < 24)
+            {
+                unsigned int nonzeroAlpha = 0;
+                unsigned int nonzeroColor = 0;
+                const BYTE *pixels = static_cast<const BYTE *>(rasterLock.pBits);
+                for (i32 row = 0; row < textureHeight; ++row)
+                    for (i32 column = 0; column < textureWidth; ++column)
+                    {
+                        const BYTE *pixel = pixels + row * rasterLock.Pitch + column * 4;
+                        if (pixel[3] != 0) ++nonzeroAlpha;
+                        if (pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0) ++nonzeroColor;
+                    }
+                char message[256];
+                SDL_snprintf(message, sizeof(message), "text/texture: raster pixels alpha=%u color=%u",
+                             nonzeroAlpha, nonzeroColor);
+                modern::LogStartup(message);
+                ++createDiagnostics;
+            }
+            rasterSurface->UnlockRect();
+        }
+        rasterSurface->Release();
+    }
+    if (!rasterized)
+    {
+        // Keep the retail-compatible path as a fallback for unusual devices
+        // where a direct SDL_ttf surface cannot be allocated.
+        const BOOL previousEncoding = TH08IosSetGdiTextUtf8(TRUE);
+        TextHelper::RenderTextToTextureBold(2, 0, width - 4, height, fontSize, height,
+                                            textColor, shadowColor, text, texture, textureScale);
+        TH08IosSetGdiTextUtf8(previousEncoding);
+    }
+    // The iOS rasterizer writes canonical RGBA bytes into the D3D surface.
+    // Mark it before the first GLES draw so the compatibility device does not
+    // reinterpret those bytes using the retail BGRA convention. The legacy
+    // GDI fallback keeps the normal D3D byte order and must remain unmarked.
+    if (rasterized)
+        TH08IosMarkTextureRgba(texture);
+
+    // Verify the generated texture before it enters the draw cache. A fully
+    // opaque A8R8G8B8 surface turns the entire label rectangle black when the
+    // GLES blend state is correct, so keep this diagnostic close to the
+    // rasterization boundary. It is intentionally limited to the first few
+    // labels to avoid making the per-label path noisy on real devices.
+    static int alphaDiagnostics;
+    if (diagnosticsEnabled && alphaDiagnostics < 12)
+    {
+        IDirect3DSurface8 *diagnosticSurface = NULL;
+        BYTE alphaMinimum = 255;
+        BYTE alphaMaximum = 0;
+        unsigned int transparentPixels = 0;
+        unsigned int opaquePixels = 0;
+        if (SUCCEEDED(texture->GetSurfaceLevel(0, &diagnosticSurface)) && diagnosticSurface != NULL)
+        {
+            D3DSURFACE_DESC diagnosticDesc;
+            D3DLOCKED_RECT diagnosticLock;
+            if (SUCCEEDED(diagnosticSurface->GetDesc(&diagnosticDesc)) &&
+                SUCCEEDED(diagnosticSurface->LockRect(&diagnosticLock, NULL, D3DLOCK_READONLY)))
+            {
+                for (UINT row = 0; row < diagnosticDesc.Height; ++row)
+                {
+                    const BYTE *pixels = static_cast<const BYTE *>(diagnosticLock.pBits) +
+                                         row * diagnosticLock.Pitch;
+                    for (UINT column = 0; column < diagnosticDesc.Width; ++column)
+                    {
+                        const BYTE alpha = pixels[column * 4 + 3];
+                        if (alpha < alphaMinimum) alphaMinimum = alpha;
+                        if (alpha > alphaMaximum) alphaMaximum = alpha;
+                        if (alpha == 0) ++transparentPixels;
+                        if (alpha == 255) ++opaquePixels;
+                    }
+                }
+                diagnosticSurface->UnlockRect();
+                char diagnosticMessage[256];
+                SDL_snprintf(diagnosticMessage, sizeof(diagnosticMessage),
+                             "text/texture: size=%dx%d alpha=%u..%u transparent=%u opaque=%u text=%s",
+                             textureWidth, textureHeight,
+                             static_cast<unsigned>(alphaMinimum),
+                             static_cast<unsigned>(alphaMaximum),
+                             transparentPixels, opaquePixels, text);
+                modern::LogStartup(diagnosticMessage);
+                ++alphaDiagnostics;
+            }
+            diagnosticSurface->Release();
+        }
+    }
+
+    LocalizedTextTexture created;
+    created.width = width;
+    created.height = height;
+    created.fontSize = fontSize;
+    created.textColor = textColor;
+    created.shadowColor = shadowColor;
+    created.languageRevision = modern::ios::LanguageRevision();
+    created.lastUsed = ++g_localizedTextUseCounter;
+    created.text = text;
+    created.texture = texture;
+    StoreLocalizedTextTexture(created);
+    return texture;
+}
+
+void PrepareLocalizedTextRenderState()
+{
+    // DrawUtf8TextAt and DrawLocalizedTextOverlay may follow an arbitrary
+    // sprite. D3D8 keeps texture-stage state globally, while the GLES shim
+    // consumes that state when the vertex batch is flushed. Flush first so
+    // the previous batch cannot be interpreted with the text settings.
+    g_AnmManager->FlushVertexBuffer();
+    g_Supervisor.d3dDevice->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    g_Supervisor.d3dDevice->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    g_Supervisor.d3dDevice->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_MINFILTER, D3DTEXF_LINEAR);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
+    // Localized atlases use compact non-power-of-two dimensions. GLES2
+    // requires CLAMP_TO_EDGE for NPOT textures; REPEAT makes the texture
+    // incomplete and samples as a solid black quad on the simulator.
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    IosLegacySetForceAlphaDiscard(1);
+}
+
+void RestoreLocalizedTextRenderState()
+{
+    // Retail stage and spell-card backgrounds scroll UVs outside [0, 1] and
+    // rely on wrapping. Localized NPOT text needs clamping, so restore the
+    // game's global sampler contract immediately after the isolated text
+    // batch and invalidate state cached by AnmManager.
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+    IosLegacySetForceAlphaDiscard(0);
+    g_AnmManager->ClearBlendMode();
+    g_AnmManager->ClearColorOp();
+    g_AnmManager->ClearTexture();
+    // Draw3D uses currentSprite as part of its texture-matrix cache. The
+    // localized overlay temporarily replaces currentTexture, so retaining
+    // the previous sprite would make a static stage quad skip both its
+    // texture transform and texture bind on the next draw. That manifested
+    // most visibly as the Stage 1 boss background breaking into stale blocks.
+    g_AnmManager->ClearSprite();
+}
+}
+
+void AnmManager::DrawTextLeftUtf8(AnmVm *vm, COLORREF textColor, COLORREF shadowColor, const char *fmt, ...)
+{
+    if (vm == NULL || vm->loadedSprite == NULL || fmt == NULL) return;
+
+    char buf[512];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+
+    LocalizedTextOverlay *overlay = FindLocalizedTextOverlay(vm);
+    if (overlay == NULL)
+    {
+        LocalizedTextOverlay created;
+        memset(&created, 0, sizeof(created));
+        created.vm = vm;
+        g_localizedTextOverlays.push_back(created);
+        overlay = &g_localizedTextOverlays.back();
+    }
+    overlay->width = static_cast<i32>(vm->spriteSize.x + 0.5f);
+    overlay->height = static_cast<i32>(vm->spriteSize.y + 0.5f);
+    overlay->fontSize = vm->fontHeight > 0 ? vm->fontHeight : 15;
+    overlay->textColor = textColor;
+    overlay->shadowColor = shadowColor;
+    overlay->languageRevision = modern::ios::LanguageRevision();
+    overlay->frame = g_localizedTextFrame;
+    overlay->text = buf;
+    vm->visible = true;
+}
+
+void AnmManager::DrawUtf8TextAt(const Float3 *position, i32 width, i32 height, i32 fontSize,
+                                COLORREF textColor, COLORREF shadowColor, const char *text)
+{
+    static int drawDiagnostics;
+    const bool diagnosticsEnabled = SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL;
+    if (diagnosticsEnabled && drawDiagnostics < 24)
+    {
+        char message[256];
+        SDL_snprintf(message, sizeof(message), "text/draw: entered %dx%d size=%d text=%s",
+                     width, height, fontSize, text != NULL ? text : "<null>");
+        modern::LogStartup(message);
+        ++drawDiagnostics;
+    }
+    if (position == NULL || text == NULL || width <= 2 || height <= 2 || g_Supervisor.d3dDevice == NULL)
+        return;
+    if (fontSize < 10) fontSize = 10;
+
+    // Keep logical coordinates at 640x480 but store glyphs at 2x.  This is
+    // important on Retina iPads where a logical 15px glyph otherwise becomes
+    // a visibly blurred 15px source bitmap.
+    const i32 textureScale = 2;
+    const i32 textureWidth = width * textureScale;
+    const i32 textureHeight = height * textureScale;
+    if (textureWidth <= 0 || textureHeight <= 0 || textureWidth > 4096 || textureHeight > 256)
+    {
+        modern::LogStartup("text: localized texture dimensions rejected");
+        return;
+    }
+
+    float estimatedWidth = 0.0f;
+    for (const unsigned char *cursor = reinterpret_cast<const unsigned char *>(text); *cursor != 0; ++cursor)
+    {
+        if ((*cursor & 0xc0) != 0x80)
+            estimatedWidth += (*cursor < 0x80) ? 0.62f : 1.0f;
+    }
+    if (estimatedWidth < 1.0f) estimatedWidth = 1.0f;
+    while (fontSize > 10 && estimatedWidth * fontSize > width - 8)
+        --fontSize;
+
+    LocalizedTextTexture *cached = FindLocalizedTextTexture(width, height, fontSize,
+                                                            textColor, shadowColor, text);
+    IDirect3DTexture8 *texture = cached != NULL ? cached->texture : NULL;
+    if (texture == NULL)
+    {
+        if (FAILED(g_Supervisor.d3dDevice->CreateTexture(static_cast<UINT>(textureWidth), static_cast<UINT>(textureHeight), 1, 0,
+                                                         D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &texture)) || texture == NULL)
+            return;
+
+        // Managed texture contents are undefined on some iOS GPU drivers.
+        IDirect3DSurface8 *surface = NULL;
+        if (SUCCEEDED(texture->GetSurfaceLevel(0, &surface)) && surface != NULL)
+        {
+            D3DLOCKED_RECT locked;
+            if (SUCCEEDED(surface->LockRect(&locked, NULL, 0)))
+            {
+                for (i32 row = 0; row < textureHeight; ++row)
+                    memset(static_cast<u8 *>(locked.pBits) + row * locked.Pitch, 0,
+                           static_cast<size_t>(textureWidth) * 4);
+                surface->UnlockRect();
+            }
+            surface->Release();
+        }
+
+        IDirect3DSurface8 *rasterSurface = NULL;
+        bool rasterized = false;
+        if (SUCCEEDED(texture->GetSurfaceLevel(0, &rasterSurface)) && rasterSurface != NULL)
+        {
+            D3DLOCKED_RECT rasterLock;
+            if (SUCCEEDED(rasterSurface->LockRect(&rasterLock, NULL, 0)))
+            {
+                rasterized = TH08IosRasterizeTextUtf8(text, fontSize * textureScale,
+                                                      textureWidth, textureHeight,
+                                                      textColor, shadowColor,
+                                                      static_cast<BYTE *>(rasterLock.pBits),
+                                                      rasterLock.Pitch) != FALSE;
+                static int pixelDiagnostics;
+                if (diagnosticsEnabled && rasterized && pixelDiagnostics < 12)
+                {
+                    unsigned int nonzeroAlpha = 0;
+                    unsigned int opaqueAlpha = 0;
+                    unsigned int nonzeroColor = 0;
+                    const BYTE *pixels = static_cast<const BYTE *>(rasterLock.pBits);
+                    for (i32 row = 0; row < textureHeight; ++row)
+                        for (i32 column = 0; column < textureWidth; ++column)
+                        {
+                            const BYTE *pixel = pixels + row * rasterLock.Pitch + column * 4;
+                            if (pixel[3] != 0) ++nonzeroAlpha;
+                            if (pixel[3] == 255) ++opaqueAlpha;
+                            if (pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 0) ++nonzeroColor;
+                        }
+                    char message[192];
+                    SDL_snprintf(message, sizeof(message),
+                                 "text/draw: pixels alpha=%u opaque=%u color=%u text=%s",
+                                 nonzeroAlpha, opaqueAlpha, nonzeroColor, text);
+                    modern::LogStartup(message);
+                    ++pixelDiagnostics;
+                }
+                rasterSurface->UnlockRect();
+            }
+            rasterSurface->Release();
+        }
+        if (!rasterized)
+        {
+            const BOOL previousEncoding = TH08IosSetGdiTextUtf8(TRUE);
+            TextHelper::RenderTextToTextureBold(2, 0, width - 4, height, fontSize, height,
+                                                textColor, shadowColor, text, texture, textureScale);
+            TH08IosSetGdiTextUtf8(previousEncoding);
+        }
+
+        if (rasterized)
+            TH08IosMarkTextureRgba(texture);
+
+        LocalizedTextTexture created;
+        created.width = width;
+        created.height = height;
+        created.fontSize = fontSize;
+        created.textColor = textColor;
+        created.shadowColor = shadowColor;
+        created.languageRevision = modern::ios::LanguageRevision();
+        created.lastUsed = ++g_localizedTextUseCounter;
+        created.text = text;
+        created.texture = texture;
+        StoreLocalizedTextTexture(created);
+    }
+
+    AnmLoadedSprite sprite;
+    memset(&sprite, 0, sizeof(sprite));
+    sprite.anmIdx = -1;
+    sprite.texture = texture;
+    sprite.startPixelInclusive.x = 0.0f;
+    sprite.startPixelInclusive.y = 0.0f;
+    sprite.endPixelInclusive.x = static_cast<float>(textureWidth);
+    sprite.endPixelInclusive.y = static_cast<float>(textureHeight);
+    sprite.width = static_cast<float>(textureWidth);
+    sprite.height = static_cast<float>(textureHeight);
+    sprite.widthPx = static_cast<float>(textureWidth);
+    sprite.heightPx = static_cast<float>(textureHeight);
+    sprite.uvStart.x = 0.0f;
+    sprite.uvStart.y = 0.0f;
+    sprite.uvEnd.x = 1.0f;
+    sprite.uvEnd.y = 1.0f;
+    sprite.scaleFactor.x = 1.0f;
+    sprite.scaleFactor.y = 1.0f;
+
+    AnmVm vm;
+    memset(&vm, 0, sizeof(vm));
+    vm.pos = *position;
+    vm.scale.x = 1.0f;
+    vm.scale.y = 1.0f;
+    vm.spriteSize.x = static_cast<float>(width);
+    vm.spriteSize.y = static_cast<float>(height);
+    vm.color1.d3dColor = 0xffffffff;
+    vm.visible = 1;
+    vm.flag1 = 1;
+    vm.anchor = 3;
+    vm.loadedSprite = &sprite;
+    PrepareLocalizedTextRenderState();
+    this->DrawNoRotation(&vm);
+    this->FlushVertexBuffer();
+    RestoreLocalizedTextRenderState();
+}
+
+void AnmManager::BeginLocalizedTextFrame()
+{
+    ++g_localizedTextFrame;
+    if (g_localizedTextFrame == 0)
+        g_localizedTextFrame = 1;
+    // VM objects are owned by individual screens and can be destroyed and
+    // reused when a chain changes. Rebuild the small pointer table every frame
+    // so a stale screen can never paint a previous screen's translation.
+    g_localizedTextOverlays.clear();
+}
+
+ZunResult AnmManager::DrawLocalizedTextOverlay(AnmVm *vm, i32 flags)
+{
+    if (vm == NULL || modern::ios::GetLanguage() == modern::ios::IOS_LANGUAGE_JP)
+        return ZUN_ERROR;
+
+    LocalizedTextOverlay *overlay = FindLocalizedTextOverlay(vm);
+    if (overlay == NULL || overlay->languageRevision != modern::ios::LanguageRevision() ||
+        overlay->frame != g_localizedTextFrame)
+        return ZUN_ERROR;
+
+    // An intentionally empty translation hides the retail glyphs. This is
+    // used for unused Music Room lines and prevents old CP932 text from
+    // reappearing after selecting another song.
+    if (overlay->text.empty())
+        return ZUN_SUCCESS;
+
+    const i32 width = overlay->width > 4 ? overlay->width : 4;
+    const i32 height = overlay->height > 4 ? overlay->height : 4;
+    IDirect3DTexture8 *texture = GetLocalizedTextTexture(width, height, overlay->fontSize,
+                                                         overlay->textColor, overlay->shadowColor,
+                                                         overlay->text.c_str());
+    if (texture == NULL)
+    {
+        modern::LogStartup("text: localized overlay texture unavailable; retail text retained");
+        return ZUN_ERROR;
+    }
+
+    AnmLoadedSprite sprite;
+    memset(&sprite, 0, sizeof(sprite));
+    sprite.anmIdx = -1;
+    sprite.texture = texture;
+    sprite.endPixelInclusive.x = static_cast<float>(width * 2);
+    sprite.endPixelInclusive.y = static_cast<float>(height * 2);
+    sprite.width = static_cast<float>(width * 2);
+    sprite.height = static_cast<float>(height * 2);
+    sprite.widthPx = static_cast<float>(width);
+    sprite.heightPx = static_cast<float>(height);
+    sprite.uvEnd.x = 1.0f;
+    sprite.uvEnd.y = 1.0f;
+    sprite.scaleFactor.x = 1.0f;
+    sprite.scaleFactor.y = 1.0f;
+
+    AnmVm localizedVm = *vm;
+    localizedVm.loadedSprite = &sprite;
+    // Localized glyphs must not inherit a dark/selected retail sprite tint.
+    // Preserve only the VM alpha used by its fade animation.
+    const u32 localizedAlpha = vm->color1.d3dColor & 0xff000000u;
+    localizedVm.color1.d3dColor = localizedAlpha | 0x00ffffffu;
+    localizedVm.color2.d3dColor = localizedVm.color1.d3dColor;
+    localizedVm.flag17 = 0;
+    PrepareLocalizedTextRenderState();
+    const ZunResult result = this->DrawInner(&localizedVm, flags);
+    this->FlushVertexBuffer();
+    RestoreLocalizedTextRenderState();
+    return result;
+}
+
+namespace
+{
+struct LocalizedSpritePatch
+{
+    IDirect3DTexture8 *texture;
+    u32 textureWidth;
+    u32 textureHeight;
+    i32 x;
+    i32 y;
+    i32 width;
+    i32 height;
+    D3DFORMAT format;
+    u32 bytesPerPixel;
+    modern::ios::IosLanguage language;
+    std::string text;
+    std::vector<u8> original;
+};
+
+std::vector<LocalizedSpritePatch> g_localizedSpritePatches;
+
+bool LocalizedTextureBytesPerPixel(D3DFORMAT format, u32 *bytesPerPixel)
+{
+    if (bytesPerPixel == NULL) return false;
+    switch (format)
+    {
+    case D3DFMT_R8G8B8: *bytesPerPixel = 3; return true;
+    case D3DFMT_R5G6B5:
+    case D3DFMT_X1R5G5B5:
+    case D3DFMT_A1R5G5B5:
+    case D3DFMT_A4R4G4B4: *bytesPerPixel = 2; return true;
+    case D3DFMT_A8R8G8B8:
+    case D3DFMT_X8R8G8B8: *bytesPerPixel = 4; return true;
+    default: return false;
+    }
+}
+
+size_t Utf8CharacterCount(const char *text)
+{
+    size_t count = 0;
+    if (text == NULL) return 0;
+    for (const unsigned char *cursor = reinterpret_cast<const unsigned char *>(text);
+         *cursor != 0; ++cursor)
+    {
+        if ((*cursor & 0xc0) != 0x80) ++count;
+    }
+    return count;
+}
+
+bool RestoreLocalizedSprite(LocalizedSpritePatch &patch)
+{
+    if (patch.texture == NULL || patch.original.empty()) return false;
+    D3DSURFACE_DESC desc;
+    if (FAILED(patch.texture->GetLevelDesc(0, &desc)) ||
+        desc.Width != patch.textureWidth || desc.Height != patch.textureHeight ||
+        desc.Format != patch.format || patch.x < 0 || patch.y < 0 ||
+        patch.x + patch.width > static_cast<i32>(desc.Width) ||
+        patch.y + patch.height > static_cast<i32>(desc.Height))
+        return false;
+    D3DLOCKED_RECT locked;
+    if (FAILED(patch.texture->LockRect(0, &locked, NULL, 0))) return false;
+    const size_t rowBytes = static_cast<size_t>(patch.width) * patch.bytesPerPixel;
+    for (i32 row = 0; row < patch.height; ++row)
+    {
+        memcpy(static_cast<u8 *>(locked.pBits) + (patch.y + row) * locked.Pitch +
+                   patch.x * patch.bytesPerPixel,
+               &patch.original[static_cast<size_t>(row) * rowBytes], rowBytes);
+    }
+    patch.texture->UnlockRect(0);
+    return true;
+}
+
+void ReleaseLocalizedSpritePatch(LocalizedSpritePatch &patch)
+{
+    if (patch.texture != NULL)
+    {
+        patch.texture->Release();
+        patch.texture = NULL;
+    }
+}
+}
+
+void AnmManager::ForgetLocalizedTexture(IDirect3DTexture8 *texture)
+{
+    if (texture == NULL) return;
+    for (size_t index = 0; index < g_localizedSpritePatches.size();)
+    {
+        LocalizedSpritePatch &patch = g_localizedSpritePatches[index];
+        if (patch.texture != texture)
+        {
+            ++index;
+            continue;
+        }
+        RestoreLocalizedSprite(patch);
+        ReleaseLocalizedSpritePatch(patch);
+        g_localizedSpritePatches.erase(g_localizedSpritePatches.begin() + index);
+    }
+}
+
+void AnmManager::ResetLocalizedSpritePatches()
+{
+    ReleaseLocalizedTextTextures();
+    g_localizedTextOverlays.clear();
+    g_localizedTextFrame = 0;
+    for (size_t index = 0; index < g_localizedSpritePatches.size(); ++index)
+    {
+        RestoreLocalizedSprite(g_localizedSpritePatches[index]);
+        ReleaseLocalizedSpritePatch(g_localizedSpritePatches[index]);
+    }
+    g_localizedSpritePatches.clear();
+}
+
+void AnmManager::ReplaceSpriteText(AnmVm *vm, const char *text, COLORREF textColor, COLORREF shadowColor)
+{
+    if (vm == NULL || vm->loadedSprite == NULL || text == NULL)
+        return;
+
+    LocalizedTextOverlay *overlay = FindLocalizedTextOverlay(vm);
+    if (overlay == NULL)
+    {
+        LocalizedTextOverlay created;
+        memset(&created, 0, sizeof(created));
+        created.vm = vm;
+        g_localizedTextOverlays.push_back(created);
+        overlay = &g_localizedTextOverlays.back();
+    }
+    overlay->width = static_cast<i32>(vm->spriteSize.x + 0.5f);
+    overlay->height = static_cast<i32>(vm->spriteSize.y + 0.5f);
+    overlay->fontSize = vm->fontHeight > 0 ? vm->fontHeight : 15;
+    overlay->textColor = textColor;
+    overlay->shadowColor = shadowColor;
+    overlay->languageRevision = modern::ios::LanguageRevision();
+    overlay->frame = g_localizedTextFrame;
+    overlay->text = text;
+}
+#endif
 
 #pragma var_order(surface, fileSize, fileData)
 ZunResult AnmManager::LoadSurface(i32 surfaceIdx, const char *filename)

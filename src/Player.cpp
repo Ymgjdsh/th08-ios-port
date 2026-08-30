@@ -237,6 +237,43 @@ DIFFABLE_STATIC_ARRAY_ASSIGN(PlayerShotRenderCallback, 2, g_PlayerShotTimerCallb
 DIFFABLE_STATIC_ARRAY_ASSIGN(const char *, 6, g_PlayerShotDifficultyNames) = {
     "Easy", "Normal", "Hard", "Lunatic", "Extra", "LastWord"};
 
+// Persistent player lasers retain every second history entry. PlayerShot only
+// has 32 history positions, so a corrupt or stale SHT descriptor must never be
+// allowed to walk past 16 trail segments into the shot's damage/state fields.
+static i16 ClampPlayerLaserTrailSegmentCount(i16 count)
+{
+    if (count < 1)
+        return 1;
+    if (count > 16)
+        return 16;
+    return count;
+}
+
+static i16 GetPlayerLaserTrailSegmentCount(PlayerShot *shot)
+{
+    i16 *count = reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(shot) + 0x46A);
+    const i16 safeCount = ClampPlayerLaserTrailSegmentCount(*count);
+    if (*count != safeCount)
+    {
+#ifdef TH08_IOS
+        static u32 diagnosticCount;
+        if (diagnosticCount < 8)
+        {
+            char message[160];
+            snprintf(message, sizeof(message),
+                     "player/laser: clamped invalid trail count %d to %d (state=%d type=%d damage=%d)",
+                     static_cast<int>(*count), static_cast<int>(safeCount),
+                     static_cast<int>(shot->state), static_cast<int>(shot->type),
+                     static_cast<int>(shot->damage));
+            modern::LogStartup(message);
+        }
+        ++diagnosticCount;
+#endif
+        *count = safeCount;
+    }
+    return safeCount;
+}
+
 extern u16 g_GuiMessageInputCurrent;
 extern u16 g_GuiMessageInputPrevious;
 
@@ -2873,8 +2910,19 @@ i32 __fastcall Player::FUN_0044fe20(u8 *slot, i32 value, u8 *entry)
 
     if (LegacyPointerGet<u8>(this, 0xE2A44 + (index << 4)) != NULL)
     {
-        if (LegacyPointerGet<u8>(this, 0xE2A80 + index * 4) != entry)
+        u8 *previousEntry = LegacyPointerGet<u8>(this, 0xE2A80 + index * 4);
+        if (previousEntry != entry)
         {
+#ifdef TH08_IOS
+            char message[192];
+            snprintf(message, sizeof(message),
+                     "player/laser: replace persistent shot lane=%d power=%d focus=%u trail=%d->%d",
+                     index, g_GameManager.GetPower(),
+                     static_cast<unsigned>(*reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(this) + 3)),
+                     previousEntry != NULL ? static_cast<int>(*reinterpret_cast<i16 *>(previousEntry)) : -1,
+                     static_cast<int>(*reinterpret_cast<i16 *>(entry)));
+            modern::LogStartup(message);
+#endif
             *reinterpret_cast<i16 *>(
                 LegacyPointerGet<u8>(this, 0xE2A44 + (index << 4)) + 0x1FE) = 1;
             LegacyPointerSet<u8>(this, 0xE2A44 + (index << 4), NULL);
@@ -2888,7 +2936,8 @@ i32 __fastcall Player::FUN_0044fe20(u8 *slot, i32 value, u8 *entry)
     *reinterpret_cast<i16 *>(slot + 0x468) = *reinterpret_cast<i16 *>(entry + 0x20);
     *reinterpret_cast<u32 *>(slot + 0x444) = *reinterpret_cast<u32 *>(entry + 4);
     *reinterpret_cast<u32 *>(slot + 0x448) = *reinterpret_cast<u32 *>(entry + 8);
-    *reinterpret_cast<i16 *>(slot + 0x46A) = *reinterpret_cast<i16 *>(entry);
+    *reinterpret_cast<i16 *>(slot + 0x46A) =
+        ClampPlayerLaserTrailSegmentCount(*reinterpret_cast<i16 *>(entry));
     this->FUN_0044fb70(slot, entry);
 
     for (i = 31; i >= 0; i--)
@@ -3103,6 +3152,7 @@ i32 __fastcall FUN_00450840(Player *player, PlayerShot *slot)
 {
     PlayerUnkStruct0x40 *damageSlot;
     i32 i;
+    const i16 trailSegmentCount = GetPlayerLaserTrailSegmentCount(slot);
     if (player->timelines[*reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(slot) + 0x466)].instruction !=
             reinterpret_cast<EclTimelineInstruction *>(slot) ||
         g_Gui.IsDialogPresent() ||
@@ -3120,7 +3170,7 @@ i32 __fastcall FUN_00450840(Player *player, PlayerShot *slot)
         player->timelines[*reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(slot) + 0x466)].instruction = NULL;
         return 1;
     }
-    for (i = 0; i < *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(slot) + 0x46A); i++)
+    for (i = 0; i < trailSegmentCount; i++)
     {
         if (slot->vectors[i * 2].x >= -900.0f)
         {
@@ -3156,11 +3206,12 @@ i32 __fastcall FUN_00450ad0(Player *player, PlayerShot *slot)
     i32 color;
     i32 i;
     i32 originalColor;
+    const i16 trailSegmentCount = GetPlayerLaserTrailSegmentCount(slot);
 
     color = slot->vm.color1.a;
     originalColor = color;
     color = color * 3 / 4;
-    for (i = 0; i < *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(slot) + 0x46A) * 2; i += 2)
+    for (i = 0; i < trailSegmentCount * 2; i += 2)
     {
         if (slot->vectors[i].x == -999.0f)
             break;
@@ -3168,7 +3219,7 @@ i32 __fastcall FUN_00450ad0(Player *player, PlayerShot *slot)
         slot->vm.pos.y = slot->vectors[i].y;
         slot->vm.pos.z = slot->vectors[i].z;
         if (i != 0)
-            slot->vm.color1.a = color - ((color / 2) * i) / *reinterpret_cast<i16 *>(reinterpret_cast<u8 *>(slot) + 0x46A);
+            slot->vm.color1.a = color - ((color / 2) * i) / trailSegmentCount;
         slot->vm.pos.x += g_GameManager.arcadeRegionTopLeftPos.x;
         slot->vm.pos.y += g_GameManager.arcadeRegionTopLeftPos.y;
         if (g_GameManager.GaugeIsExtremelyYoukai())
@@ -3322,13 +3373,22 @@ void Player::FUN_00451150()
             continue;
         }
 
-        const u8 *shotEntry = LegacyPointerGet<u8>(slot, 0x480);
-        const u32 renderCallback = shotEntry != NULL
-                                       ? *reinterpret_cast<const u32 *>(shotEntry + 0x2C)
-                                       : 0;
-        if (renderCallback != 0)
+        u32 updateCallback = *reinterpret_cast<u32 *>(slot + 0x474);
+        if (updateCallback >= ARRAY_SIZE(g_PlayerShotRenderCallbacks))
         {
-            if (g_PlayerShotRenderCallbacks[renderCallback](this, reinterpret_cast<PlayerShot *>(slot)) != 0)
+#ifdef TH08_IOS
+            char message[144];
+            snprintf(message, sizeof(message),
+                     "player/shot: rejected update callback index %u in slot %d",
+                     static_cast<unsigned>(updateCallback), i);
+            modern::LogStartup(message);
+#endif
+            updateCallback = 0;
+            *reinterpret_cast<u32 *>(slot + 0x474) = 0;
+        }
+        if (updateCallback != 0)
+        {
+            if (g_PlayerShotRenderCallbacks[updateCallback](this, reinterpret_cast<PlayerShot *>(slot)) != 0)
             {
                 *reinterpret_cast<i16 *>(slot + 0x462) = 0;
                 continue;
@@ -3387,13 +3447,22 @@ void Player::FUN_004512f0()
             *reinterpret_cast<u8 *>(slot + 0x1F0) = 0x40;
         }
         g_AnmManager->Draw2D(reinterpret_cast<AnmVm *>(slot));
-        const u8 *shotEntry = LegacyPointerGet<u8>(slot, 0x480);
-        const u32 timerCallback = shotEntry != NULL
-                                      ? *reinterpret_cast<const u32 *>(shotEntry + 0x30)
-                                      : 0;
-        if (timerCallback != 0)
+        u32 drawCallback = *reinterpret_cast<u32 *>(slot + 0x478);
+        if (drawCallback >= ARRAY_SIZE(g_PlayerShotTimerCallbacks))
         {
-            g_PlayerShotTimerCallbacks[timerCallback](this, reinterpret_cast<PlayerShot *>(slot));
+#ifdef TH08_IOS
+            char message[144];
+            snprintf(message, sizeof(message),
+                     "player/shot: rejected draw callback index %u in slot %d",
+                     static_cast<unsigned>(drawCallback), i);
+            modern::LogStartup(message);
+#endif
+            drawCallback = 0;
+            *reinterpret_cast<u32 *>(slot + 0x478) = 0;
+        }
+        if (drawCallback != 0)
+        {
+            g_PlayerShotTimerCallbacks[drawCallback](this, reinterpret_cast<PlayerShot *>(slot));
         }
     }
 }
@@ -3528,8 +3597,24 @@ i32 Player::FUN_00451670(Float3 *enemyPosition, Float3 *enemySize, i32 *hitAccum
 
         if ((bullet->type == 4 || bullet->type == 5) && (bullet->timer % 2) != 0)
             continue;
-        const u8 *bulletEntry = LegacyPointerGet<u8>(bullet, 0x480);
-        const u32 collisionCallback = bulletEntry != NULL ? *reinterpret_cast<const u32 *>(bulletEntry + 0x34) : 0;
+        u32 collisionCallback = *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(bullet) + 0x47C);
+        if (collisionCallback > 2)
+        {
+#ifdef TH08_IOS
+            static u32 invalidCollisionCallbackCount;
+            if (invalidCollisionCallbackCount < 8)
+            {
+                char message[160];
+                snprintf(message, sizeof(message),
+                         "player/shot: rejected collision callback index %u in slot %d",
+                         static_cast<unsigned>(collisionCallback), i);
+                modern::LogStartup(message);
+            }
+            ++invalidCollisionCallbackCount;
+#endif
+            collisionCallback = 0;
+            *reinterpret_cast<u32 *>(reinterpret_cast<u8 *>(bullet) + 0x47C) = 0;
+        }
         if (collisionCallback != 0)
         {
             PlayerShotCollisionCallback callback = collisionCallback == 1 ? FUN_00450c50 : FUN_00450ee0;

@@ -1,0 +1,516 @@
+{
+    "2": {
+        "60_0": {
+            "lines": [
+                "I've been waiting for you."
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "You've got some guts,",
+                "challenging me on the night of the full moon."
+            ]
+        },
+        "230_0": {
+            "lines": [
+                "...this may be a trial of guts,",
+                "but I'm not scared of you!"
+            ]
+        },
+        "320_0": {
+            "lines": [
+                "I won't let you lay one finger on that human!"
+            ]
+        }
+    },
+    "0": {
+        "60_0": {
+            "lines": [
+                "The attacks just... Stopped, all of a sudden.",
+                "This is when things are at their scariest."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "A phantom, dressed loudly and conspicuously."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "And in the dead of the night,",
+                "when even the plants are asleep, under the full moon."
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "Seeing phantoms isn't rare, but your appearance",
+                "definitely stands out."
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "Wah, someone's there!"
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Youmu, there she is."
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "Funny for a phantom to be saying that."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "..."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "What, a human?",
+                "I was about to slash her by mistake."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "...But, wait, a human at this hour?",
+                "That's definitely weird!"
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "......"
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "I live around here to begin with.",
+                "Time aside, you two are far more unusual."
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "So, what business do you have here?"
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "We're here for a trial of...",
+                "Uh, Lady Yuyuko?"
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "Youmu, don't get close to her."
+            ]
+        },
+        "135_0": {
+            "lines": [
+                "Lady Yuyuko...?"
+            ]
+        },
+        "136_0": {
+            "lines": [
+                "That girl is not a normal human."
+            ]
+        },
+        "137_0": {
+            "lines": [
+                "Don't touch her.",
+                "Her curse will be passed on to you."
+            ]
+        },
+        "138_0": {
+            "lines": [
+                "Don't eat her.",
+                "Her poison will curse you, too."
+            ]
+        },
+        "139_0": {
+            "lines": [
+                "Above all else...",
+                "My powers can't affect her."
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "That's a pretty sour way to talk about someone",
+                "you've only just met."
+            ]
+        },
+        "141_0": {
+            "lines": [
+                "And what are these \"powers,\" huh?",
+                "What were you trying to do?"
+            ]
+        },
+        "142_0": {
+            "lines": [
+                "Lady Yuyuko can invoke death in humans.",
+                "But if it doesn't work on you—"
+            ]
+        },
+        "143_0": {
+            "lines": [
+                "So you tried to take my life right off the bat?",
+                "You're pretty dangerous phantoms."
+            ]
+        },
+        "144_0": {
+            "lines": [
+                "Aren't you human?"
+            ]
+        },
+        "145_0": {
+            "lines": [
+                "Well, then, I don't understand why",
+                "Lady Yuyuko would be afraid of you."
+            ]
+        },
+        "146_0": {
+            "lines": [
+                "Unfortunately, yes, I am human.",
+                "I just sort of can't die, is all."
+            ]
+        },
+        "147_0": {
+            "lines": [
+                "A person of Hourai...",
+                "This is scary, Youmu."
+            ]
+        },
+        "148_0": {
+            "lines": [
+                "You were fine with this trial of guts up",
+                "until now... Did you eat something funny?"
+            ]
+        },
+        "149_0": {
+            "lines": [
+                "Well, I'll just do something about this myself."
+            ]
+        },
+        "150_0": {
+            "lines": [
+                "I would never have thought something could frighten",
+                "the unshakable Lady Yuyuko."
+            ]
+        },
+        "151_0": {
+            "lines": [
+                "Shouldn't I get along well with phantoms?"
+            ]
+        },
+        "152_0": {
+            "lines": [
+                "This is somehow irritating.",
+                "Maybe I should just start attacking now~?"
+            ]
+        },
+        "153_0": {
+            "lines": [
+                "But what is so frightening about her,",
+                "Lady Yuyuko?"
+            ]
+        },
+        "154_0": {
+            "lines": [
+                "A human who has drunk the Hourai Elixir",
+                "will unable to age or die."
+            ]
+        },
+        "155_0": {
+            "lines": [
+                "If another human eats that",
+                "immortal human's liver,"
+            ]
+        },
+        "156_0": {
+            "lines": [
+                "that person too will never age and never die."
+            ]
+        },
+        "157_0": {
+            "lines": [
+                "And if a ghost eats them...?"
+            ]
+        },
+        "158_0": {
+            "lines": [
+                "An undying ghost will be born."
+            ]
+        },
+        "159_0": {
+            "lines": [
+                "Thus, the cycle of Hourai ends. They'll never achieve nirvana",
+                "or reincarnate, and the elixir will stop along with them."
+            ]
+        },
+        "160_0": {
+            "lines": [
+                "Well, I guess it'd be fine",
+                "if you didn't eat them."
+            ]
+        },
+        "161_0": {
+            "lines": [
+                "Then don't eat them!"
+            ]
+        },
+        "162_0": {
+            "lines": [
+                "My god, you're such noisy phantoms."
+            ]
+        },
+        "163_0": {
+            "lines": [
+                "If I turned into a phantom myself,",
+                "would I be as crazy as you two?"
+            ]
+        },
+        "164_0": {
+            "lines": [
+                "I guess I'll never know, since I won't die."
+            ]
+        },
+        "165_0": {
+            "lines": [
+                "I was a fool for worrying.",
+                "Lady Yuyuko is Lady Yuyuko, after all."
+            ]
+        },
+        "166_0": {
+            "lines": [
+                "I might still eat them~.",
+                "Those eternally fresh, raw guts look pretty tasty to me."
+            ]
+        },
+        "167_0": {
+            "lines": [
+                "I'll take care of what your powers can't reach,",
+                "Lady Yuyuko."
+            ]
+        },
+        "168_0": {
+            "lines": [
+                "Can the dead really strike the living,",
+                "in the end?"
+            ]
+        },
+        "169_0": {
+            "lines": [
+                "We may not be able to make you one of us,",
+                "but let's give this a try and see if you really are immortal."
+            ]
+        },
+        "170_0": {
+            "lines": [
+                "Ghosts who have forgotten nirvana cannot be reborn. A",
+                "human who cannot die will never know the vivid Netherworld."
+            ]
+        },
+        "171_0": {
+            "lines": [
+                "Before a life born many, many times, there is darkness.",
+                "After a death died many, many times, there is shade."
+            ]
+        },
+        "172_0": {
+            "lines": [
+                "As I don't know death, I have surpassed that darkness. See",
+                "this beautiful danmaku, unchained from the dark samsara!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "What the?!",
+                "I'm reaching my limit, here..."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Even if you're immortal,",
+                "your body still has its limits."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Okay, our opponent can barely move.",
+                "Now!"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "What do you mean, \"now\"?!",
+                "We're not eating her, right?!"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "I can't die, but I can't keep fighting like this.",
+                "My body hurts all over."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Being a ghost is nice.",
+                "Your body never hurts. What do you say to being one?"
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Are you even listening to me?"
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "A human that can't die sure is interesting.",
+                "I can use my full power without any hesitation."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "My, were you holding back the whole time?"
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "Good heavens, no."
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "That aside, you're very strong.",
+                "Why is that?"
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "I guess everyone's just younger than I am?"
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "A human would obviously have limits",
+                "to their strength, wouldn't they?"
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "You can try all you like,",
+                "but you can't beat a phantom."
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "I don't think being phantoms had much to do with it,",
+                "but it was rather that there were two of us..."
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "Oh, my. There's some eternally fresh, raw guts",
+                "before us. How rare."
+            ]
+        },
+        "76_0": {
+            "lines": [
+                "Lady Yuyuko..."
+            ]
+        },
+        "77_0": {
+            "lines": [
+                "Oh, fine."
+            ]
+        },
+        "78_0": {
+            "lines": [
+                "It hurts too much to move,",
+                "so boil me, roast me, whatever!"
+            ]
+        },
+        "79_0": {
+            "lines": [
+                "Boiling or roasting would be no good!"
+            ]
+        },
+        "80_0": {
+            "lines": [
+                "You have to eat the liver raw.",
+                "Boiling or roasting would neutralize the elixir's effect."
+            ]
+        },
+        "81_0": {
+            "lines": [
+                "Well, then, let's roast her."
+            ]
+        },
+        "82_0": {
+            "lines": [
+                "Even if you roast me, I won't die.",
+                "It'll just be kind of hot... *sob*"
+            ]
+        },
+        "83_0": {
+            "lines": [
+                "By the way, how did we wind up",
+                "in this situation, again?"
+            ]
+        },
+        "84_0": {
+            "lines": [
+                "Didn't you say you wanted to take on",
+                "the trial of guts, and asked me to come along?"
+            ]
+        },
+        "85_0": {
+            "lines": [
+                "Oh, right, that."
+            ]
+        },
+        "86_0": {
+            "lines": [
+                "So why have you been saying \"raw guts\" this,",
+                "\"raw guts\" that for a while now?"
+            ]
+        },
+        "87_0": {
+            "lines": [
+                "I gave up on the trial already.",
+                "I realized it was just Kaguya tricking us."
+            ]
+        },
+        "88_0": {
+            "lines": [
+                "She obviously just wanted us to fight this human.",
+                "The trial of guts was all a lie."
+            ]
+        },
+        "89_0": {
+            "lines": [
+                "Gave up? You just paused, right?",
+                "The trial of guts starts again from here on."
+            ]
+        },
+        "90_0": {
+            "lines": [
+                "Ehh...",
+                "Honestly, I'm bad with scary things..."
+            ]
+        },
+        "91_0": {
+            "lines": [
+                "Hey, look, there's a phantom under that tree...!"
+            ]
+        },
+        "92_0": {
+            "lines": [
+                "Eeeeek!"
+            ]
+        }
+    }
+}

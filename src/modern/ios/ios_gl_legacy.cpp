@@ -38,6 +38,7 @@ GLfloat g_fogStart;
 GLfloat g_fogEnd = 1.0f;
 GLfloat g_fogCoordinate;
 GLfloat g_alphaThreshold = -1.0f;
+GLboolean g_forceAlphaDiscard = GL_FALSE;
 bool g_fogEnabled;
 bool g_textureRgbEnabled = true;
 bool g_textureAlphaEnabled = true;
@@ -135,6 +136,11 @@ bool Initialize()
     g_clipSpaceAttribute = 4;
     g_fogColorUniform = glGetUniformLocation(g_program, "uFogColor");
     g_alphaThresholdUniform = glGetUniformLocation(g_program, "uAlphaThreshold");
+    char uniformMessage[192];
+    snprintf(uniformMessage, sizeof(uniformMessage),
+             "gles2: uniforms texture=%d rgb=%d alpha=%d threshold=%d",
+             g_texture, g_useTextureRgb, g_useTextureAlpha, g_alphaThresholdUniform);
+    th08::modern::LogStartup(uniformMessage);
     th08::modern::LogStartup("gles2: immediate shader ready");
     return true;
 }
@@ -229,6 +235,11 @@ void IosLegacySetTextureUsage(GLboolean useRgb, GLboolean useAlpha)
     g_textureAlphaEnabled = useAlpha != GL_FALSE;
 }
 
+void IosLegacySetForceAlphaDiscard(GLboolean enabled)
+{
+    g_forceAlphaDiscard = enabled != GL_FALSE ? GL_TRUE : GL_FALSE;
+}
+
 void glEnd()
 {
     static bool loggedEnd;
@@ -240,10 +251,17 @@ void glEnd()
     if (g_vertices.empty() || !Initialize()) return;
     GLint viewport[4] = {0, 0, 640, 480};
     glGetIntegerv(GL_VIEWPORT, viewport);
+    while (glGetError() != GL_NO_ERROR) {}
+    // D3D8 stage 0 maps to GLES texture unit zero.  Explicitly selecting it
+    // here prevents a previous multi-texture/background pass from making the
+    // localized text shader sample an uninitialised unit (which appears as a
+    // solid black quad on the simulator).
+    glActiveTexture(GL_TEXTURE0);
+    // Query the binding after selecting unit zero. Reading it before the
+    // active-unit change observes a stale unit left by a 3-D pass and makes a
+    // valid text texture look unbound to the shader.
     GLint textureName = 0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &textureName);
-
-    while (glGetError() != GL_NO_ERROR) {}
     glUseProgram(g_program);
     glUniform2f(g_resolution, viewport[2] > 0 ? (GLfloat)viewport[2] : 640.0f,
                 viewport[3] > 0 ? (GLfloat)viewport[3] : 480.0f);
@@ -255,7 +273,10 @@ void glEnd()
     glUniform1i(g_useTextureRgb, textureBound && g_textureRgbEnabled ? 1 : 0);
     glUniform1i(g_useTextureAlpha, textureBound && g_textureAlphaEnabled ? 1 : 0);
     glUniform4fv(g_fogColorUniform, 1, g_fogColor);
-    glUniform1f(g_alphaThresholdUniform, g_alphaThreshold);
+    const GLfloat alphaThreshold = g_forceAlphaDiscard
+        ? (g_alphaThreshold > (1.0f / 255.0f) ? g_alphaThreshold : (1.0f / 255.0f))
+        : g_alphaThreshold;
+    glUniform1f(g_alphaThresholdUniform, alphaThreshold);
     glEnableVertexAttribArray(g_position); glEnableVertexAttribArray(g_colorAttribute);
     glEnableVertexAttribArray(g_texcoordAttribute);
     glEnableVertexAttribArray(g_fogFactorAttribute);

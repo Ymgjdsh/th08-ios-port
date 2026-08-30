@@ -29,8 +29,34 @@ echo "Deps:    ${DEPS_DIR:-FetchContent network source}"
 
 command -v cmake >/dev/null 2>&1 || { echo "error: cmake is required"; exit 2; }
 command -v xcrun >/dev/null 2>&1 || { echo "error: xcrun is required"; exit 2; }
-SDK_PATH=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
+# Xcode 7's xcrun cannot load on modern macOS because its libxcrun links to
+# the removed libauto.dylib.  Resolve the SDK directory directly when the
+# requested developer directory contains it; this still uses Xcode 7's clang
+# and SDK while avoiding the obsolete xcrun executable.  IOS_SDK_PATH is an
+# explicit escape hatch for installations with a custom SDK location.
+SDK_PATH=${IOS_SDK_PATH:-}
+if [ -z "$SDK_PATH" ] && [ -n "${DEVELOPER_DIR:-}" ]; then
+    DEVELOPER_SDK_ROOT=${DEVELOPER_DIR%/Contents/Developer}/Contents/Developer
+    if [ -d "$DEVELOPER_SDK_ROOT/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS9.3.sdk" ] &&
+       [ "$IOS_SDK" = "iphoneos" ]; then
+        SDK_PATH="$DEVELOPER_SDK_ROOT/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS9.3.sdk"
+    elif [ -d "$DEVELOPER_SDK_ROOT/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator9.3.sdk" ] &&
+         [ "$IOS_SDK" = "iphonesimulator" ]; then
+        SDK_PATH="$DEVELOPER_SDK_ROOT/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator9.3.sdk"
+    fi
+fi
+if [ -z "$SDK_PATH" ]; then
+    SDK_PATH=$(xcrun --sdk "$IOS_SDK" --show-sdk-path)
+fi
 test -d "$SDK_PATH" || { echo "error: iPhoneOS SDK not found: $SDK_PATH"; exit 2; }
+
+# Asset/storyboard tools are data-only and can safely come from the current
+# Xcode.  Keep them separate from the compiler toolchain selected above.
+ASSET_DEVELOPER_DIR=${IOS_ASSET_DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
+run_asset_tool()
+{
+    DEVELOPER_DIR="$ASSET_DEVELOPER_DIR" /usr/bin/xcrun "$@"
+}
 
 test -n "$DATA_DIR" || {
     echo "error: set TH08_IOS_DATA_DIR or create $HOME/TH08-data" >&2
@@ -48,8 +74,15 @@ done
 # files and the build log directory remain untouched.
 if [ -f "$BUILD_DIR/CMakeCache.txt" ]; then
     CACHED_GENERATOR=$(sed -n 's/^CMAKE_GENERATOR:INTERNAL=//p' "$BUILD_DIR/CMakeCache.txt" | head -n 1)
-    if [ "$CACHED_GENERATOR" != "$IOS_CMAKE_GENERATOR" ]; then
-        echo "Reconfiguring build tree from $CACHED_GENERATOR to $IOS_CMAKE_GENERATOR"
+    CACHED_SYSROOT=$(sed -n 's/^CMAKE_OSX_SYSROOT:.*=//p' "$BUILD_DIR/CMakeCache.txt" | head -n 1)
+    CACHED_ARCH=$(sed -n 's/^CMAKE_OSX_ARCHITECTURES:.*=//p' "$BUILD_DIR/CMakeCache.txt" | head -n 1)
+    if [ "$CACHED_GENERATOR" != "$IOS_CMAKE_GENERATOR" ] ||
+       [ "$CACHED_SYSROOT" != "$SDK_PATH" ] ||
+       [ "$CACHED_ARCH" != "$IOS_ARCH" ]; then
+        echo "Reconfiguring build tree"
+        echo "  generator: ${CACHED_GENERATOR:-<none>} -> $IOS_CMAKE_GENERATOR"
+        echo "  sysroot:   ${CACHED_SYSROOT:-<none>} -> $SDK_PATH"
+        echo "  arch:      ${CACHED_ARCH:-<none>} -> $IOS_ARCH"
         rm -rf "$BUILD_DIR/CMakeCache.txt" "$BUILD_DIR/CMakeFiles" \
             "$BUILD_DIR/Makefile" "$BUILD_DIR/cmake_install.cmake" \
             "$BUILD_DIR/$CONFIG-iphoneos" "$BUILD_DIR/th08-modern.app" "$BUILD_DIR/th08.app"
@@ -106,6 +139,15 @@ for REQUIRED_DATA_FILE in th08.dat thbgm.dat msgothic.ttc; do
 done
 echo "Verified game archives and Japanese font in $APP_PATH"
 
+if [ -s "$ROOT_DIR/resources/NotoSansSC-VF.ttf" ]; then
+    cp -f "$ROOT_DIR/resources/NotoSansSC-VF.ttf" "$APP_PATH/NotoSansSC-VF.ttf"
+    test -s "$APP_PATH/NotoSansSC-VF.ttf" || {
+        echo "error: failed to bundle NotoSansSC-VF.ttf" >&2
+        exit 3
+    }
+    echo "Verified bundled CJK font in $APP_PATH"
+fi
+
 # A reused build tree can contain an older app under the alternate target
 # name. Refuse to package it when its plist does not match this invocation.
 ACTUAL_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
@@ -119,18 +161,18 @@ if [ "$ACTUAL_VERSION" != "$IOS_VERSION" ] || [ "$ACTUAL_BUILD" != "$IOS_BUILD" 
 fi
 
 if [ ! -f "$APP_PATH/Assets.car" ] && [ -d "$ROOT_DIR/ios/Assets.xcassets" ]; then
-    xcrun actool --platform "$IOS_SDK" --target-device iphone --target-device ipad \
+    run_asset_tool actool --platform "$IOS_SDK" --target-device iphone --target-device ipad \
         --app-icon AppIcon --output-format human-readable-text \
         --output-partial-info-plist "$BUILD_DIR/assetcatalog-info.plist" \
         --compile "$APP_PATH" "$ROOT_DIR/ios/Assets.xcassets"
 fi
 if [ -f "$ROOT_DIR/ios/LaunchScreen.storyboard" ] && [ ! -d "$APP_PATH/LaunchScreen.storyboardc" ]; then
     if [ "$IOS_SDK" = "iphonesimulator" ]; then
-        xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
+        run_asset_tool ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
             --minimum-deployment-target "$IOS_DEPLOYMENT_TARGET" \
             "$ROOT_DIR/ios/LaunchScreen.storyboard"
     else
-        xcrun ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
+        run_asset_tool ibtool --compile "$APP_PATH/LaunchScreen.storyboardc" \
             --platform iphoneos --minimum-deployment-target "$IOS_DEPLOYMENT_TARGET" \
             "$ROOT_DIR/ios/LaunchScreen.storyboard"
     fi

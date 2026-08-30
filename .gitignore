@@ -37,3 +37,19 @@ __pycache__/
 /build.ninja
 /.ninja_deps
 /.ninja_log
+
+# Root-level simulator screenshots and acceptance bundles are local QA data.
+# Keep them out of source releases while preserving the files on developer
+# machines for regression comparison.
+/accept*/
+/accept*.png
+/pause*.png
+/music*.png
+/replay*.png
+/result*.png
+/launch*.png
+/jp-*.png
+/remote-*.png
+/sim-*.png
+/zh-*.png
+*.crash

@@ -11,6 +11,9 @@
 #include "ZunMath.hpp"
 #include "Gui.hpp"
 #include "ResultScreen.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
@@ -130,6 +133,48 @@ static bool MenuAnmIsReady(AnmLoaded *anm)
 {
     return anm != NULL && anm->rawData != NULL && anm->scripts != NULL;
 }
+
+#ifdef TH08_IOS
+static COLORREF LocalizedMenuTextColor(const AnmVm &vm)
+{
+    // AnmVm stores D3D color as AARRGGBB, while the iOS text rasterizer
+    // consumes a Windows COLORREF (00BBGGRR).  Keep alpha on the VM so fade
+    // animations are applied once during drawing rather than baked into each
+    // cached text texture.
+    const u32 d3dColor = vm.color1.d3dColor;
+    return ((d3dColor >> 16) & 0xffu) |
+           (d3dColor & 0x0000ff00u) |
+           ((d3dColor & 0xffu) << 16);
+}
+
+static void LocalizePauseMenuSprites(PauseMenu *menu)
+{
+    if (menu == NULL) return;
+    for (i32 index = 0; index < 10; ++index)
+    {
+        // Sprite 7 is replaced with the selected difficulty number by the
+        // original state machine, so its retail value remains authoritative.
+        if (index == PAUSE_SPRITE_DIFFICULTY || !menu->menuSprites[index].visible) continue;
+        g_AnmManager->ReplaceSpriteText(&menu->menuSprites[index],
+                                        modern::ios::PauseMenuText(index),
+                                        LocalizedMenuTextColor(menu->menuSprites[index]),
+                                        0x300000);
+    }
+}
+
+static void LocalizeRetryMenuSprites(RetryMenu *menu)
+{
+    if (menu == NULL) return;
+    for (i32 index = 0; index < 3; ++index)
+    {
+        if (!menu->menuSprites[index].visible) continue;
+        g_AnmManager->ReplaceSpriteText(&menu->menuSprites[index],
+                                        modern::ios::RetryMenuText(index),
+                                        LocalizedMenuTextColor(menu->menuSprites[index]),
+                                        0x300000);
+    }
+}
+#endif
 
 enum
 {
@@ -1251,6 +1296,10 @@ i32 PauseMenu::OnUpdate()
         g_AnmManager->ExecuteScript(&this->menuSprites[i]);
     }
 
+ #ifdef TH08_IOS
+    LocalizePauseMenuSprites(this);
+ #endif
+
     if (g_Supervisor.flags.unk1)
     {
         g_AnmManager->ExecuteScript(&this->menuBackground);
@@ -1600,6 +1649,10 @@ selected_no:
     {
         g_AnmManager->ExecuteScript(&this->menuSprites[i]);
     }
+
+ #ifdef TH08_IOS
+    LocalizeRetryMenuSprites(this);
+ #endif
 
     if (g_Supervisor.flags.unk1)
     {

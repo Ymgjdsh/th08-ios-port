@@ -1,0 +1,185 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "Wait, waaaait!"
+            ]
+        },
+        "60_1": {
+            "lines": [
+                "What?"
+            ]
+        },
+        "60_2": {
+            "lines": [
+                "I thought you were some tasty, ",
+                "foolish humans at long last, but..."
+            ]
+        },
+        "61_h1_0": {
+            "lines": [
+                "Mystia Lorelei"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "What exactly <i$are> you two??"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Yes. Non-humans."
+            ]
+        },
+        "63_1": {
+            "lines": [
+                "Non-humans?"
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Well, whether we're human or not ",
+                "or whatever, I'm not interested."
+            ]
+        },
+        "65_1": {
+            "lines": [
+                "Non-humans using this path... ",
+                "You don't see that very often."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Hmm. You seem to be a night sparrow."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "If you keep only attacking humans..."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "There won't be any left around here."
+            ]
+        },
+        "70_0": {
+            "lines": [
+                "Even so, I doubt she's going to start ",
+                "attacking youkai instead..."
+            ]
+        },
+        "70_1": {
+            "lines": [
+                "Oh, drop it. It's nighttime, most humans",
+                "have long since left these paths."
+            ]
+        },
+        "71_0": {
+            "lines": [
+                "If there were anyone, they'd either be in a real hurry, ",
+                "have a few screws loose, or be non-human altogether."
+            ]
+        },
+        "72_0": {
+            "lines": [
+                "Listen closely. I'm going to repeat this one more time. We",
+                "are non-humans, in a real hurry, with a few screws loose."
+            ]
+        },
+        "73_0": {
+            "lines": [
+                "We don't have time to waste here.",
+                "Will you let us pass?"
+            ]
+        },
+        "74_0": {
+            "lines": [
+                "The end of this road isn't a place where",
+                "youkai like Yukari often visit, though..."
+            ]
+        },
+        "75_0": {
+            "lines": [
+                "Aw, but I haven't had playmates in so long..."
+            ]
+        },
+        "76_0": {
+            "lines": [
+                "I know. How about we go to the village",
+                "and mess with the humans together?"
+            ]
+        },
+        "77_0": {
+            "lines": [
+                "Ugh, jeeze, how many times do I have to say it!?"
+            ]
+        },
+        "78_0": {
+            "lines": [
+                "?"
+            ]
+        },
+        "79_0": {
+            "lines": [
+                "??"
+            ]
+        },
+        "80_0": {
+            "lines": [
+                "I'm not night-blind."
+            ]
+        },
+        "81_0": {
+            "lines": [
+                "Aha, a human."
+            ]
+        },
+        "82_0": {
+            "lines": [
+                "Why don't I <i$make> you night-blind, then!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Really. A night sparrow, of all things."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "It's much too early for condescension from a flying louse."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "...Was that really a sparrow just now?",
+                "I couldn't make much out in the dark."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "The little birds in the night are mostly night sparrows."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "If you're not careful around them,",
+                "you won't be able to see in the dark anymore."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "(...Is that really what sparrows were like?",
+                "I couldn't see much.)"
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Ah, I can see the Human Village. I didn't",
+                "really want to come here with you, though..."
+            ]
+        }
+    }
+}

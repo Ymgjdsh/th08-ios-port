@@ -16,6 +16,7 @@
 #include "Spellcard.hpp"
 #include "Supervisor.hpp"
 #ifdef TH08_IOS
+#include "modern/ios/ios_localization.hpp"
 #include "modern/ios/ios_touch.hpp"
 #endif
 
@@ -230,6 +231,176 @@ C_ASSERT(offsetof(GuiMessageStateOverlay, textColors) == 0x1540);
 #ifdef TH08_IOS
 typedef char IosGuiMessageOverlaySizeCheck[(sizeof(GuiMessageStateOverlay) == 0x1578) ? 1 : -1];
 typedef char IosGuiMessagePortraitOffsetCheck[(offsetof(GuiMessageStateOverlay, portraits) == 0x20) ? 1 : -1];
+
+struct IosDialogueDisplayCache
+{
+    GuiMessageStateOverlay *state;
+    i32 script;
+    i32 time;
+    u32 languageRevision;
+    const char *lines[2];
+    i32 colorIndices[2];
+    bool active[2];
+};
+
+static IosDialogueDisplayCache g_iosDialogueDisplay = {NULL, -1, -1, 0, {NULL, NULL}, {0, 0}, {false, false}};
+
+// The ECL table stores the active boss in slot 0 on most routes, but phase
+// scripts are allowed to move it to another pointer slot while the previous
+// phase is being retired.  The old iOS recovery code only inspected slot 0,
+// which made the life bar disappear for an entire phase on those routes.
+static EclOperands::EnemyOverlay *FindIosActiveBoss(i32 *slotOut)
+{
+    for (i32 slot = 0; slot < 87; ++slot)
+    {
+        EclOperands::EnemyOverlay *candidate = EclRunLowProposal::EclEnemySlot(static_cast<u32>(slot));
+        if (candidate == NULL)
+            continue;
+
+        u8 *bytes = reinterpret_cast<u8 *>(candidate);
+        const u32 flags = *reinterpret_cast<u32 *>(bytes + 0x3324);
+        const i32 life = *reinterpret_cast<i32 *>(bytes + 0x2DFC);
+        const i32 maxLife = *reinterpret_cast<i32 *>(bytes + 0x2E00);
+        // Keep this test focused on the stable identity/life fields.  The
+        // damageable and accepts-damage bits are intentionally omitted: they
+        // are cleared for a few frames during spell and nonspell transitions.
+        if ((flags & 0x3U) != 0x3U || life <= 0 || maxLife <= 0)
+            continue;
+
+        if (slotOut != NULL)
+            *slotOut = slot;
+        return candidate;
+    }
+    if (slotOut != NULL)
+        *slotOut = -1;
+    return NULL;
+}
+
+static void ResetIosDialogueDisplay(GuiMessageStateOverlay *state, i32 script, i32 time)
+{
+    g_iosDialogueDisplay.state = state;
+    g_iosDialogueDisplay.script = script;
+    g_iosDialogueDisplay.time = time;
+    g_iosDialogueDisplay.languageRevision = modern::ios::LanguageRevision();
+    g_iosDialogueDisplay.lines[0] = NULL;
+    g_iosDialogueDisplay.lines[1] = NULL;
+    g_iosDialogueDisplay.colorIndices[0] = 0;
+    g_iosDialogueDisplay.colorIndices[1] = 0;
+    g_iosDialogueDisplay.active[0] = false;
+    g_iosDialogueDisplay.active[1] = false;
+}
+
+static void RegisterIosDialogueLine(GuiMessageStateOverlay *state, i32 line)
+{
+    if (state == NULL || line < 0 || line > 1 || !g_iosDialogueDisplay.active[line])
+        return;
+    i32 colorIndex = g_iosDialogueDisplay.colorIndices[line];
+    if (colorIndex < 0 || colorIndex >= 4)
+        colorIndex = 0;
+    const char *text = g_iosDialogueDisplay.lines[line];
+    if (text == NULL) text = "";
+    const i32 localizedFontSize = state->fontSize < 18 ? 18 : state->fontSize;
+    state->dialogueLines[line].fontWidth = localizedFontSize;
+    state->dialogueLines[line].fontHeight = localizedFontSize;
+    g_AnmManager->DrawTextLeftUtf8(&state->dialogueLines[line],
+                                   state->textColors[colorIndex], state->shadowColors[colorIndex], "%s", text);
+}
+
+static void RefreshIosLocalizedDialogue(GuiMessageStateOverlay *state)
+{
+    if (state == NULL || modern::ios::GetLanguage() == modern::ios::IOS_LANGUAGE_JP ||
+        g_iosDialogueDisplay.state != state ||
+        g_iosDialogueDisplay.languageRevision != modern::ios::LanguageRevision() ||
+        g_iosDialogueDisplay.script != state->currentMsgIdx)
+        return;
+    RegisterIosDialogueLine(state, 0);
+    RegisterIosDialogueLine(state, 1);
+}
+
+bool DrawIosLocalizedDialogue(GuiMessageStateOverlay *state, const char *japaneseCp932, i32 colorIndex,
+                              i32 requestedLine)
+{
+    static GuiMessageStateOverlay *cachedState;
+    static i32 cachedScript = -1;
+    static i32 cachedTime = -1;
+    static u32 cachedLanguageRevision;
+    static modern::ios::LocalizedDialogueText cachedText = {{NULL, NULL}, 0, 0};
+
+    if (state == NULL || state->GetCurrentInstr() == NULL)
+        return false;
+    if (requestedLine < 0 || requestedLine > 1)
+        requestedLine = 0;
+
+    modern::ios::LocalizedDialogueText translated;
+    const i32 script = state->currentMsgIdx;
+    const i32 time = state->GetCurrentInstr()->time;
+    const bool exact = modern::ios::FindLocalizedDialogue(script, time, japaneseCp932, requestedLine, &translated);
+    if (exact)
+    {
+        // A line-0 record contains both translated lines. Cache it so a
+        // normalized line-1 instruction can still use the same translation.
+        if (translated.originalLine == 0 || cachedState != state || cachedScript != script || cachedTime != time ||
+            cachedLanguageRevision != modern::ios::LanguageRevision())
+        {
+            cachedState = state;
+            cachedScript = script;
+            cachedTime = time;
+            cachedLanguageRevision = modern::ios::LanguageRevision();
+            cachedText = translated;
+        }
+    }
+    else if (cachedState == state && cachedScript == script && cachedTime == time &&
+             cachedLanguageRevision == modern::ios::LanguageRevision())
+    {
+        translated = cachedText;
+    }
+    else
+    {
+        if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP &&
+            (g_iosDialogueDisplay.state != state || g_iosDialogueDisplay.script != script ||
+             g_iosDialogueDisplay.time != time ||
+             g_iosDialogueDisplay.languageRevision != modern::ios::LanguageRevision()))
+        {
+            ResetIosDialogueDisplay(state, script, time);
+            char message[160];
+            SDL_snprintf(message, sizeof(message),
+                         "dialogue/i18n: translation miss file-script-time=%d-%d line=%d",
+                         script, time, requestedLine);
+            modern::LogStartup(message);
+        }
+        return false;
+    }
+
+    state->framesElapsedDuringPause = 0;
+    if (colorIndex < 0 || colorIndex >= 4)
+        colorIndex = 0;
+
+    const char *lineText = translated.lines[requestedLine];
+    if (lineText == NULL) lineText = "";
+    g_Supervisor.textAnm->SetAndExecuteScriptIdx(&state->dialogueLines[requestedLine], requestedLine);
+    if (g_iosDialogueDisplay.state != state || g_iosDialogueDisplay.script != script ||
+        g_iosDialogueDisplay.time != time ||
+        g_iosDialogueDisplay.languageRevision != modern::ios::LanguageRevision())
+        ResetIosDialogueDisplay(state, script, time);
+    g_iosDialogueDisplay.lines[requestedLine] = lineText;
+    g_iosDialogueDisplay.colorIndices[requestedLine] = colorIndex;
+    g_iosDialogueDisplay.active[requestedLine] = true;
+    RegisterIosDialogueLine(state, requestedLine);
+
+    // Clear the second line when a one-line message replaces a previous
+    // two-line message, otherwise stale text remains in the dialogue box.
+    if (requestedLine == 0 && translated.lineCount < 2 && state->dialogueLines[1].scriptIndex >= 0)
+    {
+        g_iosDialogueDisplay.lines[1] = NULL;
+        g_iosDialogueDisplay.active[1] = false;
+        g_AnmManager->DrawTextLeft(&state->dialogueLines[1], state->textColors[colorIndex],
+                                   state->shadowColors[colorIndex], " ");
+    }
+    if (requestedLine >= state->currentLine)
+        state->currentLine = static_cast<u8>(requestedLine + 1);
+    state->textPending = 0;
+    return true;
+}
 #endif
 
 struct GuiStageResultUpdateOverlay
@@ -288,6 +459,9 @@ ChainCallbackResult Gui::OnDraw(Gui *gui)
 {
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(gui->GetImpl()) + 0x22d84) != 0)
         gui->FUN_0043826b();
+#ifdef TH08_IOS
+    RefreshIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&gui->impl->msgVm));
+#endif
     gui->impl->DrawDialogue();
     gui->FUN_0043741d();
     gui->DrawGameScene();
@@ -704,6 +878,13 @@ i32 GuiImpl::RunMsg()
             args = reinterpret_cast<GuiMessagePortraitArgs *>(
                 reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args);
+#ifdef TH08_IOS
+            FUN_004353ec(text3, reinterpret_cast<GuiMessageTextArgs *>(args)->text);
+            if (DrawIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm), text3,
+                                         reinterpret_cast<GuiMessageTextArgs *>(args)->colorIndex,
+                                         reinterpret_cast<GuiMessageTextArgs *>(args)->lineIndex))
+                break;
+#endif
             if (reinterpret_cast<GuiMessageTextArgs *>(args)->lineIndex == 0 &&
                 reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1].scriptIndex >= 0)
             {
@@ -729,6 +910,13 @@ i32 GuiImpl::RunMsg()
             args = reinterpret_cast<GuiMessagePortraitArgs *>(
                 reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args);
+#ifdef TH08_IOS
+            FUN_004353ec(text16, reinterpret_cast<const char *>(args));
+            if (DrawIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm), text16,
+                                         reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentSide,
+                                         reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentLine))
+                break;
+#endif
             if (reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->textPending)
             {
                 if (reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1].scriptIndex >= 0)
@@ -760,6 +948,11 @@ i32 GuiImpl::RunMsg()
         case 0x13:
             args = reinterpret_cast<GuiMessagePortraitArgs *>(
                 reinterpret_cast<GuiRawMessageInstruction *>(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args);
+#ifdef TH08_IOS
+            FUN_004353ec(text19, reinterpret_cast<const char *>(args));
+            if (DrawIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm), text19, 0, 0))
+                break;
+#endif
             g_Supervisor.textAnm->SetAndExecuteScriptIdx(&reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[0], 0);
             reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[0].fontWidth =
                 reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[0].fontHeight =
@@ -774,6 +967,11 @@ i32 GuiImpl::RunMsg()
         case 0x14:
             args = reinterpret_cast<GuiMessagePortraitArgs *>(
                 reinterpret_cast<GuiRawMessageInstruction *>(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args);
+#ifdef TH08_IOS
+            FUN_004353ec(text20, reinterpret_cast<const char *>(args));
+            if (DrawIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm), text20, 0, 1))
+                break;
+#endif
             g_Supervisor.textAnm->SetAndExecuteScriptIdx(&reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1], 1);
             reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1].fontWidth =
                 reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->dialogueLines[1].fontHeight =
@@ -1222,17 +1420,16 @@ void Gui::FUN_00435900()
     // animation state is reopened by the surrounding pointer-backed boss
     // state. Recover that relationship explicitly on arm64 so later nonspells
     // and spell cards cannot run with a permanently hidden life bar.
-    EclOperands::EnemyOverlay *boss = EclRunLowProposal::EclEnemySlot(0);
+    i32 bossSlot = -1;
+    EclOperands::EnemyOverlay *boss = FindIosActiveBoss(&bossSlot);
     if (boss != NULL)
     {
         u8 *bossBytes = reinterpret_cast<u8 *>(boss);
         const u32 bossFlags = *reinterpret_cast<u32 *>(bossBytes + 0x3324);
         const i32 bossLife = *reinterpret_cast<i32 *>(bossBytes + 0x2DFC);
         const i32 bossMaxLife = *reinterpret_cast<i32 *>(bossBytes + 0x2E00);
-        const bool activeDamageableBoss =
-            (bossFlags & 0x3U) == 0x3U &&
-            (bossFlags & (0x8U | 0x40U)) != 0 &&
-            bossLife > 0 && bossMaxLife > 0;
+        const bool activeDamageableBoss = (bossFlags & 0x3U) == 0x3U &&
+                                          bossLife > 0 && bossMaxLife > 0;
         if (activeDamageableBoss && this->impl->msgVm.currentMsgIdx < 0)
         {
             f32 ratio = static_cast<f32>(bossLife) / static_cast<f32>(bossMaxLife);
@@ -1245,13 +1442,31 @@ void Gui::FUN_00435900()
             if (!this->bossPresent || gaugeState == 3)
             {
                 this->bossPresent = true;
-                gaugeState = 0;
+                // Re-open the gauge immediately.  Waiting for the front.anm
+                // interrupt to advance from state 0 is fragile on iOS when a
+                // phase transition is accompanied by a dialog or a replay
+                // seek, and leaves a valid Boss with no visible life bar.
+                gaugeState = 2;
+                this->bossUIOpacity = 0xff;
+                this->bossLifeBarMaxSize = ratio;
                 char message[176];
                 snprintf(message, sizeof(message),
-                         "boss-gauge/recover: stage=%d life=%d/%d flags=%08x",
-                         g_GameManager.currentStage, bossLife, bossMaxLife,
+                         "boss-gauge/recover: stage=%d slot=%d life=%d/%d flags=%08x",
+                         g_GameManager.currentStage, bossSlot, bossLife, bossMaxLife,
                          static_cast<unsigned>(bossFlags));
                 modern::LogStartup(message);
+            }
+            else
+            {
+                // Keep the visible envelope in sync even if the ANM gauge
+                // script is between interrupts.  This also avoids a one-frame
+                // zero-width bar during spell-card handoff.
+                if (gaugeState < 2)
+                    gaugeState = 2;
+                if (this->bossUIOpacity < 0xff)
+                    this->bossUIOpacity = 0xff;
+                if (this->bossLifeBarMaxSize < ratio)
+                    this->bossLifeBarMaxSize = ratio;
             }
         }
     }
@@ -2598,6 +2813,9 @@ ZunResult Gui::LoadMsg(const char *path)
         g_GameErrorContext.Log("\x65\x72\x72\x6f\x72\x20\x3a\x20\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x83\x74\x83\x40\x83\x43\x83\x8b\x20\x25\x73\x20\x82\xaa\x93\xc7\x82\xdd\x8d\x9e\x82\xdf\x82\xdc\x82\xb9\x82\xf1\x82\xc5\x82\xb5\x82\xbd\x0d\x0a", path);
         return ZUN_ERROR;
     }
+#ifdef TH08_IOS
+    modern::ios::SetDialogueMessageFile(path);
+#endif
     *(i32 *)((u8 *)this->GetImpl() + 0x2181C) = -1;
     *(i32 *)((u8 *)this->GetImpl() + 0x21818) = 0;
 #ifndef TH08_IOS

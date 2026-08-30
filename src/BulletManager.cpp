@@ -13,6 +13,7 @@
 #endif
 
 #include <stdio.h>
+#include <math.h>
 
 namespace th08
 {
@@ -1508,25 +1509,56 @@ void Bullet::FUN_00432aa0()
 static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
 {
     AnmVm *vm = &laser->vm0;
-    if (vm->loadedSprite == NULL)
+    if (vm->loadedSprite == NULL || vm->loadedSprite->texture == NULL)
         return ZUN_ERROR;
+
+    // The laser ANM is a white mask.  Its source sprite is intentionally
+    // much wider than the logical collision width, so using
+    // spriteSize.x * scale.x here turns some spell-practice lasers into an
+    // opaque white rectangle.  currentWidth is the value updated by the
+    // retail laser state machine and is the only reliable display width.
+    f32 visibleWidth = fabsf(laser->currentWidth);
+    if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
+        visibleWidth = fabsf(laser->width);
+    if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
+        visibleWidth = fabsf(vm->spriteSize.x * vm->scale.x);
+    if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
+        return ZUN_ERROR;
+    // A malformed ECL value must never cover the whole render target.  Real
+    // game lasers are below 128 logical pixels wide; retain a generous cap
+    // for custom spell cards while keeping bad data harmless.
+    if (visibleWidth > 256.0f)
+        visibleWidth = 256.0f;
+
+    f32 startOffset = laser->startOffset;
+    f32 endOffset = laser->endOffset;
+    if (!isfinite(startOffset) || !isfinite(endOffset))
+        return ZUN_ERROR;
+    if (startOffset > endOffset)
+    {
+        const f32 swap = startOffset;
+        startOffset = endOffset;
+        endOffset = swap;
+    }
+    // Keep the quad within a bounded distance even if a partially initialized
+    // laser survives a scene transition.  The collision code uses the same
+    // offsets, and ordinary beams never approach this guard band.
+    if (startOffset < -2048.0f) startOffset = -2048.0f;
+    if (startOffset > 2048.0f) startOffset = 2048.0f;
+    if (endOffset < -2048.0f) endOffset = -2048.0f;
+    if (endOffset > 2048.0f) endOffset = 2048.0f;
 
     // Build the beam from its logical endpoints instead of relying on a
     // stretched sprite matrix. This keeps the visible body identical to the
     // collision length even for laser sprites whose source dimensions differ.
-    const f32 startX = laser->position.x + cosine * laser->startOffset +
+    const f32 startX = laser->position.x + cosine * startOffset +
                        g_GameManager.arcadeRegionTopLeftPos.x;
-    const f32 startY = laser->position.y + sine * laser->startOffset +
+    const f32 startY = laser->position.y + sine * startOffset +
                        g_GameManager.arcadeRegionTopLeftPos.y;
-    const f32 endX = laser->position.x + cosine * laser->endOffset +
+    const f32 endX = laser->position.x + cosine * endOffset +
                      g_GameManager.arcadeRegionTopLeftPos.x;
-    const f32 endY = laser->position.y + sine * laser->endOffset +
+    const f32 endY = laser->position.y + sine * endOffset +
                      g_GameManager.arcadeRegionTopLeftPos.y;
-    f32 visibleWidth = fabsf(vm->spriteSize.x * vm->scale.x);
-    if (!isfinite(visibleWidth) || visibleWidth <= 0.0f)
-        visibleWidth = fabsf(laser->currentWidth);
-    if (!isfinite(visibleWidth) || visibleWidth <= 0.0f)
-        visibleWidth = fabsf(laser->width);
     const f32 halfWidth = visibleWidth * 0.5f;
     const f32 perpendicularX = -sine * halfWidth;
     const f32 perpendicularY = cosine * halfWidth;
@@ -1553,6 +1585,15 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
     vertices[2].textureUV.x = vm->loadedSprite->uvStart.x;
     vertices[2].textureUV.y = vm->loadedSprite->uvEnd.y;
     vertices[3].textureUV = vm->loadedSprite->uvEnd;
+    // A preceding untextured effect can leave D3D8 stage 0 in SELECTARG1
+    // mode.  The GLES shim then correctly renders the white laser mask as a
+    // solid quad.  Lasers always use the normal texture * diffuse contract.
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     return g_AnmManager->FUN_00464dd0(vm, vertices);
 }
 #endif

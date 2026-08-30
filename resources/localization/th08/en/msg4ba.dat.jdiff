@@ -1,0 +1,232 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "Move and I'll shoot!"
+            ]
+        },
+        "121_0": {
+            "lines": [
+                "I messed up.",
+                "I mean, shoot and I'll move. Right away."
+            ]
+        },
+        "121_1": {
+            "lines": [
+                "What?",
+                "Why is Marisa out here?"
+            ]
+        },
+        "122_h1_0": {
+            "lines": [
+                "Marisa"
+            ]
+        },
+        "122_0": {
+            "lines": [
+                "Well, uh, I'm just hunting some troublesome youkai,",
+                "like usual."
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "Hey, what a coincidence.",
+                "I'm doing some troublesome youkai hunting too."
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "What I'm saying is \"hunting troublesome youkai.\"",
+                "In your case, it's troublesome \"youkai hunting,\" isn't it?"
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Not really."
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "My, I wonder what you can do all by yourself",
+                "on a night like this."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "Hunt troublesome youkai."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "I'm already tired of staring at today's Moon.",
+                "It's about time to make it be tomorrow."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "So, who's the troublesome youkai?"
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "You.",
+                "You messed with the boundary of night and day again, right?"
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "We're the ones who're stopping the night.",
+                "But now isn't the time for that!"
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "Indeed.",
+                "Don't you have eyes on the back of your head?"
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "Ahh?"
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "Well, she probably doesn't.",
+                "That's how it is."
+            ]
+        },
+        "135_0": {
+            "lines": [
+                "Speak Japanese.",
+                "This is Gensokyo."
+            ]
+        },
+        "136_0": {
+            "lines": [
+                "Looks like nothing we say will get through to her."
+            ]
+        },
+        "137_0": {
+            "lines": [
+                "But that distorted Moon is so dangerous..."
+            ]
+        },
+        "138_0": {
+            "lines": [
+                "It's not really harmful to humans."
+            ]
+        },
+        "139_0": {
+            "lines": [
+                "Ahh? I don't know what's happening, but",
+                "a never-ending night has harmful written all over it."
+            ]
+        },
+        "140_0": {
+            "lines": [
+                "Youkai eat humans during the night."
+            ]
+        },
+        "141_0": {
+            "lines": [
+                "If the night keeps going,",
+                "the youkai will stuff themselves until they drop dead."
+            ]
+        },
+        "142_0": {
+            "lines": [
+                "There's no way they'd do that."
+            ]
+        },
+        "143_0": {
+            "lines": [
+                "Gotta exterminate them before they drop dead."
+            ]
+        }
+    },
+    "2": {
+        "60_0": {
+            "lines": [
+                "Ah, running away?"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Now, let's chase her to the ends of the Earth."
+            ]
+        }
+    },
+    "3": {
+        "60_0": {
+            "lines": [
+                "Oh, if it isn't Reimu?",
+                "What's up?"
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "There's a limit, even to barefaced lies."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "That last one was for Yukari.",
+                "This one's for you!"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Looks like we arrived at our destination while",
+                "we were chasing Marisa."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "You really are lucky.",
+                "I wish you could share that luck with my Ran, too."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Dammit.",
+                "What the heck are you two saying?"
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "Thanks to you, we know who the culprit is.",
+                "You weren't useless."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Well, we haven't figured out the culprit.",
+                "But at any rate, they're in that mansion."
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Well, I lost, so there ain't much I can do.",
+                "Time to head home an' sleep."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "I hope it'll be morning when I wake up."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "Sleep for all eternity."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "Well, try not to catch a cold."
+            ]
+        }
+    }
+}

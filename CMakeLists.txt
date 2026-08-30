@@ -95,12 +95,29 @@ elseif(UNIX AND NOT APPLE)
 elseif(APPLE)
     enable_language(OBJC)
     enable_language(OBJCXX)
+    set(TH08_IOS_DIALOGUE_GENERATED "${TH08_GENERATED_DIR}/ios_dialogue_i18n.hpp")
+    file(GLOB_RECURSE TH08_IOS_DIALOGUE_DATA CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/resources/localization/th08/*.jdiff")
+    add_custom_command(
+        OUTPUT "${TH08_IOS_DIALOGUE_GENERATED}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${TH08_GENERATED_DIR}"
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_SOURCE_DIR}/scripts/generate_ios_dialogue_i18n.py"
+                --root "${CMAKE_SOURCE_DIR}/resources/localization/th08"
+                --output "${TH08_IOS_DIALOGUE_GENERATED}"
+        DEPENDS
+            "${CMAKE_SOURCE_DIR}/scripts/generate_ios_dialogue_i18n.py"
+            ${TH08_IOS_DIALOGUE_DATA}
+        VERBATIM
+    )
+    add_custom_target(th08-ios-dialogue-generated DEPENDS "${TH08_IOS_DIALOGUE_GENERATED}")
     list(APPEND TH08_GAME_SOURCES
         src/modern/ios/ios_compat.cpp
         src/modern/ios/ios_runtime.cpp
         src/modern/ios/ios_d3d8_compat.cpp
         src/modern/ios/ios_d3dx8_compat.cpp
         src/modern/ios/ios_gl_legacy.cpp
+        src/modern/ios/ios_localization.cpp
         src/modern/ios/ios_touch.cpp
         src/modern/ios/ios_cheat.mm)
     set_source_files_properties(src/modern/ios/ios_cheat.mm PROPERTIES
@@ -110,6 +127,9 @@ else()
     message(FATAL_ERROR "The modern target currently supports Windows and Linux.")
 endif()
 add_dependencies(th08-modern th08-modern-generated)
+if(APPLE)
+    add_dependencies(th08-modern th08-ios-dialogue-generated)
+endif()
 target_compile_features(th08-modern PRIVATE cxx_std_98)
 target_compile_definitions(th08-modern PRIVATE
     TH08_MODERN_PORT
@@ -366,6 +386,15 @@ elseif(APPLE)
                 PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
         endif()
     endforeach()
+    # Localized Chinese labels use a CJK-capable font. Keep it as a project
+    # resource so the same rasterization path works on every iOS device; the
+    # Japanese retail font remains separately bundled from TH08_IOS_DATA_DIR.
+    set(TH08_IOS_CJK_FONT "${CMAKE_SOURCE_DIR}/resources/NotoSansSC-VF.ttf")
+    if(EXISTS "${TH08_IOS_CJK_FONT}")
+        target_sources(th08-modern PRIVATE "${TH08_IOS_CJK_FONT}")
+        set_source_files_properties("${TH08_IOS_CJK_FONT}"
+            PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    endif()
 else()
     message(FATAL_ERROR "The modern Windows target currently supports MSVC and MinGW.")
 endif()

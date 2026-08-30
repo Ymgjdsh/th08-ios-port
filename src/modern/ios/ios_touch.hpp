@@ -12,6 +12,28 @@ void LogStartup(const char *phase);
 namespace ios
 {
 
+enum IosLanguage
+{
+    IOS_LANGUAGE_JP = 0,
+    IOS_LANGUAGE_ZH = 1,
+    IOS_LANGUAGE_EN = 2,
+};
+
+// Runtime language state is persisted with the mobile controls configuration.
+IosLanguage GetLanguage();
+const char *LanguageName();
+void CycleLanguage();
+u32 LanguageRevision();
+bool ConsumeLanguageRestartRequest();
+bool IsLanguageRestartInProgress();
+void CompleteLanguageRestart();
+
+// Text used by original in-game menu sprites. These strings are passed to the
+// sprite replacement path rather than drawn as a separate overlay. The title
+// screens intentionally remain in their original Japanese form.
+const char *PauseMenuText(int index);
+const char *RetryMenuText(int index);
+
 struct PresentationLayout
 {
     int drawableWidth;

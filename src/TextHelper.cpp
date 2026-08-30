@@ -4,6 +4,9 @@
 #include "TextHelper.hpp"
 #include "dxutil.hpp"
 #include "i18n.hpp"
+#ifdef TH08_IOS
+#include "modern/ios/ios_touch.hpp"
+#endif
 
 namespace th08
 {
@@ -293,11 +296,12 @@ bool TextHelper::CopyTextToSurface(IDirect3DSurface8 *outSurface)
     int dstWidthBytes;
     u8 *dstBuf;
 
-    if (!IsAllocated())
+    if (!IsAllocated() || outSurface == NULL)
     {
         return false;
     }
-    outSurface->GetDesc(&outSurfaceDesc);
+    if (FAILED(outSurface->GetDesc(&outSurfaceDesc)))
+        return false;
     rectToLock.left = 0;
     rectToLock.top = 0;
     rectToLock.right = GetWidth();
@@ -312,9 +316,13 @@ bool TextHelper::CopyTextToSurface(IDirect3DSurface8 *outSurface)
     dstBuf = (u8 *)lockedRect.pBits;
     if (outSurfaceDesc.Format == GetFormat())
     {
-        for (curHeight = 0; curHeight < GetHeight(); curHeight++)
+        const int copyHeight = GetHeight() < static_cast<int>(outSurfaceDesc.Height)
+                                   ? GetHeight() : static_cast<int>(outSurfaceDesc.Height);
+        const size_t copyWidth = srcWidthBytes < static_cast<size_t>(lockedRect.Pitch)
+                                     ? srcWidthBytes : static_cast<size_t>(lockedRect.Pitch);
+        for (curHeight = 0; curHeight < copyHeight; curHeight++)
         {
-            memcpy(dstBuf, srcBuf, srcWidthBytes);
+            memcpy(dstBuf, srcBuf, copyWidth);
             srcBuf += srcWidthBytes;
             dstBuf += dstWidthBytes;
         }
@@ -323,11 +331,27 @@ bool TextHelper::CopyTextToSurface(IDirect3DSurface8 *outSurface)
     return true;
 }
 
+#ifdef TH08_IOS
+#define TEXT_BUFFER_WIDTH 4096
+#define TEXT_BUFFER_HEIGHT 256
+#else
+#define TEXT_BUFFER_WIDTH 1024
 #define TEXT_BUFFER_HEIGHT 64
+#endif
 
 void TextHelper::CreateTextBuffer()
 {
-    g_Supervisor.d3dDevice->CreateImageSurface(1024, TEXT_BUFFER_HEIGHT, D3DFMT_A1R5G5B5, &g_TextBufferSurface);
+    SAFE_RELEASE(g_TextBufferSurface);
+    if (g_Supervisor.d3dDevice == NULL ||
+        FAILED(g_Supervisor.d3dDevice->CreateImageSurface(TEXT_BUFFER_WIDTH, TEXT_BUFFER_HEIGHT,
+                                                           D3DFMT_A1R5G5B5, &g_TextBufferSurface)) ||
+        g_TextBufferSurface == NULL)
+    {
+#ifdef TH08_IOS
+        modern::LogStartup("text: failed to allocate shared raster surface");
+#endif
+        g_TextBufferSurface = NULL;
+    }
 }
 
 void TextHelper::ReleaseTextBuffer()
@@ -339,7 +363,7 @@ void TextHelper::ReleaseTextBuffer()
 #pragma var_order(hdc, font, textSurfaceDesc, h, textHelper, hdc, srcRect, destRect, destSurface)
 void TextHelper::RenderTextToTextureBold(i32 xPos, i32 yPos, i32 spriteWidth, i32 spriteHeight, i32 fontHeight,
                                          i32 fontWidth, COLORREF textColor, COLORREF outlineType, const char *string,
-                                         IDirect3DTexture8 *outTexture)
+                                         IDirect3DTexture8 *outTexture, i32 outputScale)
 {
     HGDIOBJ h;
     LPDIRECT3DSURFACE8 destSurface;
@@ -349,57 +373,158 @@ void TextHelper::RenderTextToTextureBold(i32 xPos, i32 yPos, i32 spriteWidth, i3
     HFONT font;
     HDC hdc;
 
+    if (g_TextBufferSurface == NULL || outTexture == NULL || string == NULL || spriteWidth <= 0 ||
+        spriteHeight <= 0 || fontHeight <= 0)
+        return;
+    if (outputScale < 1) outputScale = 1;
+    if (outputScale > 3) outputScale = 3;
+
+    // Keep the retail Japanese path byte-for-byte compatible with the
+    // validated 7b608e5 renderer. Localized UTF-8 labels request outputScale
+    // 2 and use the high-resolution path below instead.
+    if (outputScale == 1)
+    {
+#ifdef TH08_IOS
+        // The retail A1R5G5B5 alpha inversion uses a 1024-wide row stride.
+        // Keep that scratch width even though localized labels use the larger
+        // shared surface; a 4096-wide bitmap makes Japanese rows walk apart.
+        const BOOL previousEncoding = TH08IosSetGdiTextUtf8(FALSE);
+#endif
+        HGDIOBJ h;
+        LPDIRECT3DSURFACE8 destSurface;
+        RECT destRect;
+        RECT srcRect;
+        D3DSURFACE_DESC textSurfaceDesc;
+        HFONT font = CreateFontA(fontHeight * 2 - 2, 0, 0, 0, FW_SEMIBOLD, false, false, false,
+                                  SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                  ANTIALIASED_QUALITY, FF_ROMAN | FIXED_PITCH, TH_FONT_NAME);
+        TextHelper textHelper;
+        g_TextBufferSurface->GetDesc(&textSurfaceDesc);
+        const i32 legacyBufferWidth = textSurfaceDesc.Width > 1024 ? 1024 : textSurfaceDesc.Width;
+        const i32 legacyBufferHeight = textSurfaceDesc.Height > 64 ? 64 : textSurfaceDesc.Height;
+        if (!textHelper.AllocateBufferWithFallback(legacyBufferWidth, legacyBufferHeight,
+                                                    textSurfaceDesc.Format) || !textHelper.IsAllocated())
+        {
+#ifdef TH08_IOS
+            modern::LogStartup("text: Japanese retail raster buffer allocation failed");
+#endif
+            DeleteObject(font);
+#ifdef TH08_IOS
+            TH08IosSetGdiTextUtf8(previousEncoding);
+#endif
+            return;
+        }
+        HDC hdc = textHelper.GetHDC();
+        h = SelectObject(hdc, font);
+        textHelper.InvertAlpha(0, 0, spriteWidth * 2, fontHeight * 2 + 6, FALSE);
+        SetBkMode(hdc, TRANSPARENT);
+        if (outlineType != 0xffffffff)
+        {
+            SetTextColor(hdc, 0);
+            TextOutA(hdc, xPos * 2 + 4, 2, string, strlen(string));
+            TextOutA(hdc, xPos * 2, 2, string, strlen(string));
+            TextOutA(hdc, xPos * 2 + 2, 0, string, strlen(string));
+            TextOutA(hdc, xPos * 2 + 2, 4, string, strlen(string));
+        }
+        else
+        {
+            SetTextColor(hdc, 0);
+            TextOutA(hdc, xPos * 2 + 3, 2, string, strlen(string));
+            TextOutA(hdc, xPos * 2 + 1, 2, string, strlen(string));
+            TextOutA(hdc, xPos * 2 + 2, 1, string, strlen(string));
+            TextOutA(hdc, xPos * 2 + 2, 3, string, strlen(string));
+        }
+        SetTextColor(hdc, textColor);
+        TextOutA(hdc, xPos * 2 + 2, 2, string, strlen(string));
+        SelectObject(hdc, h);
+        textHelper.InvertAlpha(0, 0, spriteWidth * 2, fontHeight * 2 + 6, outlineType == 0xffffffff);
+        textHelper.CopyTextToSurface(g_TextBufferSurface);
+        SelectObject(hdc, h);
+        DeleteObject(font);
+        destRect.left = 0;
+        destRect.top = yPos;
+        destRect.right = spriteWidth;
+        destRect.bottom = yPos + fontWidth;
+        srcRect.left = 0;
+        srcRect.top = 0;
+        srcRect.right = spriteWidth * 2;
+        srcRect.bottom = fontHeight * 2;
+        if (srcRect.right > 1024)
+            srcRect.right = 1024;
+        outTexture->GetSurfaceLevel(0, &destSurface);
+        if (destSurface != NULL)
+            D3DXLoadSurfaceFromSurface(destSurface, NULL, &destRect, g_TextBufferSurface, NULL, &srcRect, 4, 0);
+        SAFE_RELEASE(destSurface);
+#ifdef TH08_IOS
+        TH08IosSetGdiTextUtf8(previousEncoding);
+#endif
+        return;
+    }
+
+    const i32 renderScale = outputScale * 2;
+    const i32 sourceWidth = spriteWidth * renderScale;
+    const i32 sourceHeight = fontHeight * renderScale;
     font =
-        CreateFontA(fontHeight * 2 - 2, 0, 0, 0, FW_SEMIBOLD, false, false, false, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
+        CreateFontA(fontHeight * renderScale - outputScale * 2, 0, 0, 0, FW_SEMIBOLD, false, false, false, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                     CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, FF_ROMAN | FIXED_PITCH, TH_FONT_NAME);
     TextHelper textHelper;
     g_TextBufferSurface->GetDesc(&textSurfaceDesc);
-    textHelper.AllocateBufferWithFallback(textSurfaceDesc.Width, textSurfaceDesc.Height, textSurfaceDesc.Format);
+    if (!textHelper.AllocateBufferWithFallback(textSurfaceDesc.Width, textSurfaceDesc.Height,
+                                                textSurfaceDesc.Format) || !textHelper.IsAllocated())
+    {
+#ifdef TH08_IOS
+        modern::LogStartup("text: GDI raster buffer allocation failed");
+#endif
+        DeleteObject(font);
+        return;
+    }
     hdc = textHelper.GetHDC();
     h = SelectObject(hdc, font);
-    textHelper.InvertAlpha(0, 0, spriteWidth * 2, fontHeight * 2 + 6, FALSE);
+    textHelper.InvertAlpha(0, 0, sourceWidth, sourceHeight + outputScale * 6, FALSE);
     SetBkMode(hdc, TRANSPARENT);
 
     // Render outline.
     if (outlineType != 0xffffffff)
     {
         SetTextColor(hdc, 0);
-        TextOutA(hdc, xPos * 2 + 4, 2, string, strlen(string));
-        TextOutA(hdc, xPos * 2, 2, string, strlen(string));
-        TextOutA(hdc, xPos * 2 + 2, 0, string, strlen(string));
-        TextOutA(hdc, xPos * 2 + 2, 4, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 4, outputScale * 2, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale, outputScale * 2, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 2, 0, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 2, outputScale * 4, string, strlen(string));
     }
     else
     {
         SetTextColor(hdc, 0);
-        TextOutA(hdc, xPos * 2 + 3, 2, string, strlen(string));
-        TextOutA(hdc, xPos * 2 + 1, 2, string, strlen(string));
-        TextOutA(hdc, xPos * 2 + 2, 1, string, strlen(string));
-        TextOutA(hdc, xPos * 2 + 2, 3, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 3, outputScale * 2, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale, outputScale * 2, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 2, outputScale, string, strlen(string));
+        TextOutA(hdc, xPos * renderScale + outputScale * 2, outputScale * 3, string, strlen(string));
     }
     // Render main text.
     SetTextColor(hdc, textColor);
-    TextOutA(hdc, xPos * 2 + 2, 2, string, strlen(string));
+    TextOutA(hdc, xPos * renderScale + outputScale * 2, outputScale * 2, string, strlen(string));
 
     SelectObject(hdc, h);
-    textHelper.InvertAlpha(0, 0, spriteWidth * 2, fontHeight * 2 + 6, outlineType == 0xffffffff);
+    textHelper.InvertAlpha(0, 0, sourceWidth, sourceHeight + outputScale * 6, outlineType == 0xffffffff);
     textHelper.CopyTextToSurface(g_TextBufferSurface);
     SelectObject(hdc, h);
     DeleteObject(font);
     destRect.left = 0;
-    destRect.top = yPos;
-    destRect.right = spriteWidth;
-    destRect.bottom = yPos + fontWidth;
+    destRect.top = yPos * outputScale;
+    destRect.right = spriteWidth * outputScale;
+    destRect.bottom = (yPos + fontWidth) * outputScale;
     srcRect.left = 0;
     srcRect.top = 0;
-    srcRect.right = spriteWidth * 2;
-    srcRect.bottom = fontHeight * 2;
-    if (srcRect.right > 1024)
+    srcRect.right = sourceWidth;
+    srcRect.bottom = sourceHeight;
+    if (srcRect.right > TEXT_BUFFER_WIDTH)
     {
-        srcRect.right = 1024;
+        srcRect.right = TEXT_BUFFER_WIDTH;
     }
+    if (srcRect.bottom > TEXT_BUFFER_HEIGHT) srcRect.bottom = TEXT_BUFFER_HEIGHT;
     outTexture->GetSurfaceLevel(0, &destSurface);
-    D3DXLoadSurfaceFromSurface(destSurface, NULL, &destRect, g_TextBufferSurface, NULL, &srcRect, 4, 0);
+    if (destSurface != NULL)
+        D3DXLoadSurfaceFromSurface(destSurface, NULL, &destRect, g_TextBufferSurface, NULL, &srcRect, 4, 0);
     SAFE_RELEASE(destSurface);
     return;
 }
@@ -418,14 +543,19 @@ void TextHelper::RenderTextToTexture(i32 xPos, i32 yPos, i32 spriteWidth, i32 sp
     HFONT font;
     HDC hdc;
 
+#ifdef TH08_IOS
+    const BOOL previousEncoding = TH08IosSetGdiTextUtf8(FALSE);
+#endif
     font = CreateFontA(fontHeight * 2, 0, 0, 0, FW_NORMAL, false, false, false, SHIFTJIS_CHARSET, OUT_DEFAULT_PRECIS,
                        CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, FF_ROMAN | FIXED_PITCH, TH_FONT_NAME);
     TextHelper textHelper;
     g_TextBufferSurface->GetDesc(&textSurfaceDesc);
-    textHelper.AllocateBufferWithFallback(textSurfaceDesc.Width, textSurfaceDesc.Height, textSurfaceDesc.Format);
+    const i32 legacyBufferWidth = textSurfaceDesc.Width > 1024 ? 1024 : textSurfaceDesc.Width;
+    const i32 legacyBufferHeight = textSurfaceDesc.Height > 64 ? 64 : textSurfaceDesc.Height;
+    textHelper.AllocateBufferWithFallback(legacyBufferWidth, legacyBufferHeight, textSurfaceDesc.Format);
     hdc = textHelper.GetHDC();
     h = SelectObject(hdc, font);
-    textHelper.InvertAlpha(0, 0, textSurfaceDesc.Width, fontHeight * 2 + 6, FALSE);
+    textHelper.InvertAlpha(0, 0, legacyBufferWidth, fontHeight * 2 + 6, FALSE);
     SetBkMode(hdc, TRANSPARENT);
 
     // Render outline.
@@ -450,7 +580,7 @@ void TextHelper::RenderTextToTexture(i32 xPos, i32 yPos, i32 spriteWidth, i32 sp
     TextOutA(hdc, xPos * 2 + 2, 2, string, strlen(string));
 
     SelectObject(hdc, h);
-    textHelper.InvertAlpha(0, 0, textSurfaceDesc.Width, fontHeight * 2 + 6, outlineType == 0xffffffff);
+    textHelper.InvertAlpha(0, 0, legacyBufferWidth, fontHeight * 2 + 6, outlineType == 0xffffffff);
     textHelper.CopyTextToSurface(g_TextBufferSurface);
     SelectObject(hdc, h);
     DeleteObject(font);
@@ -467,8 +597,12 @@ void TextHelper::RenderTextToTexture(i32 xPos, i32 yPos, i32 spriteWidth, i32 sp
         srcRect.right = 1024;
     }
     outTexture->GetSurfaceLevel(0, &destSurface);
-    D3DXLoadSurfaceFromSurface(destSurface, NULL, &destRect, g_TextBufferSurface, NULL, &srcRect, 4, 0);
+    if (destSurface != NULL)
+        D3DXLoadSurfaceFromSurface(destSurface, NULL, &destRect, g_TextBufferSurface, NULL, &srcRect, 4, 0);
     SAFE_RELEASE(destSurface);
+#ifdef TH08_IOS
+    TH08IosSetGdiTextUtf8(previousEncoding);
+#endif
     return;
 }
 }; // namespace th08

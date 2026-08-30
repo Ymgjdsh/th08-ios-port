@@ -1,0 +1,327 @@
+{
+    "0": {
+        "60_0": {
+            "lines": [
+                "You're too late."
+            ]
+        },
+        "121_0": {
+            "lines": [
+                "I've sealed all the doors.",
+                "You can't take the princess away now, can you?"
+            ]
+        },
+        "121_1": {
+            "lines": [
+                "Is this moon incident",
+                "your doing, perhaps?"
+            ]
+        },
+        "122_0": {
+            "lines": [
+                "She looks shifty.",
+                "Especially with that defiant appearance."
+            ]
+        },
+        "123_0": {
+            "lines": [
+                "Ah, less so than you, winged one."
+            ]
+        },
+        "124_0": {
+            "lines": [
+                "At any rate, what business do you",
+                "have here in the middle of this night?"
+            ]
+        },
+        "125_0": {
+            "lines": [
+                "Important business. This moon incident is because of you",
+                "or an acquaintance, isn't it?"
+            ]
+        },
+        "126_0": {
+            "lines": [
+                "They say that if there's a bad smell,",
+                "clean up its source."
+            ]
+        },
+        "127_0": {
+            "lines": [
+                "I'm good at cleaning."
+            ]
+        },
+        "128_0": {
+            "lines": [
+                "Moon incident?",
+                "Mmm, it looks like you've noticed our spell."
+            ]
+        },
+        "129_0": {
+            "lines": [
+                "Even though you're just impure people",
+                "who only crawl around on the Earth."
+            ]
+        },
+        "130_0": {
+            "lines": [
+                "Unfortunately for you, I'm a filthy creature",
+                "who only watches the Moon and stars in the sky."
+            ]
+        },
+        "131_0": {
+            "lines": [
+                "I know when the Moon changes, for good or for bad."
+            ]
+        },
+        "132_0": {
+            "lines": [
+                "You're quite the night person, Milady."
+            ]
+        },
+        "133_0": {
+            "lines": [
+                "Restore the full Moon to Earth, right now!"
+            ]
+        },
+        "134_0": {
+            "lines": [
+                "There's no way we can undo this spell yet."
+            ]
+        },
+        "194_0": {
+            "lines": [
+                "My, I thought we had guests,"
+            ]
+        },
+        "195_0": {
+            "lines": [
+                "but it's just some lost youkai?"
+            ]
+        },
+        "196_0": {
+            "lines": [
+                "Well, there shouldn't be any guests arriving anyway."
+            ]
+        },
+        "197_0": {
+            "lines": [
+                "Who're you?"
+            ]
+        },
+        "198_0": {
+            "lines": [
+                "Sakuya, she's the villain.",
+                "You can tell with one glance at that villainous face."
+            ]
+        },
+        "199_0": {
+            "lines": [
+                "What a cruel thing to say."
+            ]
+        },
+        "200_0": {
+            "lines": [
+                "I certainly did create this sealed",
+                "chamber around the Earth."
+            ]
+        },
+        "201_0": {
+            "lines": [
+                "But, it was for the sake of the princess and this girl."
+            ]
+        },
+        "202_0": {
+            "lines": [
+                "If that's the case, there's no way we can leave",
+                "until we've beaten you."
+            ]
+        },
+        "203_0": {
+            "lines": [
+                "Mmm, but that's still no use.",
+                "Udonge, I'll leave this to you."
+            ]
+        },
+        "204_0": {
+            "lines": [
+                "Whatever you do, do not let them take our princess."
+            ]
+        },
+        "265_0": {
+            "lines": [
+                "Leave it to me.",
+                "I won't let a single one of those closed doors be opened."
+            ]
+        },
+        "266_0": {
+            "lines": [
+                "I've found that no matter what happens,",
+                "there's always a path to follow."
+            ]
+        },
+        "267_0": {
+            "lines": [
+                "What a pain. As usual, you're not going off",
+                "the beaten path, Sakuya?"
+            ]
+        },
+        "268_0": {
+            "lines": [
+                "Just stick to the regular path, and overwhelm the enemy.",
+                "That's the trick to avoiding complaints."
+            ]
+        },
+        "269_0": {
+            "lines": [
+                "Hahaha.",
+                "The path to follow is the one behind you."
+            ]
+        },
+        "270_0": {
+            "lines": [
+                "But, there's no turning back now."
+            ]
+        },
+        "271_0": {
+            "lines": [
+                "We won't be turning back."
+            ]
+        },
+        "272_0": {
+            "lines": [
+                "Don't you see that you've already fallen into",
+                "this moon rabbit's trap?"
+            ]
+        },
+        "273_0": {
+            "lines": [
+                "Left, right, up, and down...",
+                "Your sense of direction has already gone insane."
+            ]
+        },
+        "274_0": {
+            "lines": [
+                "Though you're trying to fly straight ahead,",
+                "you're floating around aimlessly."
+            ]
+        },
+        "275_0": {
+            "lines": [
+                "Now, gaze into my eyes,",
+                "and become more insane still!"
+            ]
+        }
+    },
+    "3": {
+        "180_0": {
+            "lines": [
+                "Go straight onward (Final A)",
+                "Don't go straight onward (Final B)"
+            ]
+        }
+    },
+    "1": {
+        "60_0": {
+            "lines": [
+                "Milady, let's proceed along the regular path.",
+                "We'll be at the exit soon."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Sakuya, the one we saw before is down this way.",
+                "But, um..."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "We should be careful.",
+                "I think we'll be fine, though, since I'm with you."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "My master's power is beyond comparison to me."
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "I may have lost, but do you really think",
+                "you can oppose my master?"
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "Overwhelmingly."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "Now, let's finish this",
+                "before dawn comes."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "I see. So it was you two who were",
+                "lengthening the night."
+            ]
+        },
+        "68_0": {
+            "lines": [
+                "I thought as much..."
+            ]
+        },
+        "69_0": {
+            "lines": [
+                "?"
+            ]
+        }
+    },
+    "2": {
+        "60_0": {
+            "lines": [
+                "Milady, let's proceed along the regular path.",
+                "We'll be at the exit soon."
+            ]
+        },
+        "61_0": {
+            "lines": [
+                "Sakuya, the one we saw before is down this way.",
+                "But, before that..."
+            ]
+        },
+        "62_0": {
+            "lines": [
+                "Let's go through that door over there."
+            ]
+        },
+        "63_0": {
+            "lines": [
+                "What's over there?"
+            ]
+        },
+        "64_0": {
+            "lines": [
+                "Ahh, crap.",
+                "There was a door that I didn't have time to seal yet?"
+            ]
+        },
+        "65_0": {
+            "lines": [
+                "The one we seek is down that way."
+            ]
+        },
+        "66_0": {
+            "lines": [
+                "My eyes can't be deceived."
+            ]
+        },
+        "67_0": {
+            "lines": [
+                "Aww, my master's going to get mad at me..."
+            ]
+        }
+    }
+}

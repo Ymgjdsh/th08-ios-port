@@ -280,6 +280,10 @@ class LinuxSurface : public IDirect3DSurface8
 
         const bool allocateTexture = blitTexture == 0;
         glPushAttrib(GL_ALL_ATTRIB_BITS);
+        // Every compatibility draw samples from texture unit zero.  A 3-D
+        // background may leave unit one active, and binding the blit texture
+        // there makes the following text batch sample an unrelated texture.
+        glActiveTexture(GL_TEXTURE0);
         glDisable(GL_BLEND); glDisable(GL_CULL_FACE);
         glDisable(GL_DEPTH_TEST); glDisable(GL_SCISSOR_TEST);
         glDepthMask(GL_FALSE);
@@ -289,8 +293,8 @@ class LinuxSurface : public IDirect3DSurface8
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         if (allocateTexture)
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
                          uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
@@ -326,7 +330,7 @@ class LinuxTexture : public IDirect3DTexture8
 {
   public:
     LinuxTexture(UINT width, UINT height, D3DFORMAT format)
-        : refs(1), priority(0), glName(0), uploaded(false)
+        : refs(1), priority(0), glName(0), uploaded(false), rgbaSource(false)
     { surface = new LinuxSurface(width, height, format, false, this); }
     ~LinuxTexture()
     {
@@ -352,22 +356,80 @@ class LinuxTexture : public IDirect3DTexture8
     {
         if (uploaded && !surface->dirty) return;
         if (glName == 0) glGenTextures(1, &glName);
+        // The legacy renderer can leave another texture unit active after a
+        // 3-D background pass.  Textures are sampled from unit zero by the
+        // GLES shader, so make the binding deterministic before uploading.
+        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, glName);
-        std::vector<BYTE> rgba(surface->width * surface->height * 4);
-        UINT bytes = BytesPerPixel(surface->format);
-        for (UINT y = 0; y < surface->height; ++y)
-            for (UINT x = 0; x < surface->width; ++x)
-                DecodePixel(&surface->pixels[y * surface->pitch + x * bytes], surface->format,
-                            &rgba[(y * surface->width + x) * 4]);
+        // A newly-created GLES texture defaults to a mipmap minification
+        // filter.  Since the text atlas has no mip levels, that default makes
+        // the sampler return (0, 0, 0, 1), which is seen as a solid black
+        // rectangle.  Set complete, non-mipmap sampling at creation time;
+        // PrepareState still applies the D3D filter requested by the game.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        std::vector<BYTE> rgba;
+        const BYTE *uploadPixels = NULL;
+        GLenum uploadFormat = GL_RGBA;
+        if (rgbaSource && surface->format == D3DFMT_A8R8G8B8 &&
+            surface->pitch == surface->width * 4)
+        {
+            // TH08IosRasterizeTextUtf8 writes byte-order RGBA directly.
+            uploadPixels = surface->pixels.empty() ? NULL : &surface->pixels[0];
+        }
+        else
+        {
+            rgba.resize(surface->width * surface->height * 4);
+            UINT bytes = BytesPerPixel(surface->format);
+            for (UINT y = 0; y < surface->height; ++y)
+                for (UINT x = 0; x < surface->width; ++x)
+                    DecodePixel(&surface->pixels[y * surface->pitch + x * bytes], surface->format,
+                                &rgba[(y * surface->width + x) * 4]);
+            uploadPixels = rgba.empty() ? NULL : &rgba[0];
+        }
+        if (surface->format == D3DFMT_A8R8G8B8)
+        {
+            static int uploadDiagnostics;
+            if (uploadDiagnostics < 12)
+            {
+                unsigned int nonzeroAlpha = 0;
+                unsigned int opaqueAlpha = 0;
+                unsigned int nonzeroRed = 0;
+                unsigned int nonzeroGreen = 0;
+                unsigned int nonzeroBlue = 0;
+                const BYTE *diagnosticPixels = uploadPixels;
+                const size_t diagnosticSize =
+                    static_cast<size_t>(surface->width) * surface->height * 4;
+                for (size_t index = 0; diagnosticPixels != NULL &&
+                                      index + 3 < diagnosticSize; index += 4)
+                {
+                    if (diagnosticPixels[index + 0] != 0) ++nonzeroRed;
+                    if (diagnosticPixels[index + 1] != 0) ++nonzeroGreen;
+                    if (diagnosticPixels[index + 2] != 0) ++nonzeroBlue;
+                    if (diagnosticPixels[index + 3] != 0) ++nonzeroAlpha;
+                    if (diagnosticPixels[index + 3] == 255) ++opaqueAlpha;
+                }
+                char message[224];
+                SDL_snprintf(message, sizeof(message),
+                             "text/upload: %ux%u rgba=%d rgb=%u/%u/%u alpha=%u opaque=%u",
+                             surface->width, surface->height, rgbaSource ? 1 : 0,
+                             nonzeroRed, nonzeroGreen, nonzeroBlue, nonzeroAlpha, opaqueAlpha);
+                th08::modern::LogStartup(message);
+                ++uploadDiagnostics;
+            }
+        }
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface->width, surface->height, 0,
-                     GL_RGBA, GL_UNSIGNED_BYTE, rgba.empty() ? NULL : &rgba[0]);
+                     uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
         uploaded = true; surface->dirty = false;
     }
     ULONG refs;
     DWORD priority;
     GLuint glName;
     bool uploaded;
+    bool rgbaSource;
     LinuxSurface *surface;
 };
 
@@ -916,20 +978,21 @@ class LinuxDevice : public IDirect3DDevice8
             return false;
         }
 
+        glActiveTexture(GL_TEXTURE0);
         glGenTextures(1, &renderColorTexture);
         glBindTexture(GL_TEXTURE_2D, renderColorTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
         glGenTextures(1, &dialogueSnapshotTexture);
         glBindTexture(GL_TEXTURE_2D, dialogueSnapshotTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 
         g_framebufferApi.genRenderbuffers(1, &renderDepthBuffer);
@@ -1329,15 +1392,37 @@ class LinuxDevice : public IDirect3DDevice8
         const bool alphaUsesTexture = TextureOperationUsesTexture(
             textureStates[D3DTSS_ALPHAOP], textureStates[D3DTSS_ALPHAARG1],
             textureStates[D3DTSS_ALPHAARG2]);
+        static int textStateDiagnostics;
+        if (texture != NULL && texture->surface != NULL &&
+            texture->surface->format == D3DFMT_A8R8G8B8 && textStateDiagnostics < 24)
+        {
+            char message[192];
+            SDL_snprintf(message, sizeof(message),
+                         "text/state: colorTex=%d alphaTex=%d blend=%u src=%u dst=%u tex=%u",
+                         colorUsesTexture ? 1 : 0, alphaUsesTexture ? 1 : 0,
+                         static_cast<unsigned>(renderStates[D3DRS_ALPHABLENDENABLE]),
+                         static_cast<unsigned>(renderStates[D3DRS_SRCBLEND]),
+                         static_cast<unsigned>(renderStates[D3DRS_DESTBLEND]),
+                         static_cast<unsigned>(texture->surface->format));
+            th08::modern::LogStartup(message);
+            ++textStateDiagnostics;
+        }
         IosLegacySetTextureUsage(colorUsesTexture ? GL_TRUE : GL_FALSE,
                                  alphaUsesTexture ? GL_TRUE : GL_FALSE);
+        // D3D8 only exposes stage 0 to this renderer.  Always select the
+        // corresponding GLES unit before changing its binding or sampler
+        // state; otherwise a previous multi-texture pass can poison text and
+        // HUD draws with a stale/black texture.
+        glActiveTexture(GL_TEXTURE0);
         if (texture != NULL && (colorUsesTexture || alphaUsesTexture))
         {
             texture->Upload(); glBindTexture(GL_TEXTURE_2D, texture->glName);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, textureStates[D3DTSS_MINFILTER] == D3DTEXF_LINEAR ? GL_LINEAR : GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, textureStates[D3DTSS_MAGFILTER] == D3DTEXF_LINEAR ? GL_LINEAR : GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, textureStates[D3DTSS_ADDRESSU] == D3DTADDRESS_CLAMP ? GL_CLAMP : GL_REPEAT);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, textureStates[D3DTSS_ADDRESSV] == D3DTADDRESS_CLAMP ? GL_CLAMP : GL_REPEAT);
+            // GL_CLAMP is not a valid GLES2 wrap mode. Use the edge mode for
+            // D3D's clamp state so NPOT text atlases remain complete.
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, textureStates[D3DTSS_ADDRESSU] == D3DTADDRESS_CLAMP ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, textureStates[D3DTSS_ADDRESSV] == D3DTADDRESS_CLAMP ? GL_CLAMP_TO_EDGE : GL_REPEAT);
             glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_COMBINE);
             ConfigureTextureComponent(GL_COMBINE_RGB, GL_SOURCE0_RGB, GL_SOURCE1_RGB,
                                       GL_OPERAND0_RGB, GL_OPERAND1_RGB,
@@ -1469,6 +1554,14 @@ class LinuxDirect3D : public IDirect3D8
   private: ULONG refs;
 };
 } // namespace
+
+void TH08IosMarkTextureRgba(IDirect3DTexture8 *texture)
+{
+    if (texture == NULL) return;
+    LinuxTexture *iosTexture = static_cast<LinuxTexture *>(texture);
+    iosTexture->rgbaSource = true;
+    iosTexture->uploaded = false;
+}
 
 bool th08_linux_surface_access(IDirect3DSurface8 *surfaceRaw, LinuxSurfaceAccess *access, bool readBackbuffer)
 {

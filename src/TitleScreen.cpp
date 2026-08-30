@@ -11,6 +11,7 @@
 #include "i18n.hpp"
 #ifdef TH08_IOS
 #include "modern/ios/ios_touch.hpp"
+#include "modern/ios/ios_localization.hpp"
 #endif
 
 #include <direct.h>
@@ -2704,7 +2705,14 @@ ChainCallbackResult TitleScreen::DrawReplayMenu()
     AnmVm *vm = &this->vms[79];
     Float3 position;
 
-    g_AsciiManager.AddFormatText(&vm->pos, "No.   Name       Date  Player   Rank");
+#ifdef TH08_IOS
+    const bool localizedReplay = modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP;
+    if (localizedReplay)
+        g_AnmManager->DrawUtf8TextAt(&vm->pos, 560, 22, 14, COLOR_WHITE, 0x300000,
+                                     modern::ios::ReplayLabel("header"));
+    else
+#endif
+        g_AsciiManager.AddFormatText(&vm->pos, "No.   Name       Date  Player   Rank");
 
     for (i = this->selectedReplay - (this->selectedReplay % TITLE_REPLAYS_PER_PAGE), i2 = i + TITLE_REPLAYS_PER_PAGE;
          i < i2; i++)
@@ -2728,6 +2736,20 @@ ChainCallbackResult TitleScreen::DrawReplayMenu()
 
         if (this->replays[i].spellcardNumber < 0)
         {
+#ifdef TH08_IOS
+            if (localizedReplay)
+            {
+                char row[256];
+                SDL_snprintf(row, sizeof(row), "%s %-8s  %6s %-14s %-8s",
+                             &this->replayNumbers[i], this->replays[i].playerName, this->replays[i].date,
+                             modern::ios::ReplayCharacterName(this->replays[i].shotType,
+                                                               g_ReplayCharacterNames[this->replays[i].shotType]),
+                             modern::ios::ReplayDifficultyName(this->replays[i].difficulty,
+                                                               g_ReplayDifficulties[this->replays[i].difficulty]));
+                g_AnmManager->DrawUtf8TextAt(&vm->pos, 560, 22, 13, COLOR_WHITE, 0x300000, row);
+            }
+            else
+#endif
             g_AsciiManager.AddFormatText(&vm->pos, "%s %8s  %6s %7s  %8s", &this->replayNumbers[i],
                                          this->replays[i].playerName, this->replays[i].date,
                                          g_ReplayCharacterNames[this->replays[i].shotType],
@@ -2735,6 +2757,19 @@ ChainCallbackResult TitleScreen::DrawReplayMenu()
         }
         else
         {
+#ifdef TH08_IOS
+            if (localizedReplay)
+            {
+                char row[256];
+                SDL_snprintf(row, sizeof(row), "%s %-8s  %6s %-14s %s %3d",
+                             &this->replayNumbers[i], this->replays[i].playerName, this->replays[i].date,
+                             modern::ios::ReplayCharacterName(this->replays[i].shotType,
+                                                               g_ReplayCharacterNames[this->replays[i].shotType]),
+                             "符卡", this->replays[i].spellcardNumber + 1);
+                g_AnmManager->DrawUtf8TextAt(&vm->pos, 560, 22, 13, COLOR_WHITE, 0x300000, row);
+            }
+            else
+#endif
             g_AsciiManager.AddFormatText(&vm->pos, "%s %8s  %6s %7s  Spell No.%3d", &this->replayNumbers[i],
                                          this->replays[i].playerName, this->replays[i].date,
                                          g_ReplayCharacterNames[this->replays[i].shotType],
@@ -2755,7 +2790,13 @@ ChainCallbackResult TitleScreen::DrawReplayMenu()
 
         position = vm->pos;
 
-        g_AsciiManager.AddFormatText(&position, "Stage    LastScore");
+#ifdef TH08_IOS
+        if (localizedReplay)
+            g_AnmManager->DrawUtf8TextAt(&position, 260, 22, 14, COLOR_WHITE, 0x300000,
+                                         modern::ios::ReplayLabel("stage-score"));
+        else
+#endif
+            g_AsciiManager.AddFormatText(&position, "Stage    LastScore");
 
         i = this->selectedReplay - (this->selectedReplay % TITLE_REPLAYS_PER_PAGE);
 
