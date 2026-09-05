@@ -567,6 +567,26 @@ int Supervisor::AddedCallback(Supervisor *s)
     g_GameManager.flags.isSpellPracticeUnlocked = g_GameManager.IsSpellPracticeUnlocked();
     g_GameManager.flags.isExtraUnlockedWithAllTeams = g_GameManager.IsExtraUnlockedWithAllTeams();
 
+#ifdef TH08_IOS
+    // Keep the unlock decision observable in Documents/startup.log.  This is
+    // especially useful on devices where the title screen can only show a
+    // grayed-out entry and syslog is unavailable.
+    {
+        char unlockLog[192];
+        SDL_snprintf(unlockLog, sizeof(unlockLog),
+                     "score/unlock: extra=%d allTeams=%d spellPractice=%d clrd0=%04x clrd1=%04x clrd2=%04x clrd3=%04x aggregate=%04x",
+                     g_GameManager.flags.isExtraUnlocked ? 1 : 0,
+                     g_GameManager.flags.isExtraUnlockedWithAllTeams ? 1 : 0,
+                     g_GameManager.flags.isSpellPracticeUnlocked ? 1 : 0,
+                     g_GameManager.clrdData[SHOT_REIMU_YUKARI].difficultiesClearedWithoutRetries[EASY],
+                     g_GameManager.clrdData[SHOT_MARISA_ALICE].difficultiesClearedWithoutRetries[EASY],
+                     g_GameManager.clrdData[SHOT_SAKUYA_REMILIA].difficultiesClearedWithoutRetries[EASY],
+                     g_GameManager.clrdData[SHOT_YOUMU_YUYUKO].difficultiesClearedWithoutRetries[EASY],
+                     g_GameManager.clrdData[SHOT_ALL].difficultiesClearedWithoutRetries[EASY]);
+        modern::LogStartup(unlockLog);
+    }
+#endif
+
     if (Supervisor::LoadDat() != ZUN_SUCCESS)
     {
         return ZUN_ERROR;

@@ -143,16 +143,46 @@ struct Bullet
     Float3 position0;
     Float3 position1;
     Float3 position2;
-    unknown_fields(0xd68, 0x18);
+    f32 speed;
+    u32 unknownD6C[2];
+    f32 angle;
+    u32 unknownD78[2];
     ZunTimer timer0;
     ZunTimer timer1;
-    unknown_fields(0xd98, 0x1e8);
+    u32 unknownD98[4];
+    i32 offscreenCullDelayFrames;
+    u32 activeTransformFlags;
+    u32 transformFlags;
+    i16 color;
+    u16 unknownDB6;
+    u16 state;
+    u16 offscreenFrames;
+    u8 unknownDBC;
+    u8 isGrazed;
+    u8 cancelledDuringSpawn;
+    u8 pointerAlignmentDBF;
+#ifdef TH08_IOS
+    IosPtr32<Bullet> nextInDrawBucket;
+#else
+    Bullet *nextInDrawBucket;
+#endif
+    i32 zoneTransitionCooldownFrames;
+    i32 transformSound;
+    i32 transformIndex;
+    BulletTransformRecord transforms[18];
     BulletExState exStates[7];
-    unknown_fields(0x10b4, 4);
+    i8 collisionDisabled;
+    u8 trailingAlignment10B5[3];
 };
 C_ASSERT(sizeof(Bullet) == 0x10b8);
 #ifdef TH08_IOS
 typedef char IosBulletSizeCheck[(sizeof(Bullet) == 0x10b8) ? 1 : -1];
+typedef char IosBulletPositionOffsetCheck[(offsetof(Bullet, position0) == 0xd44) ? 1 : -1];
+typedef char IosBulletVelocityOffsetCheck[(offsetof(Bullet, position1) == 0xd50) ? 1 : -1];
+typedef char IosBulletAngleOffsetCheck[(offsetof(Bullet, angle) == 0xd74) ? 1 : -1];
+typedef char IosBulletStateOffsetCheck[(offsetof(Bullet, state) == 0xdb8) ? 1 : -1];
+typedef char IosBulletWarpCooldownOffsetCheck[
+    (offsetof(Bullet, zoneTransitionCooldownFrames) == 0xdc4) ? 1 : -1];
 #endif
 
 struct BulletManager

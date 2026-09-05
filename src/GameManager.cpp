@@ -1529,11 +1529,45 @@ void GameManager::AddToYoukaiGauge(i32 amount, i32 forceUpdate)
 // FUNCTION: th08 0x43c15f
 ZunBool GameManager::IsExtraUnlockedForCharacter(i32 character)
 {
-    return (character > SHOT_YOUMU_YUYUKO) ||
-           (this->clrdData[character].difficultiesClearedWithoutRetries[EASY] & EXTRA_UNLOCKED_FLAG ||
-            this->clrdData[character].difficultiesClearedWithoutRetries[NORMAL] & EXTRA_UNLOCKED_FLAG ||
-            this->clrdData[character].difficultiesClearedWithoutRetries[HARD] & EXTRA_UNLOCKED_FLAG ||
-            this->clrdData[character].difficultiesClearedWithoutRetries[LUNATIC] & EXTRA_UNLOCKED_FLAG);
+    if (character > SHOT_YOUMU_YUYUKO)
+        return TRUE;
+    if (character < 0)
+        return FALSE;
+
+    const Clrd &progress = this->clrdData[character];
+    u16 noRetryFlags = progress.difficultiesClearedWithoutRetries[EASY] |
+                       progress.difficultiesClearedWithoutRetries[NORMAL] |
+                       progress.difficultiesClearedWithoutRetries[HARD] |
+                       progress.difficultiesClearedWithoutRetries[LUNATIC];
+    if ((noRetryFlags & EXTRA_UNLOCKED_FLAG) != 0)
+        return TRUE;
+
+#ifdef TH08_IOS
+    // Some iOS builds reached the end of Final B and recorded its stage bit,
+    // but did not run Ending::AddedCallback before the app was suspended or
+    // terminated.  Treating that durable no-retry completion as equivalent to
+    // the retail unlock bit repairs those saves without granting Extra for a
+    // run that used continues.
+    if ((noRetryFlags & ZUN_BIT(STAGE6B)) != 0)
+        return TRUE;
+
+    // A legacy save can contain the aggregate SHOT_ALL completion while the
+    // per-team chapter was lost during migration.  Use that aggregate only as
+    // a read-time fallback; normal score writing still preserves both records.
+    if (character != SHOT_ALL)
+    {
+        const Clrd &aggregate = this->clrdData[SHOT_ALL];
+        const u16 aggregateNoRetryFlags = aggregate.difficultiesClearedWithoutRetries[EASY] |
+                                           aggregate.difficultiesClearedWithoutRetries[NORMAL] |
+                                           aggregate.difficultiesClearedWithoutRetries[HARD] |
+                                           aggregate.difficultiesClearedWithoutRetries[LUNATIC];
+        if ((aggregateNoRetryFlags & EXTRA_UNLOCKED_FLAG) != 0 ||
+            (aggregateNoRetryFlags & ZUN_BIT(STAGE6B)) != 0)
+            return TRUE;
+    }
+#endif
+
+    return FALSE;
 }
 
 // FUNCTION: th08 0x43c1e9

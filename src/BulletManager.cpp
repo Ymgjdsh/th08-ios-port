@@ -47,7 +47,27 @@ void __fastcall CopyBulletAnmVmCore(AnmVm *dst, const AnmVm *src);
 void __fastcall SelectBulletSprite(AnmVm *dst, AnmVm *base, AnmVm *sizeSource, i32 offset);
 
 
-void __fastcall fsincos(f32 *sine, f32 *cosine, f32 angle) {}
+void __fastcall fsincos(f32 *sine, f32 *cosine, f32 angle)
+{
+#ifdef TH08_MODERN_PORT
+    // The retail x86 function used the x87 FSINCOS instruction. Leaving this
+    // reconstruction empty makes every laser position depend on uninitialized
+    // stack values while its collision path (which uses the angle directly)
+    // remains correct.
+    *sine = sinf(angle);
+    *cosine = cosf(angle);
+#else
+    __asm
+    {
+        fld angle
+        fsincos
+        mov eax, cosine
+        fstp dword ptr [eax]
+        mov eax, sine
+        fstp dword ptr [eax]
+    }
+#endif
+}
 
 // FUNCTION: th08 0x42a410
 BulletSpawnDescriptor::BulletSpawnDescriptor()
@@ -1511,17 +1531,19 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
     AnmVm *vm = &laser->vm0;
     if (vm->loadedSprite == NULL || vm->loadedSprite->texture == NULL)
         return ZUN_ERROR;
+    if (!isfinite(sine) || !isfinite(cosine))
+        return ZUN_ERROR;
 
-    // The laser ANM is a white mask.  Its source sprite is intentionally
-    // much wider than the logical collision width, so using
-    // spriteSize.x * scale.x here turns some spell-practice lasers into an
-    // opaque white rectangle.  currentWidth is the value updated by the
-    // retail laser state machine and is the only reliable display width.
-    f32 visibleWidth = fabsf(laser->currentWidth);
+    // The retail ANM transform is the source of truth for thickness.  The
+    // laser state machine updates vm0.scale.x every frame (and leaves the
+    // currentWidth bookkeeping field untouched for startTime == 0 lasers),
+    // so reading currentWidth first makes those beams disappear.  Keep the
+    // descriptor/currentWidth values only as fallbacks for a damaged VM.
+    f32 visibleWidth = fabsf(vm->spriteSize.x * vm->scale.x);
     if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
         visibleWidth = fabsf(laser->width);
     if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
-        visibleWidth = fabsf(vm->spriteSize.x * vm->scale.x);
+        visibleWidth = fabsf(laser->currentWidth);
     if (!isfinite(visibleWidth) || visibleWidth < 0.01f)
         return ZUN_ERROR;
     // A malformed ECL value must never cover the whole render target.  Real
@@ -1551,6 +1573,18 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
     // Build the beam from its logical endpoints instead of relying on a
     // stretched sprite matrix. This keeps the visible body identical to the
     // collision length even for laser sprites whose source dimensions differ.
+    f32 visibleLength = fabsf(endOffset - startOffset);
+    if (!isfinite(visibleLength))
+        return ZUN_ERROR;
+    if (visibleLength < 0.01f)
+    {
+        // Keep the first frame as a small visible cap. The game update loop
+        // grows endOffset on subsequent frames, so this never skips the
+        // retail extension animation by drawing the full beam immediately.
+        const f32 capLength = 1.0f;
+        endOffset = startOffset + (laser->speed < 0.0f ? -capLength : capLength);
+    }
+
     const f32 startX = laser->position.x + cosine * startOffset +
                        g_GameManager.arcadeRegionTopLeftPos.x;
     const f32 startY = laser->position.y + sine * startOffset +
@@ -1559,6 +1593,7 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
                      g_GameManager.arcadeRegionTopLeftPos.x;
     const f32 endY = laser->position.y + sine * endOffset +
                      g_GameManager.arcadeRegionTopLeftPos.y;
+
     const f32 halfWidth = visibleWidth * 0.5f;
     const f32 perpendicularX = -sine * halfWidth;
     const f32 perpendicularY = cosine * halfWidth;
@@ -1585,6 +1620,10 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
     vertices[2].textureUV.x = vm->loadedSprite->uvStart.x;
     vertices[2].textureUV.y = vm->loadedSprite->uvEnd.y;
     vertices[3].textureUV = vm->loadedSprite->uvEnd;
+    // Finish the preceding sprite batch before changing global D3D8 texture
+    // state. Otherwise that batch would be submitted with the laser's state
+    // and could leave unrelated sprites or stale fragments on screen.
+    g_AnmManager->FlushVertexBuffer();
     // A preceding untextured effect can leave D3D8 stage 0 in SELECTARG1
     // mode.  The GLES shim then correctly renders the white laser mask as a
     // solid quad.  Lasers always use the normal texture * diffuse contract.
@@ -1594,7 +1633,11 @@ static ZunResult DrawIosLaserBody(Laser *laser, f32 sine, f32 cosine)
     g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
     g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
     g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    return g_AnmManager->FUN_00464dd0(vm, vertices);
+    // Submit this quad immediately. The regular sprite batch can change its
+    // texture and blend state before FlushVertexBuffer(), which made lasers
+    // intermittently disappear on the GLES compatibility renderer.
+    g_AnmManager->ClearTexture();
+    return g_AnmManager->DrawVertices(vm, vertices, 4);
 }
 #endif
 
@@ -1684,7 +1727,8 @@ ChainCallbackResult BulletManager::OnDraw(BulletManager *bulletManager)
         laser->vm0.pos.x += g_GameManager.arcadeRegionTopLeftPos.x;
         laser->vm0.pos.y += g_GameManager.arcadeRegionTopLeftPos.y;
 #ifdef TH08_IOS
-        DrawIosLaserBody(laser, sine, cosine);
+        if (DrawIosLaserBody(laser, sine, cosine) == ZUN_ERROR)
+            g_AnmManager->Draw2D(&laser->vm0);
 #else
         g_AnmManager->Draw2D(&laser->vm0);
 #endif

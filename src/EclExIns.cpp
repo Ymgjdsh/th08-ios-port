@@ -208,32 +208,31 @@ void __fastcall FUN_00423a60(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 {
     i32 i;
     i32 previousZone;
-    u8 *bullet = reinterpret_cast<u8 *>(&g_BulletManager) + 0x1a880;
+    Bullet *bullet = &g_BulletManager.bullets[0];
     i32 currentZone;
     Float3 previousPosition;
 
-    for (i = 0; i < 0x600; ++i, bullet += 0x10b8)
+    for (i = 0; i < 0x600; ++i, ++bullet)
     {
-        if (*reinterpret_cast<u16 *>(bullet + 0xdb8) == 0)
+        if (bullet->state == 0)
             continue;
-        if (*reinterpret_cast<i32 *>(bullet + 0xdc4) != 0)
+        if (bullet->zoneTransitionCooldownFrames != 0)
         {
-            --*reinterpret_cast<i32 *>(bullet + 0xdc4);
+            --bullet->zoneTransitionCooldownFrames;
             continue;
         }
 
-        previousPosition = *reinterpret_cast<Float3 *>(bullet + 0xd44) -
-                           *reinterpret_cast<Float3 *>(bullet + 0xd50);
+        previousPosition = bullet->position0 - bullet->position1;
 
-        if (*reinterpret_cast<f32 *>(bullet + 0xd44) > 124.11774444580078f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd44) < 259.88226318359375f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) > 140.11773681640625f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) < 275.88226318359375f)
+        if (bullet->position0.x > 124.11774444580078f &&
+            bullet->position0.x < 259.88226318359375f &&
+            bullet->position0.y > 140.11773681640625f &&
+            bullet->position0.y < 275.88226318359375f)
             currentZone = 0;
-        else if (*reinterpret_cast<f32 *>(bullet + 0xd44) > 56.23548889160156f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd44) < 327.7645263671875f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) > 72.23548889160156f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) < 343.7645263671875f)
+        else if (bullet->position0.x > 56.23548889160156f &&
+                 bullet->position0.x < 327.7645263671875f &&
+                 bullet->position0.y > 72.23548889160156f &&
+                 bullet->position0.y < 343.7645263671875f)
             currentZone = 1;
         else
             currentZone = 2;
@@ -253,28 +252,27 @@ void __fastcall FUN_00423a60(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 
         if (currentZone != previousZone)
         {
-            *reinterpret_cast<i32 *>(bullet + 0xdc4) = 2;
-            *reinterpret_cast<Float3 *>(bullet + 0xd50) *= -1.0f;
+            bullet->zoneTransitionCooldownFrames = 2;
+            bullet->position1 *= -1.0f;
             if (currentZone == 0 || previousZone == 0)
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         67.88225555419922f / 135.76451110839844f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 208.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 208.0f) *
                         67.88225555419922f / 135.76451110839844f + 208.0f;
             }
             else
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         135.76451110839844f / 67.88225555419922f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 208.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 208.0f) *
                         135.76451110839844f / 67.88225555419922f + 208.0f;
             }
-            *reinterpret_cast<f32 *>(bullet + 0xd74) =
-                AddNormalizeAngle(*reinterpret_cast<f32 *>(bullet + 0xd74), ZUN_PI);
+            bullet->angle = AddNormalizeAngle(bullet->angle, ZUN_PI);
         }
     }
 }
@@ -297,32 +295,31 @@ void __fastcall FUN_00423e20(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 {
     i32 i;
     i32 previousZone;
-    u8 *bullet = reinterpret_cast<u8 *>(&g_BulletManager) + 0x1a880;
+    Bullet *bullet = &g_BulletManager.bullets[0];
     i32 currentZone;
     Float3 previousPosition;
 
-    for (i = 0; i < 0x600; ++i, bullet += 0x10b8)
+    for (i = 0; i < 0x600; ++i, ++bullet)
     {
-        if (*reinterpret_cast<u16 *>(bullet + 0xdb8) == 0)
+        if (bullet->state == 0)
             continue;
-        if (*reinterpret_cast<i32 *>(bullet + 0xdc4) != 0)
+        if (bullet->zoneTransitionCooldownFrames != 0)
         {
-            --*reinterpret_cast<i32 *>(bullet + 0xdc4);
+            --bullet->zoneTransitionCooldownFrames;
             continue;
         }
 
-        previousPosition = *reinterpret_cast<Float3 *>(bullet + 0xd44) -
-                           *reinterpret_cast<Float3 *>(bullet + 0xd50);
+        previousPosition = bullet->position0 - bullet->position1;
 
-        if (*reinterpret_cast<f32 *>(bullet + 0xd44) > 112.80403137207031f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd44) < 271.1959533691406f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) > 128.8040313720703f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) < 287.1959533691406f)
+        if (bullet->position0.x > 112.80403137207031f &&
+            bullet->position0.x < 271.1959533691406f &&
+            bullet->position0.y > 128.8040313720703f &&
+            bullet->position0.y < 287.1959533691406f)
             currentZone = 0;
-        else if (*reinterpret_cast<f32 *>(bullet + 0xd44) > 33.608070373535156f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd44) < 350.3919372558594f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) > 49.608070373535156f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) < 366.3919372558594f)
+        else if (bullet->position0.x > 33.608070373535156f &&
+                 bullet->position0.x < 350.3919372558594f &&
+                 bullet->position0.y > 49.608070373535156f &&
+                 bullet->position0.y < 366.3919372558594f)
             currentZone = 1;
         else
             currentZone = 2;
@@ -342,28 +339,27 @@ void __fastcall FUN_00423e20(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 
         if (currentZone != previousZone)
         {
-            *reinterpret_cast<i32 *>(bullet + 0xdc4) = 2;
-            *reinterpret_cast<Float3 *>(bullet + 0xd50) *= -1.0f;
+            bullet->zoneTransitionCooldownFrames = 2;
+            bullet->position1 *= -1.0f;
             if (currentZone == 0 || previousZone == 0)
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         158.39193725585938f / 79.19596862792969f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 208.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 208.0f) *
                         158.39193725585938f / 79.19596862792969f + 208.0f;
             }
             else
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         79.19596862792969f / 158.39193725585938f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 208.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 208.0f) *
                         79.19596862792969f / 158.39193725585938f + 208.0f;
             }
-            *reinterpret_cast<f32 *>(bullet + 0xd74) =
-                AddNormalizeAngle(*reinterpret_cast<f32 *>(bullet + 0xd74), ZUN_PI);
+            bullet->angle = AddNormalizeAngle(bullet->angle, ZUN_PI);
         }
     }
 }
@@ -393,32 +389,31 @@ void __fastcall FUN_004241e0(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 {
     i32 i;
     i32 previousZone;
-    u8 *bullet = reinterpret_cast<u8 *>(&g_BulletManager) + 0x1a880;
+    Bullet *bullet = &g_BulletManager.bullets[0];
     i32 currentZone;
     Float3 previousPosition;
 
-    for (i = 0; i < 0x600; ++i, bullet += 0x10b8)
+    for (i = 0; i < 0x600; ++i, ++bullet)
     {
-        if (*reinterpret_cast<u16 *>(bullet + 0xdb8) == 0)
+        if (bullet->state == 0)
             continue;
-        if (*reinterpret_cast<i32 *>(bullet + 0xdc4) != 0)
+        if (bullet->zoneTransitionCooldownFrames != 0)
         {
-            --*reinterpret_cast<i32 *>(bullet + 0xdc4);
+            --bullet->zoneTransitionCooldownFrames;
             continue;
         }
 
-        previousPosition = *reinterpret_cast<Float3 *>(bullet + 0xd44) -
-                           *reinterpret_cast<Float3 *>(bullet + 0xd50);
+        previousPosition = bullet->position0 - bullet->position1;
 
-        if (*reinterpret_cast<f32 *>(bullet + 0xd44) > 56.23548889160156f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd44) < 327.7645263671875f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) > 88.23548889160156f &&
-            *reinterpret_cast<f32 *>(bullet + 0xd48) < 359.7645263671875f)
+        if (bullet->position0.x > 56.23548889160156f &&
+            bullet->position0.x < 327.7645263671875f &&
+            bullet->position0.y > 88.23548889160156f &&
+            bullet->position0.y < 359.7645263671875f)
             currentZone = 0;
-        else if (*reinterpret_cast<f32 *>(bullet + 0xd44) > -32.0f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd44) < 416.0f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) > 0.0f &&
-                 *reinterpret_cast<f32 *>(bullet + 0xd48) < 448.0f)
+        else if (bullet->position0.x > -32.0f &&
+                 bullet->position0.x < 416.0f &&
+                 bullet->position0.y > 0.0f &&
+                 bullet->position0.y < 448.0f)
             currentZone = 1;
         else
             currentZone = 2;
@@ -438,28 +433,27 @@ void __fastcall FUN_004241e0(EclOperands::EnemyOverlay *enemy, EclExInstruction 
 
         if (currentZone != previousZone)
         {
-            *reinterpret_cast<i32 *>(bullet + 0xdc4) = 2;
-            *reinterpret_cast<Float3 *>(bullet + 0xd50) *= -1.0f;
+            bullet->zoneTransitionCooldownFrames = 2;
+            bullet->position1 *= -1.0f;
             if (currentZone == 0 || previousZone == 0)
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         224.0f / 135.76451110839844f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 224.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 224.0f) *
                         224.0f / 135.76451110839844f + 224.0f;
             }
             else
             {
-                *reinterpret_cast<f32 *>(bullet + 0xd44) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd44) - 192.0f) *
+                bullet->position0.x =
+                    (bullet->position0.x - 192.0f) *
                         135.76451110839844f / 224.0f + 192.0f;
-                *reinterpret_cast<f32 *>(bullet + 0xd48) =
-                    (*reinterpret_cast<f32 *>(bullet + 0xd48) - 224.0f) *
+                bullet->position0.y =
+                    (bullet->position0.y - 224.0f) *
                         135.76451110839844f / 224.0f + 224.0f;
             }
-            *reinterpret_cast<f32 *>(bullet + 0xd74) =
-                AddNormalizeAngle(*reinterpret_cast<f32 *>(bullet + 0xd74), ZUN_PI);
+            bullet->angle = AddNormalizeAngle(bullet->angle, ZUN_PI);
         }
     }
 }

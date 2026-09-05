@@ -562,6 +562,24 @@ int OpenIosFile(const char *path, int flags, mode_t mode, bool writing)
         return open(userPath.c_str(), flags, mode);
     }
 
+    // Writable game state is kept in Documents.  Prefer that copy when it
+    // already exists so a stale score.dat accidentally bundled with the app
+    // cannot mask a player's unlock progress.  Other resources continue to
+    // use the bundle-first lookup below.
+    if (!writing && !IsAbsolutePath(path) &&
+        (strcmp(path, "score.dat") == 0 || strcmp(path, "th08.cfg") == 0 ||
+         strcmp(path, "mobile.cfg") == 0))
+    {
+        const std::string userPath = IosUserDataPath(path);
+        const int userFd = open(userPath.c_str(), flags, mode);
+        if (userFd >= 0)
+        {
+            if (strcmp(path, "score.dat") == 0)
+                th08::modern::LogStartup("ios-files: score.dat read from Documents");
+            return userFd;
+        }
+    }
+
     int fd = open(path, flags, mode);
     if (fd >= 0 || writing || IsAbsolutePath(path))
         return fd;
