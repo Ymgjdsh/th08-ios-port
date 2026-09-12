@@ -305,6 +305,17 @@ void CopyReplaySummary(TitleScreen *titleScreen, i32 replayIndex, const ReplayDa
 }
 #endif
 
+#ifdef TH08_IOS
+i32 TitleScreen::IosReadyStartMenuCursor()
+{
+    if (g_TitleScreen == NULL || g_TitleScreen->state != TitleScreenState_Ready ||
+        g_TitleScreen->currentScreen != TitleCurrentScreen_StartMenu ||
+        g_TitleScreen->currentScreenState != TitleCurrentScreenState_Ready)
+        return -1;
+    return g_TitleScreen->cursor;
+}
+#endif
+
 ChainCallbackResult TitleScreen::OnUpdate(TitleScreen *titleScreen)
 {
 #ifdef TH08_IOS
@@ -4288,6 +4299,9 @@ ZunResult TitleScreen::DeletedCallback(TitleScreen *titleScreen)
 
     titleScreen->drawChain = NULL;
     titleScreen->Release();
+#ifdef TH08_IOS
+    if (g_TitleScreen == titleScreen) g_TitleScreen = NULL;
+#endif
     ZUN_DELETE2(titleScreen);
 
     return ZUN_SUCCESS;

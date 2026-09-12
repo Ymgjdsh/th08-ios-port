@@ -342,12 +342,12 @@ pickup:
                     g_BulletManager.bulletmanager_fun_00415c60();
                     g_Gui.FUN_00437e5d(0, 1);
                     g_SoundPlayer.PlaySoundByIdx(SOUND_POWERUP, 0);
-                    g_AsciiManager.CreatePlayerPointPopup(&item->currentPosition, -1, 0xffffc0a0);
+                    g_AsciiManager.CreateScorePopup(&item->currentPosition, -1, 0xffffc0a0);
                     this->ConvertAllPowerItemsToTimeOrbs(item);
                 }
                 g_GameManager.SetPower(128);
                 g_GameManager.AddScore(1000);
-                g_AsciiManager.CreatePlayerPointPopup(&item->currentPosition, 1000, 0xffffffff);
+                g_AsciiManager.CreateScorePopup(&item->currentPosition, 1000, 0xffffffff);
                 g_Gui.flags.powerDisplayUpdateFrames = 2;
                 break;
             case ITEM_POINT_STAR:
@@ -361,7 +361,7 @@ pickup:
                 {
                     pickupScore = 100;
                 }
-                g_AsciiManager.CreateScorePopup(&item->currentPosition, pickupScore, 0xffffffff);
+                g_AsciiManager.CreatePlayerPointPopup(&item->currentPosition, pickupScore, 0xffffffff);
                 g_GameManager.AddScore(pickupScore);
                 break;
             case ITEM_TIME:
@@ -621,7 +621,7 @@ void Item::CollectTimeOrb()
 
     if (this != NULL)
     {
-        g_AsciiManager.CreateScorePopup(
+        g_AsciiManager.CreatePlayerPointPopup(
             &this->currentPosition, score,
             g_GameManager.GetTimeOrbs() < g_GameManager.GetLastSpellTimeOrbThreshold() ? -536870913 : -536875136);
     }

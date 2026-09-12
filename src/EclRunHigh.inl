@@ -567,7 +567,15 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
             *(u16 *)(state + 0x1F8) = 0;
         else
             *(u16 *)(state + 0x1F8) = 1;
+#ifdef TH08_IOS
+        const i32 laserSlot = TH08_ECL_AT(ctx, i32, 0x3300);
+        if (laserSlot >= 0 && laserSlot < 32)
+            IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x3280 + laserSlot * 4) =
+                reinterpret_cast<u8 *>(g_BulletManager.SpawnLaserPattern(
+                    reinterpret_cast<BulletSpawnDescriptor *>(state)));
+#else
         TH08_ECL_AT(ctx, void *, 0x3280 + TH08_ECL_AT(ctx, i32, 0x3300) * 4) = g_BulletManager.SpawnLaserPattern(reinterpret_cast<BulletSpawnDescriptor *>(state));
+#endif
         break;
     }
     case 116: TH08_ECL_AT(ctx, i32, 0x3300) = TH08_ECL_READ_I(ctx, 0); break;
@@ -639,7 +647,11 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
         break;
     case 154:
         for (i32 i = 0; i < 0x20; ++i)
+#ifdef TH08_IOS
+            IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x3280 + i * 4) = NULL;
+#else
             TH08_ECL_AT(ctx, void *, 0x3280 + i * 4) = 0;
+#endif
         break;
     case 171:
         lhsInt = TH08_ECL_READ_I(ctx, 0);
@@ -700,6 +712,22 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
     case 128:
     {
         u8 *operands = TH08_ECL_CONTEXT_INSTRUCTION(ctx)->operands;
+#ifdef TH08_IOS
+        // The orbit-effect array occupies 24 retail four-byte pointer slots.
+        // A native u8* write here overlapped the next slot on arm64, while
+        // EnemyAuxVm decoded the low word as an IosPtr32 handle. The owner
+        // could never update or retire that effect, leaving it at (0, 0).
+        const i32 slot = TH08_ECL_AT(ctx, i32, 0x53C0);
+        if (slot < 0 || slot >= 24)
+            break;
+        u8 *effect = reinterpret_cast<u8 *>(g_EffectManager.SpawnEffect(
+            13, reinterpret_cast<D3DXVECTOR3 *>(&TH08_ECL_AT(ctx, Vec3, 0x2D34)),
+            1, 0xFF6060D0));
+        if (effect == NULL)
+            break;
+        IosEclPointerField<u8>(TH08_ECL_CONTEXT_ENEMY(ctx), 0x5360 + slot * 4) = effect;
+        *reinterpret_cast<Vec3 *>(effect + 0x2EC) = *reinterpret_cast<Vec3 *>(operands + 4);
+#else
         TH08_ECL_AT(ctx, u8 *, 0x5360 + TH08_ECL_AT(ctx, i32, 0x53C0) * 4) =
             reinterpret_cast<u8 *>(g_EffectManager.SpawnEffect(
                 13, reinterpret_cast<D3DXVECTOR3 *>(&TH08_ECL_AT(ctx, Vec3, 0x2D34)),
@@ -707,6 +735,7 @@ static DispatchResult DispatchOpcode93To184(Context &ctx)
         *reinterpret_cast<Vec3 *>(
             TH08_ECL_AT(ctx, u8 *, 0x5360 + TH08_ECL_AT(ctx, i32, 0x53C0) * 4) +
             0x2EC) = *reinterpret_cast<Vec3 *>(operands + 4);
+#endif
         TH08_ECL_AT(ctx, i32, 0x53C4) = *reinterpret_cast<i32 *>(operands + 0x10);
         TH08_ECL_AT(ctx, i32, 0x53C0)++;
         break;

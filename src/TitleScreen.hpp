@@ -60,6 +60,9 @@ struct TitleScreen
     }
 
     static ChainCallbackResult OnUpdate(TitleScreen *titleScreen);
+#ifdef TH08_IOS
+    static i32 IosReadyStartMenuCursor();
+#endif
     ChainCallbackResult OnUpdateStartMenu();
     ChainCallbackResult OnUpdateOptions();
     ChainCallbackResult OnUpdateKeyConfig();

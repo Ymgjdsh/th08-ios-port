@@ -2586,7 +2586,7 @@ ChainCallbackResult ResultScreen::OnDraw(ResultScreen *result)
             if (labelWidth < 120) labelWidth = 220;
             if (labelWidth > 300) labelWidth = 300;
             g_AnmManager->DrawUtf8TextAt(&labelPosition, labelWidth, 26, 14,
-                                         vm->color1.d3dColor, 0x300000, localizedMenuText);
+                                         0xffffff, 0x300000, localizedMenuText, vm->color1.d3dColor);
             vm->visible = wasVisible;
         }
         else

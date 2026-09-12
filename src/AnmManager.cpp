@@ -7,6 +7,7 @@
 #include "i18n.hpp"
 #include "utils.hpp"
 #ifdef TH08_IOS
+#include "EclManager.hpp"
 #include "modern/ios/ios_touch.hpp"
 #include "modern/ios/ios_compat.hpp"
 #include "modern/ios/ios_gl_legacy.hpp"
@@ -1130,6 +1131,41 @@ static const f32 g_ZeroPointFive = 0.5;
 #pragma var_order(triangleY1, triangleY2, triangleX2, triangleX1, color)
 ZunResult AnmManager::DrawInner(AnmVm *vm, i32 flags)
 {
+#ifdef TH08_IOS
+    static const bool cornerDiagnostics = SDL_getenv("TH08_IOS_HUD_DIAGNOSTICS") != NULL;
+    if (cornerDiagnostics && vm->loadedSprite != NULL &&
+        fabsf((g_QuadVertices[0].pos.x + g_QuadVertices[1].pos.x +
+               g_QuadVertices[2].pos.x + g_QuadVertices[3].pos.x) * 0.25f) < 40.0f &&
+        fabsf((g_QuadVertices[0].pos.y + g_QuadVertices[1].pos.y +
+               g_QuadVertices[2].pos.y + g_QuadVertices[3].pos.y) * 0.25f) < 24.0f &&
+        fabsf(vm->spriteSize.x * vm->scale.x) >= 24.0f)
+    {
+        static i32 seenAnm[128], seenScript[128];
+        static unsigned count;
+        unsigned index = 0;
+        while (index < count && (seenAnm[index] != vm->loadedSprite->anmIdx ||
+                                 seenScript[index] != vm->scriptIndex)) ++index;
+        if (index == count && count < 128)
+        {
+            seenAnm[count] = vm->loadedSprite->anmIdx;
+            seenScript[count++] = vm->scriptIndex;
+            const uintptr_t address = reinterpret_cast<uintptr_t>(vm);
+            const uintptr_t begin = reinterpret_cast<uintptr_t>(&g_EffectManager.effects[0]);
+            const uintptr_t end = reinterpret_cast<uintptr_t>(&g_EffectManager.effects[654]);
+            const int effectIndex = address >= begin && address < end &&
+                ((address - begin) % sizeof(Effect)) == 0 ? (address - begin) / sizeof(Effect) : -1;
+            char message[320];
+            SDL_snprintf(message, sizeof(message),
+                         "corner/probe: vm=%p effect=%d anm=%d script=%d sprite=%d pos=%.2f,%.2f,%.2f size=%.1f,%.1f scale=%.2f,%.2f quad=%.1f,%.1f-%.1f,%.1f",
+                         static_cast<void *>(vm), effectIndex, vm->loadedSprite->anmIdx,
+                         vm->scriptIndex, vm->activeSpriteIndex, vm->pos.x, vm->pos.y, vm->pos.z,
+                         vm->spriteSize.x, vm->spriteSize.y, vm->scale.x, vm->scale.y,
+                         g_QuadVertices[0].pos.x, g_QuadVertices[0].pos.y,
+                         g_QuadVertices[3].pos.x, g_QuadVertices[3].pos.y);
+            modern::LogStartup(message);
+        }
+    }
+#endif
     ZunColor color;
     float triangleX1, triangleX2, triangleY1, triangleY2;
 
@@ -2910,18 +2946,38 @@ LocalizedTextTexture *FindLocalizedTextTexture(i32 width, i32 height, i32 fontSi
 
 void StoreLocalizedTextTexture(const LocalizedTextTexture &created)
 {
-    const size_t maximumCachedLabels = 384;
-    if (g_localizedTextTextures.size() >= maximumCachedLabels)
+    // Include both CPU backing pixels and GPU storage for the 2x textures.
+    // A label-count limit alone allowed long dialogue sessions to retain
+    // hundreds of MB on older iPads.
+    const size_t maximumCachedLabels = 128;
+    const size_t maximumBytes = 24 * 1024 * 1024;
+    size_t bytes = static_cast<size_t>(created.width) * created.height * 32;
+    for (size_t index = 0; index < g_localizedTextTextures.size(); ++index)
+        bytes += static_cast<size_t>(g_localizedTextTextures[index].width) *
+                 g_localizedTextTextures[index].height * 32;
+    while (!g_localizedTextTextures.empty() &&
+           (g_localizedTextTextures.size() >= maximumCachedLabels || bytes > maximumBytes))
     {
         size_t oldestIndex = 0;
         for (size_t index = 1; index < g_localizedTextTextures.size(); ++index)
             if (g_localizedTextTextures[index].lastUsed < g_localizedTextTextures[oldestIndex].lastUsed)
                 oldestIndex = index;
+        bytes -= static_cast<size_t>(g_localizedTextTextures[oldestIndex].width) *
+                 g_localizedTextTextures[oldestIndex].height * 32;
         if (g_localizedTextTextures[oldestIndex].texture != NULL)
             g_localizedTextTextures[oldestIndex].texture->Release();
         g_localizedTextTextures.erase(g_localizedTextTextures.begin() + oldestIndex);
     }
     g_localizedTextTextures.push_back(created);
+    static u32 creations;
+    if ((++creations % 32) == 0)
+    {
+        char message[144];
+        SDL_snprintf(message, sizeof(message), "text/cache: rasterizations=%u labels=%lu estimatedBytes=%lu",
+                     creations, static_cast<unsigned long>(g_localizedTextTextures.size()),
+                     static_cast<unsigned long>(bytes));
+        modern::LogStartup(message);
+    }
 }
 
 LocalizedTextOverlay *FindLocalizedTextOverlay(AnmVm *vm)
@@ -3194,8 +3250,7 @@ void AnmManager::DrawTextLeftUtf8(AnmVm *vm, COLORREF textColor, COLORREF shadow
     LocalizedTextOverlay *overlay = FindLocalizedTextOverlay(vm);
     if (overlay == NULL)
     {
-        LocalizedTextOverlay created;
-        memset(&created, 0, sizeof(created));
+        LocalizedTextOverlay created = {};
         created.vm = vm;
         g_localizedTextOverlays.push_back(created);
         overlay = &g_localizedTextOverlays.back();
@@ -3212,7 +3267,7 @@ void AnmManager::DrawTextLeftUtf8(AnmVm *vm, COLORREF textColor, COLORREF shadow
 }
 
 void AnmManager::DrawUtf8TextAt(const Float3 *position, i32 width, i32 height, i32 fontSize,
-                                COLORREF textColor, COLORREF shadowColor, const char *text)
+                                COLORREF textColor, COLORREF shadowColor, const char *text, u32 modulation)
 {
     static int drawDiagnostics;
     const bool diagnosticsEnabled = SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL;
@@ -3362,7 +3417,7 @@ void AnmManager::DrawUtf8TextAt(const Float3 *position, i32 width, i32 height, i
     vm.scale.y = 1.0f;
     vm.spriteSize.x = static_cast<float>(width);
     vm.spriteSize.y = static_cast<float>(height);
-    vm.color1.d3dColor = 0xffffffff;
+    vm.color1.d3dColor = modulation;
     vm.visible = 1;
     vm.flag1 = 1;
     vm.anchor = 3;
@@ -3560,8 +3615,7 @@ void AnmManager::ReplaceSpriteText(AnmVm *vm, const char *text, COLORREF textCol
     LocalizedTextOverlay *overlay = FindLocalizedTextOverlay(vm);
     if (overlay == NULL)
     {
-        LocalizedTextOverlay created;
-        memset(&created, 0, sizeof(created));
+        LocalizedTextOverlay created = {};
         created.vm = vm;
         g_localizedTextOverlays.push_back(created);
         overlay = &g_localizedTextOverlays.back();

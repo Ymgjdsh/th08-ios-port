@@ -22,11 +22,13 @@ struct GuiMsgVm
 {
 #ifdef TH08_IOS
     IosPtr32<void> msgFile;
+    IosPtr32<void> currentInstr;
+    i32 currentMsgIdx;
 #else
     void *msgFile;
-#endif
     i32 currentMsgIdx;
     i32 currentLineIdx;
+#endif
     ZunTimer timer;
     i32 linesCount;
     i32 unused1c;
@@ -47,6 +49,7 @@ struct GuiMsgVm
 C_ASSERT(sizeof(GuiMsgVm) == 0x1578);
 #ifdef TH08_IOS
 typedef char IosGuiMsgVmSizeCheck[(sizeof(GuiMsgVm) == 0x1578) ? 1 : -1];
+typedef char IosGuiMsgIndexOffsetCheck[(offsetof(GuiMsgVm, currentMsgIdx) == 0x8) ? 1 : -1];
 #endif
 
 struct GuiImpl

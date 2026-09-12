@@ -768,9 +768,7 @@ ChainCallbackResult Background::OnDrawHighPrio(Background *background)
     reinterpret_cast<ZunColor *>(reinterpret_cast<u8 *>(background) + 0x6468)->b = 0x80;
 
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(background) + 0xB24) <= 1
-#ifndef TH08_IOS
-        && !g_Gui.IsDialogPresent()
-#endif
+        && !g_Gui.FUN_00437d87()
     )
     {
         if (background->stageVm0.activeSpriteIndex > 0)
@@ -850,9 +848,7 @@ ChainCallbackResult Background::OnDrawHighPrio(Background *background)
     }
 
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(background) + 0xB24) <= 1
-#ifndef TH08_IOS
-        && !g_Gui.IsDialogPresent()
-#endif
+        && !g_Gui.FUN_00437d87()
     )
     {
         background->RenderObjects(0);
@@ -872,9 +868,7 @@ ChainCallbackResult Background::OnDrawLowPrio(Background *background)
     f32 zValue;
 
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(background) + 0xB24) <= 1
-#ifndef TH08_IOS
-        && !g_Gui.IsDialogPresent()
-#endif
+        && !g_Gui.FUN_00437d87()
     )
     {
         background->RenderObjects(2);

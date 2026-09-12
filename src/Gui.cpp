@@ -253,6 +253,9 @@ static EclOperands::EnemyOverlay *FindIosActiveBoss(i32 *slotOut)
 {
     for (i32 slot = 0; slot < 87; ++slot)
     {
+        // Slot 11 is ECL integer state, not an enemy pointer.
+        if (slot == 11)
+            continue;
         EclOperands::EnemyOverlay *candidate = EclRunLowProposal::EclEnemySlot(static_cast<u32>(slot));
         if (candidate == NULL)
             continue;
@@ -457,6 +460,26 @@ ChainCallbackResult Gui::OnUpdate(Gui *gui)
 // FUNCTION: th08 0x433927
 ChainCallbackResult Gui::OnDraw(Gui *gui)
 {
+#ifdef TH08_IOS
+    static u32 hudProbeFrame;
+    if (SDL_getenv("TH08_IOS_HUD_DIAGNOSTICS") != NULL && (++hudProbeFrame % 60) == 0)
+    {
+        D3DVIEWPORT8 view;
+        g_Supervisor.d3dDevice->GetViewport(&view);
+        i32 slot = -1;
+        EclOperands::EnemyOverlay *boss = FindIosActiveBoss(&slot);
+        char message[320];
+        SDL_snprintf(message, sizeof(message),
+                     "hud/probe: stage=%d spell=%d active=%d boss=%p slot=%d present=%d state=%u alpha=%u life=%.4f shown=%.4f msg=%d viewport=%u,%u,%u,%u",
+                     g_GameManager.currentStage, g_Spellcard.spellCardNumber, g_Spellcard.IsActive(),
+                     static_cast<void *>(boss), slot, gui->bossPresent,
+                     *reinterpret_cast<u8 *>(reinterpret_cast<u8 *>(gui->GetImpl()) + 0x2a40),
+                     gui->bossUIOpacity, gui->bossLifeBarSize, gui->bossLifeBarMaxSize,
+                     reinterpret_cast<GuiMessageStateOverlay *>(&gui->impl->msgVm)->currentMsgIdx,
+                     view.X, view.Y, view.Width, view.Height);
+        modern::LogStartup(message);
+    }
+#endif
     if (*reinterpret_cast<i32 *>(reinterpret_cast<u8 *>(gui->GetImpl()) + 0x22d84) != 0)
         gui->FUN_0043826b();
 #ifdef TH08_IOS
@@ -1430,7 +1453,8 @@ void Gui::FUN_00435900()
         const i32 bossMaxLife = *reinterpret_cast<i32 *>(bossBytes + 0x2E00);
         const bool activeDamageableBoss = (bossFlags & 0x3U) == 0x3U &&
                                           bossLife > 0 && bossMaxLife > 0;
-        if (activeDamageableBoss && this->impl->msgVm.currentMsgIdx < 0)
+        if (activeDamageableBoss &&
+            reinterpret_cast<GuiMessageStateOverlay *>(&this->impl->msgVm)->currentMsgIdx < 0)
         {
             f32 ratio = static_cast<f32>(bossLife) / static_cast<f32>(bossMaxLife);
             if (ratio < 0.0f) ratio = 0.0f;
@@ -2188,6 +2212,7 @@ void Gui::CutChain()
 // FUNCTION: th08 0x437d87
 i32 Gui::FUN_00437d87()
 {
+    if (this->impl == NULL) return 0;
     return this->impl->vm3778.activeSpriteIndex >= 0 &&
            this->impl->vm3778.FUN_004396f8();
 }
@@ -2236,29 +2261,23 @@ void __fastcall FUN_00437f5c(i32 spriteIdx)
     RECT srcRect;
 
 #ifdef TH08_IOS
-    char message[224];
-    snprintf(message, sizeof(message),
-             "gui-stage-copy: requested=%d anm=%p idx=%d sprites=%p scripts=%p textures=%p capacity=%d",
-             spriteIdx, static_cast<void *>(g_Gui.stageTextAnm), g_Gui.stageTextAnm->anmIdx,
-             static_cast<void *>(g_Gui.stageTextAnm->sprites), static_cast<void *>(g_Gui.stageTextAnm->scripts),
-             static_cast<void *>(g_Gui.stageTextAnm->textures), g_Gui.stageTextAnm->spriteCount);
-    modern::LogStartup(message);
-    if (!g_Gui.stageTextAnm->HasSprite(10) || !g_Gui.stageTextAnm->HasSprite(spriteIdx))
+    // Upstream 63256e0: these sprites belong to front.anm, not stgNtxt.anm.
+    if (g_Gui.frontAnm == NULL || !g_Gui.frontAnm->HasSprite(10) || !g_Gui.frontAnm->HasSprite(spriteIdx))
     {
         modern::LogStartup("gui-stage-copy: skipped invalid original sprite lookup");
         return;
     }
 #endif
 
-    destRect.left = (i32)g_Gui.stageTextAnm->GetSprite(10)->startPixelInclusive.x;
-    destRect.top = (i32)g_Gui.stageTextAnm->GetSprite(10)->startPixelInclusive.y;
-    destRect.right = (i32)g_Gui.stageTextAnm->GetSprite(10)->endPixelInclusive.x;
-    destRect.bottom = (i32)g_Gui.stageTextAnm->GetSprite(10)->endPixelInclusive.y;
+    destRect.left = (i32)g_Gui.frontAnm->GetSprite(10)->startPixelInclusive.x;
+    destRect.top = (i32)g_Gui.frontAnm->GetSprite(10)->startPixelInclusive.y;
+    destRect.right = (i32)g_Gui.frontAnm->GetSprite(10)->endPixelInclusive.x;
+    destRect.bottom = (i32)g_Gui.frontAnm->GetSprite(10)->endPixelInclusive.y;
 
-    srcRect.left = (i32)g_Gui.stageTextAnm->GetSprite(spriteIdx)->startPixelInclusive.x;
-    srcRect.top = (i32)g_Gui.stageTextAnm->GetSprite(spriteIdx)->startPixelInclusive.y;
-    srcRect.right = (i32)g_Gui.stageTextAnm->GetSprite(spriteIdx)->endPixelInclusive.x;
-    srcRect.bottom = (i32)g_Gui.stageTextAnm->GetSprite(spriteIdx)->endPixelInclusive.y;
+    srcRect.left = (i32)g_Gui.frontAnm->GetSprite(spriteIdx)->startPixelInclusive.x;
+    srcRect.top = (i32)g_Gui.frontAnm->GetSprite(spriteIdx)->startPixelInclusive.y;
+    srcRect.right = (i32)g_Gui.frontAnm->GetSprite(spriteIdx)->endPixelInclusive.x;
+    srcRect.bottom = (i32)g_Gui.frontAnm->GetSprite(spriteIdx)->endPixelInclusive.y;
 
     g_AnmManager->CopyTextureRect(10, 0, 10, 1, &destRect, &srcRect);
 }

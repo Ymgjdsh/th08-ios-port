@@ -9,6 +9,7 @@
 #include "ResultScreen.hpp"
 #include "SoundPlayer.hpp"
 #include "Supervisor.hpp"
+#include "TitleScreen.hpp"
 
 #include <SDL.h>
 #include <math.h>
@@ -143,6 +144,7 @@ bool g_controllerInputReady = false;
 u32 g_languageRevision = 1;
 bool g_languageRestartRequested = false;
 bool g_languageRestartActive = false;
+int g_pendingLanguage = -1;
 const Uint32 SECONDARY_LONG_PRESS_MS = 280;
 
 struct RectGeometry
@@ -805,8 +807,9 @@ u16 PollSmokeTestButtons()
     static bool bombVerified;
     static f32 bombUsageBefore;
     static int developerStage;
-    static int musicRoomStep = -1;
-    static int replayStep = -1;
+    static int titleNavigationStep = -1;
+    static bool titlePageOpened;
+    static Uint32 titlePageOpenedAt;
     static bool replayCancelSent;
     static bool replayReturnLogged;
     static int invincibilityTestStage;
@@ -823,7 +826,9 @@ u16 PollSmokeTestButtons()
     static int stageClearInputTestStage;
     static Uint32 stageClearInputTestStartedAt;
     static int stageTransitionTestState;
-    static bool languageSwitchRequested;
+    static unsigned languageSwitchCount;
+    static Uint32 languageSwitchAt;
+    static bool languageTestPassed;
 
     const char *enabled = SDL_getenv("TH08_IOS_SMOKE_TEST");
     if (enabled == NULL || enabled[0] == '\0' || enabled[0] == '0')
@@ -839,6 +844,32 @@ u16 PollSmokeTestButtons()
     const Uint32 elapsed = SDL_GetTicks() - startedAt;
     if (elapsed < 2500)
         return 0;
+
+    // Optional simulator stress: tear down a populated text/game scene, then
+    // verify the ordinary language-restart path presents its replacement.
+    const char *reloadAt = SDL_getenv("TH08_IOS_SMOKE_RELOAD_AT");
+    static bool sceneReloadRequested;
+    static bool sceneReloadPassed;
+    if (reloadAt != NULL && atoi(reloadAt) > 0)
+    {
+        if (!sceneReloadRequested && elapsed >= static_cast<Uint32>(atoi(reloadAt)) * 1000u)
+        {
+            sceneReloadRequested = true;
+            th08::modern::LogStartup("smoke-scene-language: requesting reload after scene use");
+            CycleLanguage();
+            return 0;
+        }
+        if (sceneReloadRequested)
+        {
+            if (!sceneReloadPassed && !IsLanguageRestartInProgress() &&
+                g_Supervisor.curState == SupervisorState_TitleScreen && g_Supervisor.unk294 == 0)
+            {
+                sceneReloadPassed = true;
+                th08::modern::LogStartup("smoke-scene-language: PASS - replacement title presented");
+            }
+            return 0;
+        }
+    }
 
     const bool testRestart = strcmp(enabled, "restart") == 0;
     const bool testTitle = strcmp(enabled, "title") == 0;
@@ -919,16 +950,30 @@ u16 PollSmokeTestButtons()
         return 0;
     }
 
-    if (testLanguage && elapsed >= 8000 && !languageSwitchRequested &&
-        g_Supervisor.curState == SupervisorState_TitleScreen)
+    if (testLanguage)
     {
-        languageSwitchRequested = true;
-        th08::modern::LogStartup("smoke-language: requesting persisted language switch");
-        CycleLanguage();
+        if (elapsed >= 8000 && elapsed - languageSwitchAt >= 8000 &&
+            g_Supervisor.curState == SupervisorState_TitleScreen &&
+            !IsLanguageRestartInProgress() && g_Supervisor.unk294 == 0)
+        {
+            if (languageSwitchCount < 6)
+            {
+                ++languageSwitchCount;
+                languageSwitchAt = elapsed;
+                char message[128];
+                SDL_snprintf(message, sizeof(message), "smoke-language: switch %u/6 from=%s",
+                             languageSwitchCount, LanguageName());
+                th08::modern::LogStartup(message);
+                CycleLanguage();
+            }
+            else if (!languageTestPassed)
+            {
+                languageTestPassed = true;
+                th08::modern::LogStartup("smoke-language: PASS - six reloads and title frames presented");
+            }
+        }
         return 0;
     }
-    if (testLanguage)
-        return 0;
 
     if (testCampaign)
     {
@@ -1000,6 +1045,10 @@ u16 PollSmokeTestButtons()
 
             ++campaignStageFrames;
             ++campaignInputFrames;
+            // GameManager initialization follows the first ready-state signal.
+            // Apply the smoke loadout once gameplay has actually advanced.
+            if (campaignStageFrames == 60)
+                ActivateDeveloperRow(5);
             if (IsStageClearSequenceActive())
                 return 0;
 
@@ -1029,55 +1078,42 @@ u16 PollSmokeTestButtons()
         return ((elapsed / 500u) & 1u) != 0u ? TH_BUTTON_SHOOT : 0;
     }
 
-    if (testMusicRoom)
+    if ((testMusicRoom || testReplay || testResult || testPractice) && !titlePageOpened)
     {
-        // The default score table leaves Extra and Spell Practice locked, so
-        // the title navigation skips those two entries. Four downward edges
-        // reach Music Room while still exercising the real menu path.
+        // Follow the actual cursor; locked entries vary with the user's save.
+        // Counting downward presses could silently test Result as Music Room.
         if (elapsed < 8000)
             return 0;
-        const int step = static_cast<int>((elapsed - 8000) / 800);
-        if (step <= 4 && step != musicRoomStep)
+        const int cursor = TitleScreen::IosReadyStartMenuCursor();
+        const int target = testMusicRoom ? 6 : (testResult ? 5 : (testReplay ? 4 : 3));
+        const int step = static_cast<int>(elapsed / 800);
+        if (cursor >= 0 && step != titleNavigationStep)
         {
-            musicRoomStep = step;
-            if (step < 4)
-            {
-                th08::modern::LogStartup("smoke-musicroom: moving cursor down");
+            titleNavigationStep = step;
+            if (cursor != target)
                 return TH_BUTTON_DOWN;
-            }
-            th08::modern::LogStartup("smoke-musicroom: opening music room");
+            titlePageOpened = true;
+            titlePageOpenedAt = elapsed;
+            char message[112];
+            SDL_snprintf(message, sizeof(message), "smoke-%s: confirming actual title cursor=%d", enabled, cursor);
+            th08::modern::LogStartup(message);
             return TH_BUTTON_SHOOT;
         }
         return 0;
     }
 
+    if (testMusicRoom)
+        return 0;
+
     if (testReplay)
     {
-        // With the default score table, the locked Extra and Spell Practice
-        // entries are skipped. Two downward edges reach Replay; cancel after
-        // its entry animation and verify that the rebuilt title loop keeps
-        // rendering.
-        if (elapsed < 8000)
-            return 0;
-        const int step = static_cast<int>((elapsed - 8000) / 800);
-        if (step <= 2 && step != replayStep)
-        {
-            replayStep = step;
-            if (step < 2)
-            {
-                th08::modern::LogStartup("smoke-replay: moving cursor down");
-                return TH_BUTTON_DOWN;
-            }
-            th08::modern::LogStartup("smoke-replay: opening replay menu");
-            return TH_BUTTON_SHOOT;
-        }
-        if (elapsed >= 14000 && !replayCancelSent)
+        if (elapsed - titlePageOpenedAt >= 6000 && !replayCancelSent)
         {
             replayCancelSent = true;
             th08::modern::LogStartup("smoke-replay: requesting title return");
             return TH_BUTTON_BOMB;
         }
-        if (elapsed >= 18000 && !replayReturnLogged)
+        if (replayCancelSent && !replayReturnLogged && TitleScreen::IosReadyStartMenuCursor() >= 0)
         {
             replayReturnLogged = true;
             th08::modern::LogStartup("smoke-replay: main loop responsive after return");
@@ -1087,29 +1123,7 @@ u16 PollSmokeTestButtons()
 
     if (testResult || testPractice)
     {
-        // Result and Practice are title-screen pages, not gameplay states.
-        // Use their stable full-unlock menu indices so screenshots exercise
-        // localized labels without depending on score.dat history.
-        const int target = testResult ? 3 : 1;
         const char *name = testResult ? "result" : "practice";
-        if (elapsed < 8000)
-            return 0;
-        const int step = static_cast<int>((elapsed - 8000) / 800);
-        if (step <= target && step != replayStep)
-        {
-            replayStep = step;
-            if (step < target)
-            {
-                th08::modern::LogStartup(testResult
-                                             ? "smoke-result: moving cursor down"
-                                             : "smoke-practice: moving cursor down");
-                return TH_BUTTON_DOWN;
-            }
-            char message[96];
-            SDL_snprintf(message, sizeof(message), "smoke-%s: opening page", name);
-            th08::modern::LogStartup(message);
-            return TH_BUTTON_SHOOT;
-        }
         static bool pageResponsiveLogged;
         if (elapsed >= 18000 && !pageResponsiveLogged)
         {
@@ -2175,14 +2189,14 @@ const char *LanguageName()
 void CycleLanguage()
 {
     EnsureMobileConfig();
-    g_config.language = static_cast<u8>((g_config.language + 1) % 3);
-    ++g_languageRevision;
-    SaveMobileConfig();
+    if (g_languageRestartActive) return;
+    // Commit at the frame boundary, after the old-language calc callbacks.
+    g_pendingLanguage = (g_config.language + 1) % 3;
     g_languageRestartRequested = true;
     g_languageRestartActive = true;
-    modern::LogStartup(g_config.language == IOS_LANGUAGE_JP
+    modern::LogStartup(g_pendingLanguage == IOS_LANGUAGE_JP
                            ? "language: Japanese"
-                           : (g_config.language == IOS_LANGUAGE_ZH
+                           : (g_pendingLanguage == IOS_LANGUAGE_ZH
                                   ? "language: Simplified Chinese"
                                   : "language: English"));
 }
@@ -2196,6 +2210,13 @@ bool ConsumeLanguageRestartRequest()
 {
     const bool requested = g_languageRestartRequested;
     g_languageRestartRequested = false;
+    if (requested && g_pendingLanguage >= 0)
+    {
+        g_config.language = static_cast<u8>(g_pendingLanguage);
+        g_pendingLanguage = -1;
+        ++g_languageRevision;
+        SaveMobileConfig();
+    }
     return requested;
 }
 

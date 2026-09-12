@@ -351,7 +351,7 @@ class LinuxTexture : public IDirect3DTexture8
     HRESULT LockRect(UINT level, D3DLOCKED_RECT *locked, const RECT *rect, DWORD flags)
     { return level == 0 ? surface->LockRect(locked, rect, flags) : E_INVALIDARG; }
     HRESULT UnlockRect(UINT level)
-    { if (level != 0) return E_INVALIDARG; uploaded = false; return surface->UnlockRect(); }
+    { if (level != 0) return E_INVALIDARG; return surface->UnlockRect(); }
     void Upload()
     {
         if (uploaded && !surface->dirty) return;
@@ -392,7 +392,7 @@ class LinuxTexture : public IDirect3DTexture8
         if (surface->format == D3DFMT_A8R8G8B8)
         {
             static int uploadDiagnostics;
-            if (uploadDiagnostics < 12)
+            if (SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL && uploadDiagnostics < 12)
             {
                 unsigned int nonzeroAlpha = 0;
                 unsigned int opaqueAlpha = 0;
@@ -421,8 +421,12 @@ class LinuxTexture : public IDirect3DTexture8
             }
         }
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface->width, surface->height, 0,
-                     uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
+        if (uploaded)
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, surface->width, surface->height,
+                            uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
+        else
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, surface->width, surface->height, 0,
+                         uploadFormat, GL_UNSIGNED_BYTE, uploadPixels);
         uploaded = true; surface->dirty = false;
     }
     ULONG refs;
@@ -948,6 +952,30 @@ class LinuxDevice : public IDirect3DDevice8
     }
     HRESULT ResourceManagerDiscardBytes(DWORD) { return S_OK; }
 
+    void DrawScreenQuad(const void *vertices, UINT stride)
+    {
+        // Screen-space HUD/fade quads must not inherit a laser's blend,
+        // stage depth/fog, or a texture's alpha-test state.
+        DWORD savedRender[256], savedTexture[32];
+        memcpy(savedRender, renderStates, sizeof(savedRender));
+        memcpy(savedTexture, textureStates, sizeof(savedTexture));
+        const DWORD savedFvf = fvf;
+        renderStates[D3DRS_ZENABLE] = FALSE;
+        renderStates[D3DRS_ZWRITEENABLE] = FALSE;
+        renderStates[D3DRS_FOGENABLE] = FALSE;
+        renderStates[D3DRS_ALPHATESTENABLE] = FALSE;
+        renderStates[D3DRS_ALPHABLENDENABLE] = TRUE;
+        renderStates[D3DRS_SRCBLEND] = D3DBLEND_SRCALPHA;
+        renderStates[D3DRS_DESTBLEND] = D3DBLEND_INVSRCALPHA;
+        textureStates[D3DTSS_COLOROP] = textureStates[D3DTSS_ALPHAOP] = D3DTOP_SELECTARG1;
+        textureStates[D3DTSS_COLORARG1] = textureStates[D3DTSS_ALPHAARG1] = D3DTA_DIFFUSE;
+        fvf = D3DFVF_XYZRHW | D3DFVF_DIFFUSE;
+        Draw(D3DPT_TRIANGLESTRIP, 2, static_cast<const BYTE *>(vertices), stride);
+        fvf = savedFvf;
+        memcpy(renderStates, savedRender, sizeof(savedRender));
+        memcpy(textureStates, savedTexture, sizeof(savedTexture));
+    }
+
   private:
     HRESULT CreateSurface(UINT width, UINT height, D3DFORMAT format, IDirect3DSurface8 **result)
     {
@@ -1393,7 +1421,7 @@ class LinuxDevice : public IDirect3DDevice8
             textureStates[D3DTSS_ALPHAOP], textureStates[D3DTSS_ALPHAARG1],
             textureStates[D3DTSS_ALPHAARG2]);
         static int textStateDiagnostics;
-        if (texture != NULL && texture->surface != NULL &&
+        if (SDL_getenv("TH08_IOS_TEXT_DIAGNOSTICS") != NULL && texture != NULL && texture->surface != NULL &&
             texture->surface->format == D3DFMT_A8R8G8B8 && textStateDiagnostics < 24)
         {
             char message[192];
@@ -1555,6 +1583,12 @@ class LinuxDirect3D : public IDirect3D8
 };
 } // namespace
 
+void TH08IosDrawScreenQuad(IDirect3DDevice8 *device, const void *vertices, UINT stride)
+{
+    if (device != NULL && vertices != NULL)
+        static_cast<LinuxDevice *>(device)->DrawScreenQuad(vertices, stride);
+}
+
 void TH08IosMarkTextureRgba(IDirect3DTexture8 *texture)
 {
     if (texture == NULL) return;
@@ -1581,7 +1615,6 @@ void th08_linux_surface_changed(IDirect3DSurface8 *surfaceRaw)
     if (surfaceRaw == NULL) return;
     LinuxSurface *surface = static_cast<LinuxSurface *>(surfaceRaw);
     surface->dirty = true;
-    if (surface->owner != NULL) surface->owner->uploaded = false;
     surface->FlushBackbuffer();
 }
 

@@ -80,6 +80,7 @@ BOOL TH08IosRasterizeTextUtf8(const char *text, int pixelSize, int width, int he
 // writes canonical RGBA bytes. The GLES upload path uses this marker to avoid
 // decoding the text surface a second time.
 void TH08IosMarkTextureRgba(IDirect3DTexture8 *texture);
+void TH08IosDrawScreenQuad(IDirect3DDevice8 *device, const void *vertices, UINT stride);
 
 template <typename T> struct IosPtr32
 {

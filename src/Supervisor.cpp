@@ -1042,6 +1042,7 @@ ZunResult Supervisor::DeletedCallback(Supervisor *s)
     if (g_Supervisor.versionData != NULL)
     {
         ZUN_FREE(g_Supervisor.versionData);
+        g_Supervisor.versionData = NULL;
     }
 
     g_AnmManager->ReleaseVertexBuffer();
@@ -1096,6 +1097,14 @@ ZunResult Supervisor::DeletedCallback(Supervisor *s)
     }
 
     g_PbgArchive.Release();
+#ifdef TH08_IOS
+    // These point at ANMs/effects just removed by Chain::Release. A second
+    // startup must initialize the new loading VMs rather than execute old ones.
+    s->loadingVmsHaveBeenSetup = 0;
+    g_SupervisorScreenEffect = NULL;
+    s->loadingAnm = NULL;
+    s->textAnm = NULL;
+#endif
     if (g_Supervisor.dummyMidiTimer != NULL)
     {
         g_Supervisor.dummyMidiTimer->StopTimer();

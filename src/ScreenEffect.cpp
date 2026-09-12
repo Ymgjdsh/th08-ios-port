@@ -171,6 +171,17 @@ void ScreenEffect::DrawSquareShaded(ZunRect *rect, D3DCOLOR topLeft, D3DCOLOR to
     vertices[2].diffuse = bottomLeft;
     vertices[3].diffuse = bottomRight;
 
+#ifdef TH08_IOS
+    TH08IosDrawScreenQuad(g_Supervisor.d3dDevice, vertices, sizeof(VertexDiffuseXyzrhw));
+    g_AnmManager->ClearVertexShader();
+    g_AnmManager->ClearSprite();
+    g_AnmManager->ClearTexture();
+    g_AnmManager->ClearColorOp();
+    g_AnmManager->ClearBlendMode();
+    g_AnmManager->ClearZWrite();
+    return;
+#endif
+
     if (!g_Supervisor.IsColorCompositingDisabled())
     {
         g_Supervisor.d3dDevice->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);

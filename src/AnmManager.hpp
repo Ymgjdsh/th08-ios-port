@@ -605,7 +605,8 @@ struct AnmManager
     // Draw a standalone UTF-8 label without modifying the retail ASCII/ANM
     // atlas. Used by localized Replay/Result/Music Room headers.
     void DrawUtf8TextAt(const Float3 *position, i32 width, i32 height, i32 fontSize,
-                        COLORREF textColor, COLORREF shadowColor, const char *text);
+                        COLORREF textColor, COLORREF shadowColor, const char *text,
+                        u32 modulation = 0xffffffffu);
     // Register text for the current frame without changing the retail ANM
     // atlas. DrawNoRotation/Draw2D consume this overlay during the draw pass.
     void ReplaceSpriteText(AnmVm *vm, const char *text, COLORREF textColor, COLORREF shadowColor);

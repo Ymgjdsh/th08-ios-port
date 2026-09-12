@@ -197,7 +197,8 @@ struct GdiFont : GdiObject
 {
     GdiFont() : font(NULL), utf8(false) { kind = FONT; }
     GdiFont(TTF_Font *font_, bool utf8_) : font(font_), utf8(utf8_) { kind = FONT; }
-    ~GdiFont() { if (font != NULL) TTF_CloseFont(font); }
+    // Font faces are owned by RasterFontCache; GDI handles only borrow them.
+    ~GdiFont() {}
     TTF_Font *font;
     bool utf8;
 };
@@ -216,7 +217,15 @@ WNDPROC g_windowProcedure;
 SDL_Window *g_window;
 std::map<DWORD, std::vector<MSG> > g_threadMessages;
 pthread_mutex_t g_messageMutex = PTHREAD_MUTEX_INITIALIZER;
-bool g_gdiTextUtf8 = false;
+__thread bool g_gdiTextUtf8 = false;
+// Loading callbacks and the draw thread may both use SDL_ttf. Cached faces
+// contain mutable glyph state; keep raster operations and cache edits atomic.
+pthread_mutex_t g_textRasterMutex = PTHREAD_MUTEX_INITIALIZER;
+struct TextRasterLock
+{
+    TextRasterLock() { pthread_mutex_lock(&g_textRasterMutex); }
+    ~TextRasterLock() { pthread_mutex_unlock(&g_textRasterMutex); }
+};
 
 std::string ExecutableSiblingPath(const char *filename)
 {
@@ -669,10 +678,10 @@ struct RasterFontCache
     std::map<std::pair<std::string, int>, TTF_Font *> fonts;
 };
 
-TTF_Font *GetCachedRasterFont(const char *path, int pixelSize)
+TTF_Font *GetCachedRasterFont(const char *path, int pixelSize, int style = TTF_STYLE_NORMAL)
 {
     static RasterFontCache cache;
-    const std::pair<std::string, int> key(path != NULL ? path : "", pixelSize);
+    const std::pair<std::string, int> key(path != NULL ? path : "", pixelSize * 16 + style);
     std::map<std::pair<std::string, int>, TTF_Font *>::iterator existing = cache.fonts.find(key);
     if (existing != cache.fonts.end())
         return existing->second;
@@ -681,8 +690,43 @@ TTF_Font *GetCachedRasterFont(const char *path, int pixelSize)
     if (font == NULL)
         return NULL;
     TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
+    TTF_SetFontStyle(font, style);
     cache.fonts[key] = font;
+    char diagnostic[128];
+    SDL_snprintf(diagnostic, sizeof(diagnostic), "text/font-cache: opened size=%d style=%d faces=%lu",
+                 pixelSize, style, static_cast<unsigned long>(cache.fonts.size()));
+    th08::modern::LogStartup(diagnostic);
     return font;
+}
+
+struct GdiGlyphCache
+{
+    GdiGlyphCache() : font(NULL), glyph(NULL) {}
+    ~GdiGlyphCache() { if (glyph != NULL) SDL_FreeSurface(glyph); }
+    TTF_Font *font;
+    std::string text;
+    SDL_Surface *glyph;
+};
+
+SDL_Surface *GetGdiGlyph(TTF_Font *font, const std::string &text)
+{
+    // TextHelper draws the same string five times for its outline. Rasterize
+    // once, then reuse coverage for the different positions and colors.
+    static GdiGlyphCache cache;
+    if (cache.font == font && cache.text == text && cache.glyph != NULL)
+        return cache.glyph;
+    if (cache.glyph != NULL) SDL_FreeSurface(cache.glyph);
+    cache.glyph = NULL;
+    cache.font = font;
+    cache.text = text;
+    SDL_Color white = {255, 255, 255, 255};
+    SDL_Surface *rendered = TTF_RenderUTF8_Blended(font, text.c_str(), white);
+    if (rendered != NULL)
+    {
+        cache.glyph = SDL_ConvertSurfaceFormat(rendered, SDL_PIXELFORMAT_RGBA32, 0);
+        SDL_FreeSurface(rendered);
+    }
+    return cache.glyph;
 }
 } // namespace
 
@@ -690,6 +734,7 @@ BOOL TH08IosRasterizeTextUtf8(const char *text, int pixelSize, int width, int he
                               COLORREF textColor, COLORREF shadowColor,
                               BYTE *destination, int destinationPitch)
 {
+    const TextRasterLock lock;
     if (text == NULL || text[0] == '\0' || pixelSize <= 0 || width <= 0 || height <= 0 ||
         destination == NULL || destinationPitch < width * 4)
         return FALSE;
@@ -1111,6 +1156,7 @@ int SetBkMode(HDC, int mode) { return mode; }
 COLORREF SetTextColor(HDC raw, COLORREF color) { GdiDc *dc = static_cast<GdiDc *>(raw); COLORREF old = dc->color; dc->color = color; return old; }
 HFONT CreateFontA(int height, int, int, int, int weight, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, DWORD, LPCSTR)
 {
+    const TextRasterLock lock;
     const bool localizedUtf8 = g_gdiTextUtf8;
     const char *path = ResolveJapaneseFont(localizedUtf8);
     if (path == NULL) return new GdiFont(NULL, localizedUtf8);
@@ -1119,14 +1165,13 @@ HFONT CreateFontA(int height, int, int, int, int weight, DWORD, DWORD, DWORD, DW
         fprintf(stderr, "th08-modern: SDL_ttf initialization failed: %s\n", TTF_GetError());
         return new GdiFont(NULL, localizedUtf8);
     }
-    TTF_Font *font = TTF_OpenFont(path, height < 0 ? -height : height);
+    TTF_Font *font = GetCachedRasterFont(path, height < 0 ? -height : height,
+                                        weight >= FW_SEMIBOLD ? TTF_STYLE_BOLD : TTF_STYLE_NORMAL);
     if (font == NULL)
     {
         fprintf(stderr, "th08-modern: unable to load Japanese font %s: %s\n", path, TTF_GetError());
         return new GdiFont(NULL, localizedUtf8);
     }
-    if (weight >= FW_SEMIBOLD) TTF_SetFontStyle(font, TTF_STYLE_BOLD);
-    TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
     return new GdiFont(font, localizedUtf8);
 }
 HBITMAP CreateDIBSection(HDC, const void *infoRaw, UINT, VOID **pixels, HANDLE, DWORD)
@@ -1136,17 +1181,14 @@ HBITMAP CreateDIBSection(HDC, const void *infoRaw, UINT, VOID **pixels, HANDLE, 
 }
 BOOL TextOutA(HDC dcRaw, int x, int y, LPCSTR text, int length)
 {
+    const TextRasterLock lock;
     if (dcRaw == NULL || text == NULL || length <= 0) return FALSE;
     GdiDc *dc = static_cast<GdiDc *>(dcRaw);
     if (dc->bitmap == NULL || dc->font == NULL || dc->font->font == NULL) return FALSE;
     const std::string utf8 = dc->font->utf8
                                  ? std::string(text, static_cast<size_t>(length))
                                  : ConvertCp932ToUtf8(text, static_cast<size_t>(length));
-    SDL_Color white = {255, 255, 255, 255};
-    SDL_Surface *rendered = TTF_RenderUTF8_Blended(dc->font->font, utf8.c_str(), white);
-    if (rendered == NULL) return FALSE;
-    SDL_Surface *glyph = SDL_ConvertSurfaceFormat(rendered, SDL_PIXELFORMAT_RGBA32, 0);
-    SDL_FreeSurface(rendered);
+    SDL_Surface *glyph = GetGdiGlyph(dc->font->font, utf8);
     if (glyph == NULL) return FALSE;
     if (SDL_MUSTLOCK(glyph)) SDL_LockSurface(glyph);
     for (int row = 0; row < glyph->h; ++row)
@@ -1156,7 +1198,6 @@ BOOL TextOutA(HDC dcRaw, int x, int y, LPCSTR text, int length)
             PutGdiTextPixel(dc->bitmap, x + column, y + row, dc->color, source[column * 4 + 3]);
     }
     if (SDL_MUSTLOCK(glyph)) SDL_UnlockSurface(glyph);
-    SDL_FreeSurface(glyph);
     return TRUE;
 }
 HRESULT CoInitialize(LPVOID) { return S_OK; }

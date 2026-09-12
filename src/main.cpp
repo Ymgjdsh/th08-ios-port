@@ -21,6 +21,7 @@
 #include "modern/windows_runtime.hpp"
 #endif
 #ifdef TH08_IOS
+#include "TitleScreen.hpp"
 #include "modern/ios/ios_localization.hpp"
 #include "modern/ios/ios_touch.hpp"
 #endif
@@ -214,8 +215,7 @@ runtimeRestart:
     renderResult = Supervisor::RegisterChain();
 #ifdef TH08_IOS
     modern::LogStartup("main: chains registered");
-    modern::LogStartup("language/restart: rebuild complete");
-    modern::ios::CompleteLanguageRestart();
+    modern::LogStartup("language/restart: chains ready; awaiting title presentation");
 #endif
 
     if (renderResult != RENDER_RESULT_KEEP_RUNNING)
@@ -300,6 +300,9 @@ awfulConditionalBreak:
         ;
 
 stop:
+#ifdef TH08_IOS
+    if (!modern::ios::IsLanguageRestartInProgress())
+#endif
     Sleep(1000);
 
  #ifdef TH08_IOS
@@ -448,11 +451,14 @@ RenderResult GameWindow::Render()
         if (modern::ios::ConsumeLanguageRestartRequest())
         {
             modern::LogStartup("language/restart: request accepted");
+            g_Supervisor.ThreadClose();
+            g_AnmManager->FlushVertexBuffer();
+            g_Supervisor.d3dDevice->SetTexture(0, NULL);
+            g_Supervisor.d3dDevice->SetStreamSource(0, NULL, 0);
             g_AnmManager->ResetLocalizedSpritePatches();
             modern::ios::ResetLocalizationRuntime();
             modern::ios::ResetTouchState();
             TH08IosSetGdiTextUtf8(FALSE);
-            g_Supervisor.ThreadClose();
             modern::LogStartup("language/restart: runtime teardown requested");
             return RENDER_RESULT_EXIT_ERROR;
         }
@@ -529,6 +535,13 @@ RenderResult GameWindow::Render()
         this->curTimestamp = this->GetTimestamp();
         Present();
 #ifdef TH08_IOS
+        if (this->framesSinceRedraw == 0 && modern::ios::IsLanguageRestartInProgress() &&
+            g_Supervisor.curState == SupervisorState_TitleScreen && g_Supervisor.unk294 == 0 &&
+            TitleScreen::IosReadyStartMenuCursor() >= 0)
+        {
+            modern::LogStartup("language/restart: title frame presented");
+            modern::ios::CompleteLanguageRestart();
+        }
         const Uint64 iosPresentEnd = SDL_GetPerformanceCounter();
         static Uint64 iosCalcTotal;
         static Uint64 iosDrawTotal;

@@ -427,8 +427,9 @@ ChainCallbackResult MusicRoom::OnDraw(MusicRoom *musicRoom)
         if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP)
         {
             g_AnmManager->DrawUtf8TextAt(&musicRoom->songNameVms[i].pos, 270, 22, 13,
-                                         musicRoom->songNameVms[i].color1.d3dColor, 0x302080,
-                                         modern::ios::MusicRoomTitle(i, musicRoom->trackDescriptors[i].title));
+                                         0xffffff, 0x302080,
+                                         modern::ios::MusicRoomTitle(i, musicRoom->trackDescriptors[i].title),
+                                         musicRoom->songNameVms[i].color1.d3dColor);
         }
         else
 #endif

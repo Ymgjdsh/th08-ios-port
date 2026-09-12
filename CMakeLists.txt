@@ -350,6 +350,16 @@ elseif(APPLE)
     target_compile_options(th08-modern PRIVATE
         -O0 -fno-fast-math -fno-strict-aliasing -Wno-deprecated-declarations
         "-include${CMAKE_SOURCE_DIR}/src/modern/ios/ios_compat.hpp")
+    # Optimize pixel conversion, glyph compositing and matrix work while
+    # retaining the conservative build of the reconstructed game logic.
+    set_source_files_properties(
+        src/modern/ios/ios_compat.cpp
+        src/modern/ios/ios_d3d8_compat.cpp
+        src/modern/ios/ios_d3dx8_compat.cpp
+        src/modern/ios/ios_gl_legacy.cpp
+        src/modern/ios/ios_localization.cpp
+        src/AnmManager.cpp src/TextHelper.cpp
+        PROPERTIES COMPILE_OPTIONS "-O2")
     target_include_directories(th08-modern BEFORE PRIVATE
         "${CMAKE_SOURCE_DIR}/src/modern/linux/include"
         "${CMAKE_SOURCE_DIR}/src/modern/linux"

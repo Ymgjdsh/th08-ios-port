@@ -10,7 +10,7 @@ cd th08-ios-port
 chmod +x ios/*.sh
 
 TH08_IOS_DATA_DIR="$HOME/TH08-data" \
-  IOS_VERSION=0.3.9 IOS_BUILD=94 \
+  IOS_VERSION=0.5.5 IOS_BUILD=137 \
   ./ios/build_ios.sh
 ```
 
