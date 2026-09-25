@@ -257,11 +257,28 @@ void SaveMobileConfig()
     modern::LogStartup(saved ? "touch/config: saved" : "touch/config: short write");
 }
 
+u8 InitialSystemLanguage()
+{
+    SDL_Locale *locales = SDL_GetPreferredLocales();
+    u8 language = IOS_LANGUAGE_EN;
+    if (locales != NULL && locales[0].language != NULL)
+    {
+        const char *preferred = locales[0].language;
+        if (strcmp(preferred, "ja") == 0)
+            language = IOS_LANGUAGE_JP;
+        else if (strcmp(preferred, "zh") == 0)
+            language = IOS_LANGUAGE_ZH;
+    }
+    SDL_free(locales);
+    return language;
+}
+
 void EnsureMobileConfig()
 {
     if (g_configLoaded) return;
     g_configLoaded = true;
     SetDefaultConfig();
+    bool hasSavedConfig = false;
     char path[1024];
     if (GetMobileConfigPath(path, sizeof(path)))
     {
@@ -275,6 +292,7 @@ void EnsureMobileConfig()
             if (loadedBytes >= legacySize && stored.magic == MOBILE_CONFIG_MAGIC &&
                 (stored.version >= 1 && stored.version <= MOBILE_CONFIG_VERSION))
             {
+                hasSavedConfig = true;
                 const u32 storedVersion = stored.version;
                 g_config = stored;
                 g_config.version = MOBILE_CONFIG_VERSION;
@@ -294,6 +312,11 @@ void EnsureMobileConfig()
     g_config.opacity = ClampFloat(g_config.opacity, 0.20f, 1.00f);
     if (g_config.language > IOS_LANGUAGE_EN)
         g_config.language = IOS_LANGUAGE_JP;
+    if (!hasSavedConfig)
+    {
+        g_config.language = InitialSystemLanguage();
+        SaveMobileConfig();
+    }
 #ifdef TH08_IOS
     // Simulator smoke tests can select a language without manufacturing a
     // binary mobile.cfg. Release launches do not set this variable.
