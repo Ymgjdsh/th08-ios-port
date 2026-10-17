@@ -323,12 +323,6 @@ static void RefreshIosLocalizedDialogue(GuiMessageStateOverlay *state)
 bool DrawIosLocalizedDialogue(GuiMessageStateOverlay *state, const char *japaneseCp932, i32 colorIndex,
                               i32 requestedLine)
 {
-    static GuiMessageStateOverlay *cachedState;
-    static i32 cachedScript = -1;
-    static i32 cachedTime = -1;
-    static u32 cachedLanguageRevision;
-    static modern::ios::LocalizedDialogueText cachedText = {{NULL, NULL}, 0, 0};
-
     if (state == NULL || state->GetCurrentInstr() == NULL)
         return false;
     if (requestedLine < 0 || requestedLine > 1)
@@ -337,27 +331,7 @@ bool DrawIosLocalizedDialogue(GuiMessageStateOverlay *state, const char *japanes
     modern::ios::LocalizedDialogueText translated;
     const i32 script = state->currentMsgIdx;
     const i32 time = state->GetCurrentInstr()->time;
-    const bool exact = modern::ios::FindLocalizedDialogue(script, time, japaneseCp932, requestedLine, &translated);
-    if (exact)
-    {
-        // A line-0 record contains both translated lines. Cache it so a
-        // normalized line-1 instruction can still use the same translation.
-        if (translated.originalLine == 0 || cachedState != state || cachedScript != script || cachedTime != time ||
-            cachedLanguageRevision != modern::ios::LanguageRevision())
-        {
-            cachedState = state;
-            cachedScript = script;
-            cachedTime = time;
-            cachedLanguageRevision = modern::ios::LanguageRevision();
-            cachedText = translated;
-        }
-    }
-    else if (cachedState == state && cachedScript == script && cachedTime == time &&
-             cachedLanguageRevision == modern::ios::LanguageRevision())
-    {
-        translated = cachedText;
-    }
-    else
+    if (!modern::ios::FindLocalizedDialogue(script, time, japaneseCp932, requestedLine, &translated))
     {
         if (modern::ios::GetLanguage() != modern::ios::IOS_LANGUAGE_JP &&
             (g_iosDialogueDisplay.state != state || g_iosDialogueDisplay.script != script ||
@@ -378,26 +352,31 @@ bool DrawIosLocalizedDialogue(GuiMessageStateOverlay *state, const char *japanes
     if (colorIndex < 0 || colorIndex >= 4)
         colorIndex = 0;
 
-    const char *lineText = translated.lines[requestedLine];
-    if (lineText == NULL) lineText = "";
-    g_Supervisor.textAnm->SetAndExecuteScriptIdx(&state->dialogueLines[requestedLine], requestedLine);
-    if (g_iosDialogueDisplay.state != state || g_iosDialogueDisplay.script != script ||
-        g_iosDialogueDisplay.time != time ||
+    // A timestamp can contain several separate speeches (e.g. msg1a 63_0
+    // and 63_1). Line zero starts a new speech even when the time is equal.
+    if (requestedLine == 0 || g_iosDialogueDisplay.state != state || g_iosDialogueDisplay.script != script ||
         g_iosDialogueDisplay.languageRevision != modern::ios::LanguageRevision())
         ResetIosDialogueDisplay(state, script, time);
-    g_iosDialogueDisplay.lines[requestedLine] = lineText;
-    g_iosDialogueDisplay.colorIndices[requestedLine] = colorIndex;
-    g_iosDialogueDisplay.active[requestedLine] = true;
-    RegisterIosDialogueLine(state, requestedLine);
-
-    // Clear the second line when a one-line message replaces a previous
-    // two-line message, otherwise stale text remains in the dialogue box.
-    if (requestedLine == 0 && translated.lineCount < 2 && state->dialogueLines[1].scriptIndex >= 0)
+    // Preserve the original reveal timing when a second retail line arrives
+    // later (Wriggle's two rows are at ticks 63 and 124). Only display both
+    // rows immediately when a single original line wraps in translation.
+    // Empty rows override stale glyphs in the shared atlas as well.
+    for (int line = requestedLine; line < 2; ++line)
     {
-        g_iosDialogueDisplay.lines[1] = NULL;
-        g_iosDialogueDisplay.active[1] = false;
-        g_AnmManager->DrawTextLeft(&state->dialogueLines[1], state->textColors[colorIndex],
-                                   state->shadowColors[colorIndex], " ");
+        g_Supervisor.textAnm->SetAndExecuteScriptIdx(&state->dialogueLines[line], line);
+        g_iosDialogueDisplay.lines[line] = translated.lines[line] != NULL ? translated.lines[line] : "";
+        if (requestedLine == 0 && line == 1 && translated.originalLineCount > 1)
+            g_iosDialogueDisplay.lines[line] = "";
+        g_iosDialogueDisplay.colorIndices[line] = colorIndex;
+        g_iosDialogueDisplay.active[line] = true;
+        RegisterIosDialogueLine(state, line);
+    }
+    if (SDL_getenv("TH08_IOS_DIALOGUE_DIAGNOSTICS") != NULL)
+    {
+        char message[768];
+        SDL_snprintf(message, sizeof(message), "dialogue/i18n: script=%d time=%d line=%d text=%s | %s",
+                     script, time, requestedLine, translated.lines[0], translated.lines[1]);
+        modern::LogStartup(message);
     }
     if (requestedLine >= state->currentLine)
         state->currentLine = static_cast<u8>(requestedLine + 1);
@@ -934,6 +913,10 @@ i32 GuiImpl::RunMsg()
                 reinterpret_cast<GuiRawMessageInstruction *>(
                     reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentInstr)->args);
 #ifdef TH08_IOS
+            // Match retail's new-speech reset BEFORE selecting a translated
+            // row. The previous speech may have left currentLine at 1 or 2.
+            if (reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->textPending)
+                reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentLine = 0;
             FUN_004353ec(text16, reinterpret_cast<const char *>(args));
             if (DrawIosLocalizedDialogue(reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm), text16,
                                          reinterpret_cast<GuiMessageStateOverlay *>(&this->msgVm)->currentSide,
@@ -2826,14 +2809,46 @@ u32 AnmVm::FUN_004396f8()
 ZunResult Gui::LoadMsg(const char *path)
 {
     this->FreeMsgFile();
-    this->impl->msgVm.msgFile = FileSystem::OpenFile(path, NULL, 0);
+    i32 messageFileSize = 0;
+    this->impl->msgVm.msgFile = FileSystem::OpenFile(path, &messageFileSize, 0);
     if (this->impl->msgVm.msgFile == NULL)
     {
         g_GameErrorContext.Log("\x65\x72\x72\x6f\x72\x20\x3a\x20\x83\x81\x83\x62\x83\x5a\x81\x5b\x83\x57\x83\x74\x83\x40\x83\x43\x83\x8b\x20\x25\x73\x20\x82\xaa\x93\xc7\x82\xdd\x8d\x9e\x82\xdf\x82\xdc\x82\xb9\x82\xf1\x82\xc5\x82\xb5\x82\xbd\x0d\x0a", path);
         return ZUN_ERROR;
     }
 #ifdef TH08_IOS
-    modern::ios::SetDialogueMessageFile(path);
+    modern::ios::SetDialogueMessageFile(path, this->impl->msgVm.GetMsgFile(), messageFileSize);
+    // Opt-in verification against the actual retail message bytecode. Keep
+    // extracted copyrighted data inside this test app's private container.
+    static bool dumpedMessages;
+    if (!dumpedMessages && SDL_getenv("TH08_IOS_DUMP_MESSAGES") != NULL)
+    {
+        dumpedMessages = true;
+        char *directory = SDL_GetPrefPath("th08", "dialogue-audit");
+        if (directory != NULL)
+        {
+            for (int stage = 1; stage <= 8; ++stage)
+                for (char team = 'a'; team <= 'd'; ++team)
+                {
+                    char name[32];
+                    if (stage == 4)
+                        SDL_snprintf(name, sizeof(name), "msg4%c%c.dat", (team == 'a' || team == 'd') ? 'b' : 'a', team);
+                    else
+                        SDL_snprintf(name, sizeof(name), "msg%d%c.dat", stage, team);
+                    i32 size = 0;
+                    LPBYTE data = FileSystem::OpenFile(name, &size, 0);
+                    if (data != NULL)
+                    {
+                        char destination[1024];
+                        SDL_snprintf(destination, sizeof(destination), "%s%s", directory, name);
+                        FileSystem::WriteDataToFile(destination, data, size);
+                        ZUN_FREE(data);
+                    }
+                }
+            modern::LogStartup("dialogue/audit: extracted message scripts");
+            SDL_free(directory);
+        }
+    }
 #endif
     *(i32 *)((u8 *)this->GetImpl() + 0x2181C) = -1;
     *(i32 *)((u8 *)this->GetImpl() + 0x21818) = 0;

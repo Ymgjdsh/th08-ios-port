@@ -1285,6 +1285,14 @@ u16 PollSmokeTestButtons()
     // Send a fresh confirmation every 1.5 seconds. This is deliberately
     // slower than the title transitions, so each pulse is observed as a new
     // press by WAS_PRESSED. Once gameplay starts, Z simply becomes shooting.
+    if (strcmp(enabled, "dialogue") == 0 && IsDialogueActive())
+    {
+        const char *holdTime = SDL_getenv("TH08_IOS_DIALOGUE_HOLD_TIME");
+        const void *instruction = g_Gui.GetImpl()->msgVm.currentInstr;
+        if (holdTime != NULL && instruction != NULL &&
+            *static_cast<const u16 *>(instruction) >= atoi(holdTime))
+            return 0;
+    }
     const Uint32 pulse = (elapsed - 2500) / 1500;
     if (pulse != lastPulse)
     {
@@ -1297,6 +1305,10 @@ u16 PollSmokeTestButtons()
 
     // Keep every setup menu edge-triggered, then hold Z once the smoke test is
     // safely inside gameplay so player projectiles exercise the draw chain.
+    // Dialogue needs release edges between confirmations. Holding Z here
+    // only exercised the first speech and missed later translation failures.
+    if (strcmp(enabled, "dialogue") == 0 && IsDialogueActive())
+        return 0;
     return elapsed >= 30000 ? TH_BUTTON_SHOOT : 0;
 }
 

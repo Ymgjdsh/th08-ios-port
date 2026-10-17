@@ -13,6 +13,8 @@ namespace ios
 namespace
 {
 char g_dialogueMessageFile[32] = {};
+int g_dialogueScriptAliases[128];
+int g_dialogueScriptCount;
 
 const char *BaseName(const char *path)
 {
@@ -26,16 +28,37 @@ const char *BaseName(const char *path)
 }
 }
 
-void SetDialogueMessageFile(const char *path)
+void SetDialogueMessageFile(const char *path, const void *data, size_t size)
 {
     const char *base = BaseName(path);
     strncpy(g_dialogueMessageFile, base, sizeof(g_dialogueMessageFile) - 1);
     g_dialogueMessageFile[sizeof(g_dialogueMessageFile) - 1] = '\0';
+    g_dialogueScriptCount = 0;
+    if (data == NULL || size < 4) return;
+    unsigned int count;
+    memcpy(&count, data, 4);
+    if (count > 128 || size < 4 + count * 4) return;
+    const unsigned char *bytes = static_cast<const unsigned char *>(data);
+    // Retail Final A/B can address the very same instruction stream through
+    // multiple script IDs. Normalize using its offset table, not stage-name
+    // guesses, so all entrances use the same translated dialogue.
+    for (unsigned int script = 0; script < count; ++script)
+    {
+        g_dialogueScriptAliases[script] = script;
+        for (unsigned int previous = 0; previous < script; ++previous)
+            if (memcmp(bytes + 4 + script * 4, bytes + 4 + previous * 4, 4) == 0)
+            {
+                g_dialogueScriptAliases[script] = previous;
+                break;
+            }
+    }
+    g_dialogueScriptCount = count;
 }
 
 void ResetLocalizationRuntime()
 {
     g_dialogueMessageFile[0] = '\0';
+    g_dialogueScriptCount = 0;
 }
 
 bool FindLocalizedDialogue(int script, int time, const char *japaneseCp932,
@@ -43,47 +66,50 @@ bool FindLocalizedDialogue(int script, int time, const char *japaneseCp932,
 {
     if (result == NULL || japaneseCp932 == NULL || GetLanguage() == IOS_LANGUAGE_JP)
         return false;
+    if (script >= 0 && script < g_dialogueScriptCount)
+        script = g_dialogueScriptAliases[script];
 
-    const IosDialogueTranslationEntry *fallback = NULL;
+    const IosDialogueTranslationEntry *match = NULL;
+    bool ambiguous = false;
     for (unsigned int index = 0; index < g_iosDialogueTranslationCount; ++index)
     {
         const IosDialogueTranslationEntry &entry = g_iosDialogueTranslations[index];
-        if (entry.script != script || entry.time != time ||
+        if (entry.script != script ||
             strcmp(entry.file, g_dialogueMessageFile) != 0)
             continue;
-
-        // The VM can normalize control bytes differently between the first
-        // and second line.  Keep an exact match as the fast path, then fall
-        // back to the generated line identity so the second translated line
-        // cannot leak the retail CP932 text.
         if (strcmp(entry.japaneseCp932, japaneseCp932) != 0)
-        {
-            if (fallback == NULL && entry.originalLine == requestedLine)
-                fallback = &entry;
             continue;
+        // Retail scripts and translation patches can group messages at
+        // different timestamps. Prefer the exact identity, otherwise accept
+        // only an unambiguous text match inside this file and route. Never
+        // select unrelated dialogue merely because its time/line matches.
+        if (entry.time == time && entry.originalLine == requestedLine)
+        {
+            match = &entry;
+            ambiguous = false;
+            break;
         }
-
-        const char *const *translated = GetLanguage() == IOS_LANGUAGE_ZH
-                                            ? entry.chinese
-                                            : entry.english;
-        if (translated[0][0] == '\0') return false;
-        result->lines[0] = translated[0];
-        result->lines[1] = translated[1];
-        result->lineCount = translated[1][0] == '\0' ? 1 : 2;
-        result->originalLine = entry.originalLine;
-        return true;
+        if (match != NULL &&
+            (strcmp(match->chinese[0], entry.chinese[0]) != 0 ||
+             strcmp(match->chinese[1], entry.chinese[1]) != 0 ||
+             strcmp(match->english[0], entry.english[0]) != 0 ||
+             strcmp(match->english[1], entry.english[1]) != 0 ||
+             match->originalLine != entry.originalLine))
+            ambiguous = true;
+        if (match == NULL) match = &entry;
     }
 
-    if (fallback != NULL)
+    if (match != NULL && !ambiguous)
     {
         const char *const *translated = GetLanguage() == IOS_LANGUAGE_ZH
-                                            ? fallback->chinese
-                                            : fallback->english;
+                                            ? match->chinese
+                                            : match->english;
         if (translated[0][0] == '\0') return false;
         result->lines[0] = translated[0];
         result->lines[1] = translated[1];
         result->lineCount = translated[1][0] == '\0' ? 1 : 2;
-        result->originalLine = fallback->originalLine;
+        result->originalLine = match->originalLine;
+        result->originalLineCount = match->originalLineCount;
         return true;
     }
     return false;

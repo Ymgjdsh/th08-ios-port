@@ -20,7 +20,10 @@ def lines_for(data, script, key):
     entry = group.get(key)
     if entry is None:
         return []
-    return entry.get("lines", [])[:2]
+    lines = entry.get("lines", [])
+    if not lines or not lines[0] or len(lines) > 2:
+        raise ValueError("invalid dialogue lines: {}/{}".format(script, key))
+    return lines
 
 
 def main():
@@ -49,12 +52,15 @@ def main():
                 ja_lines = ja_entry.get("lines", [])
                 zh_lines = lines_for(zh_data, script, key)
                 en_lines = lines_for(en_data, script, key)
+                if not zh_lines or not en_lines:
+                    raise ValueError("missing translation: {}/{}/{}".format(
+                        message_file, script, key))
                 for original_line, ja_line in enumerate(ja_lines):
                     identity = (message_file, int(script), time, ja_line)
                     if identity in seen:
                         raise RuntimeError("duplicate dialogue identity: {!r}".format(identity))
                     seen.add(identity)
-                    entries.append((message_file, int(script), time, original_line,
+                    entries.append((message_file, int(script), time, original_line, len(ja_lines),
                                     ja_line, zh_lines, en_lines))
 
     output = []
@@ -67,17 +73,18 @@ def main():
     output.append("    int script;")
     output.append("    unsigned short time;")
     output.append("    unsigned char originalLine;")
+    output.append("    unsigned char originalLineCount;")
     output.append("    const char *japaneseCp932;")
     output.append("    const char *chinese[2];")
     output.append("    const char *english[2];")
     output.append("};")
     output.append("")
     output.append("static const IosDialogueTranslationEntry g_iosDialogueTranslations[] = {")
-    for message_file, script, time, original_line, ja_line, zh_lines, en_lines in entries:
+    for message_file, script, time, original_line, original_count, ja_line, zh_lines, en_lines in entries:
         zh = list(zh_lines) + [""] * (2 - len(zh_lines))
         en = list(en_lines) + [""] * (2 - len(en_lines))
-        output.append("    {%s, %d, %d, %d, %s, {%s, %s}, {%s, %s}}," % (
-            cpp_bytes(message_file, "ascii"), script, time, original_line,
+        output.append("    {%s, %d, %d, %d, %d, %s, {%s, %s}, {%s, %s}}," % (
+            cpp_bytes(message_file, "ascii"), script, time, original_line, original_count,
             cpp_bytes(ja_line, "cp932"), cpp_bytes(zh[0], "utf-8"),
             cpp_bytes(zh[1], "utf-8"), cpp_bytes(en[0], "utf-8"),
             cpp_bytes(en[1], "utf-8")))

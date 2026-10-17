@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ios_touch.hpp"
+#include <stddef.h>
 
 namespace th08
 {
@@ -14,9 +15,10 @@ struct LocalizedDialogueText
     const char *lines[2];
     int lineCount;
     int originalLine;
+    int originalLineCount;
 };
 
-void SetDialogueMessageFile(const char *path);
+void SetDialogueMessageFile(const char *path, const void *data = NULL, size_t size = 0);
 void ResetLocalizationRuntime();
 bool FindLocalizedDialogue(int script, int time, const char *japaneseCp932,
                            int requestedLine, LocalizedDialogueText *result);
